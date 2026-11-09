@@ -1,0 +1,14 @@
+# Build output
+/build/
+/out/
+
+# Rendered images
+/renders/
+
+# Editor and tool files
+.vscode/
+.idea/
+.cache/
+compile_commands.json
+*.swp
+.DS_Store
