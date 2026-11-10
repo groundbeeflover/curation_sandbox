@@ -1,0 +1,2449 @@
+# The task backlog seed. scripts/github-bootstrap.py reads this file and creates the GitHub
+# milestones, labels, epic issues and task issues it describes, matching existing issues by the
+# ID in their title. Once an issue exists, the issue is the source of truth for its status;
+# edit this file only to add tasks (when /groom decomposes the next milestone) or to fix a task
+# that has not been started.
+#
+# Check it with:  python3 scripts/github-bootstrap.py --check
+# Field reference: docs/roadmap.md, "The task file".
+
+version = 1
+repository = "groundbeeflover/curation_sandbox"
+project_board = "Curation Sandbox"
+
+# ---------------------------------------------------------------------------------------------
+# Labels: a small fixed set that the skills rely on. Areas are the lanes of docs/roadmap.md.
+# ---------------------------------------------------------------------------------------------
+
+[[labels]]
+name = "area:build"
+color = "5319e7"
+description = "CMake, vcpkg, CI, benchmarks, golden-image tooling, packaging"
+[[labels]]
+name = "area:core"
+color = "0e8a16"
+description = "libs/core: units, photometry, colour, maths, random numbers, images"
+[[labels]]
+name = "area:doc"
+color = "1d76db"
+description = "libs/doc: the document, mutation API, undo, project files, migrations"
+[[labels]]
+name = "area:geom"
+color = "0052cc"
+description = "libs/geom: rooms, walls, openings, frames, mats, glazing meshes"
+[[labels]]
+name = "area:light"
+color = "fbca04"
+description = "libs/light: fixtures, IES, photometric distributions, conservation"
+[[labels]]
+name = "area:material"
+color = "d4c5f9"
+description = "libs/material: painting materials, presets, reference BRDFs"
+[[labels]]
+name = "area:assets"
+color = "c2e0c6"
+description = "libs/assets and tools/catalogue: image import, textures, catalogue"
+[[labels]]
+name = "area:world"
+color = "bfdadc"
+description = "libs/world: compiling the document into the render world"
+[[labels]]
+name = "area:engine"
+color = "e99695"
+description = "libs/engine and cs-render: path tracer, lux meter, bake, stills"
+[[labels]]
+name = "area:gpu"
+color = "b60205"
+description = "libs/gpu: Vulkan renderer, tiers, shaders"
+[[labels]]
+name = "area:editor"
+color = "f9d0c4"
+description = "libs/editor: tools, commands, snapping, cameras, imports, exports"
+[[labels]]
+name = "area:ui"
+color = "c5def5"
+description = "libs/ui and apps/curation: the Qt application"
+[[labels]]
+name = "type:feature"
+color = "a2eeef"
+description = "New behaviour a user or another module can use"
+[[labels]]
+name = "type:spike"
+color = "f9d0c4"
+description = "Time-boxed research whose output is a decision record in docs/adr/"
+[[labels]]
+name = "type:test"
+color = "bfd4f2"
+description = "Tests, golden images or benchmarks only"
+[[labels]]
+name = "type:bug"
+color = "d73a4a"
+description = "Something that does not do what its issue or the docs say"
+[[labels]]
+name = "type:chore"
+color = "ededed"
+description = "Build, CI, dependencies, refactoring with no behaviour change"
+[[labels]]
+name = "type:docs"
+color = "0075ca"
+description = "Documentation only"
+[[labels]]
+name = "size:S"
+color = "c2e0c6"
+description = "Up to about 150 changed lines of non-test code"
+[[labels]]
+name = "size:M"
+color = "fef2c0"
+description = "About 150 to 400 changed lines of non-test code"
+[[labels]]
+name = "size:L"
+color = "f9d0c4"
+description = "Indivisible; needs plan mode and a design note in the issue"
+[[labels]]
+name = "owner:agent"
+color = "5319e7"
+description = "Built by a Claude Code session"
+[[labels]]
+name = "owner:human"
+color = "0e8a16"
+description = "Written by the owner"
+[[labels]]
+name = "in-progress"
+color = "fbca04"
+description = "A session or person is working on it"
+[[labels]]
+name = "blocked"
+color = "b60205"
+description = "Waiting on something outside its Blocked by line"
+[[labels]]
+name = "epic"
+color = "3e4b9e"
+description = "A parent issue grouping the tasks of one feature area"
+
+# ---------------------------------------------------------------------------------------------
+# Milestones. Dates are estimates from docs/roadmap.md; /groom moves them when throughput says so.
+# ---------------------------------------------------------------------------------------------
+
+[[milestones]]
+id = "M1"
+title = "M1 Walking skeleton"
+due_on = "2026-12-04"
+description = "The app opens, a room is built, one painting hangs at its true size under one spotlight in candela, you walk around it and read its lux; every layer exists thinly and is tested. Exit criteria: docs/roadmap.md#m1-walking-skeleton"
+
+[[milestones]]
+id = "M2"
+title = "M2 Build and hang"
+due_on = "2027-01-08"
+description = "Journey J1 without the catalogue: walls and openings, six frame styles, imports and checklists, hanging with snapping, save, undo and recovery, a 50-work gallery within memory budget. Exit criteria: docs/roadmap.md#m2-build-and-hang"
+
+[[milestones]]
+id = "M3"
+title = "M3 Light it right"
+due_on = "2027-02-12"
+description = "Journey J2: real fixtures from IES files, painting materials and glazing, bounced light, conservation classes and exposure, path-traced stills. Exit criteria: docs/roadmap.md#m3-light-it-right"
+
+[[milestones]]
+id = "M4"
+title = "M4 Curator alpha"
+due_on = "2027-03-19"
+description = "Journeys J1 to J4 on curators' own machines: the catalogue, installation documents, portable builds. Tagged v0.1.0. Exit criteria: docs/roadmap.md#m4-curator-alpha"
+
+[[milestones]]
+id = "M5"
+title = "M5 Ray-traced tier"
+due_on = "2027-04-30"
+description = "The Ray-traced tier and the GPU path tracer on RTX and RDNA2+ GPUs. Exit criteria: docs/roadmap.md#m5-ray-traced-tier"
+
+[[milestones]]
+id = "M6"
+title = "M6 Release 1.0"
+due_on = "2027-06-25"
+description = "Floor-plan underlay, plinths and benches, daylight, walkthroughs, a 300-work catalogue, labels, signed installers. Tagged v1.0.0. Exit criteria: docs/roadmap.md#m6-release-10"
+
+# ---------------------------------------------------------------------------------------------
+# Epics. M1 and M2 are decomposed into tasks below; M3 to M6 are decomposed by /groom when the
+# milestone before is about 70% done.
+# ---------------------------------------------------------------------------------------------
+
+[[epics]]
+id = "E1.1"
+milestone = "M1"
+title = "Foundations for parallel, verified work"
+area = "build"
+goal = "The module layout, dependencies, licence, CI caching, golden-image runner, benchmark harness and GPU tests in CI, so that three sessions can work in parallel and every change is checked automatically."
+demo = "A CI run with all jobs green, and the diff image a deliberately broken golden test uploads as an artefact."
+
+[[epics]]
+id = "E1.2"
+milestone = "M1"
+title = "Light you can measure"
+area = "engine"
+goal = "Seeded sampling, colour and exposure, fixtures in candela, the Lambert material and the CPU calculation engine, with the inverse-square, cosine, cone and white furnace tests passing."
+demo = "The white furnace render (a uniform grey image) and the accuracy test output with every value inside its tolerance."
+
+[[epics]]
+id = "E1.3"
+milestone = "M1"
+title = "From document to picture"
+area = "world"
+goal = "The document model with undo, meshes for the room, painting and frame, image import, the render world, and cs-render producing a path-traced image and a lux report from a project folder."
+demo = "cs-render's image of tests/scenes/skeleton: a framed test chart on a wall under a spotlight, with its lux report."
+
+[[epics]]
+id = "E1.4"
+milestone = "M1"
+title = "First light on the GPU"
+area = "gpu"
+goal = "A headless Vulkan device with validation as a test failure, Slang shaders, the render world on the GPU, the Standard tier's exact direct light and a swapchain presenter."
+demo = "The Standard tier's render of the skeleton scene from lavapipe beside the engine's direct-only render, with their FLIP difference."
+
+[[epics]]
+id = "E1.5"
+milestone = "M1"
+title = "Walk around it"
+area = "ui"
+goal = "The Qt shell around the Vulkan viewport, camera controllers, the first editor commands and the lux panel: the walking skeleton a curator can see."
+demo = "A screenshot of the app: a room, a framed painting under a spotlight, the lux panel."
+
+[[epics]]
+id = "E2.1"
+milestone = "M2"
+title = "Walls and openings"
+area = "geom"
+goal = "Walls drawn with typed lengths, joined corners, doorways, lettered walls and wall finishes, in plan view."
+demo = "A screenshot of an L-shaped room with a doorway, drawn in plan view, then walked through."
+
+[[epics]]
+id = "E2.2"
+milestone = "M2"
+title = "Frames and mats"
+area = "geom"
+goal = "Six parametric frame styles from data files, mats and glazing panes, sized to any work."
+demo = "A render of the same work in each of the six frame styles."
+
+[[epics]]
+id = "E2.3"
+milestone = "M2"
+title = "Bringing works in"
+area = "assets"
+goal = "Colour-managed image import with the four-question dialog and the resolution warning, and checklist import from CSV with placeholders."
+demo = "A screenshot of the checklist panel after importing a 40-row checklist, some works with images and some as placeholders."
+
+[[epics]]
+id = "E2.4"
+milestone = "M2"
+title = "Hanging tools"
+area = "editor"
+goal = "Picking, dragging works along walls with centre-line and neighbour snapping, typed values, group commands, overlays, plan and elevation views."
+demo = "A screenshot of a wall elevation with snapping guides and gap labels while a work is dragged."
+
+[[epics]]
+id = "E2.5"
+milestone = "M2"
+title = "Projects that last"
+area = "doc"
+goal = "The .curation file with atomic saves, schema migrations, the autosave journal with crash recovery, and undo, redo and recovery in the app."
+demo = "A screen recording or screenshots: a crash mid-edit, then the recovery prompt restoring the work."
+
+[[epics]]
+id = "E2.6"
+milestone = "M2"
+title = "A full gallery"
+area = "gpu"
+goal = "Incremental world updates, cached spotlight shadows, texture residency within a budget, lux on every work in the background, and the gallery-50 benchmark within its memory budget."
+demo = "A screenshot of gallery-50 in the Standard tier with the lux column filled, and the benchmark table."
+
+[[epics]]
+id = "E3.1"
+milestone = "M3"
+title = "Real fixtures"
+area = "light"
+goal = "IES LM-63 parsing, a library of about ten real museum fixtures plus generic ones, tracks by the CCI rule, aiming, dim to target, beam and field cones, colour temperature."
+demo = "A render of one wall lit by three different library fixtures, with their beam cones drawn."
+
+[[epics]]
+id = "E3.2"
+milestone = "M3"
+title = "Painting materials and glazing"
+area = "material"
+goal = "GGX dielectric and conductor lobes, the varnish coat, the twelve presets, glazing kinds, frame finishes including gilding, in the engine and the Standard tier, with CPU and GPU agreement tests and the gloss-meter test."
+demo = "Side-by-side renders of one work as gloss-varnished, matte and behind float glass against anti-reflective glass."
+
+[[epics]]
+id = "E3.3"
+milestone = "M3"
+title = "Bounced light"
+area = "engine"
+goal = "The engine bakes indirect light (lightmaps on architecture, probes on works and frames), progressively after each edit, and the Standard tier uses it within the lux and image tolerances of ADR 0002."
+demo = "The same room with and without bounced light, and the Standard tier's lux grid against the engine's."
+
+[[epics]]
+id = "E3.4"
+milestone = "M3"
+title = "Conservation"
+area = "light"
+goal = "Sensitivity classes and policies, yearly exposure from opening hours, warnings in the checklist and inspector, lux probes and persistent sensors."
+demo = "A screenshot of the checklist with works over their limit flagged, and a lux probe reading."
+
+[[epics]]
+id = "E3.5"
+milestone = "M3"
+title = "Stills"
+area = "engine"
+goal = "Path-traced stills from saved viewpoints with Open Image Denoise, progress and cancel in the app, within the 1080p still budget."
+demo = "A denoised 1080p still of gallery-50 and its render time."
+
+[[epics]]
+id = "E4.1"
+milestone = "M4"
+title = "Catalogue pipeline"
+area = "assets"
+goal = "The scripted pipeline from selection.toml through source adapters, the rights check, dimension normalisation, KTX2 encoding and the manifest, producing the 40-work starter set."
+demo = "The generated credits page and contact sheet of the 40 starter works."
+
+[[epics]]
+id = "E4.2"
+milestone = "M4"
+title = "Catalogue in the app"
+area = "ui"
+goal = "A catalogue browser with search and filters, hanging from the catalogue, downloads on demand with hash checks, credit lines everywhere a work appears."
+demo = "A screenshot of the catalogue browser and a catalogue work hung on a wall."
+
+[[epics]]
+id = "E4.3"
+milestone = "M4"
+title = "Installation documents"
+area = "editor"
+goal = "Hanging list (CSV, PDF), wall elevations and floor plan (PDF, SVG), lighting schedule (CSV), still export, generated as display lists and rendered by Qt."
+demo = "The PDF of a wall elevation and the hanging list for gallery-50."
+
+[[epics]]
+id = "E4.4"
+milestone = "M4"
+title = "Builds curators can run"
+area = "build"
+goal = "Portable Windows zip and Linux AppImage from tagged CI builds, with licences, the starter set, a first-run sample project and crash logs."
+demo = "The release page for v0.1.0 with both builds, and a screenshot of first launch on Windows."
+
+[[epics]]
+id = "E4.5"
+milestone = "M4"
+title = "Alpha readiness"
+area = "ui"
+goal = "Preferences (units in cm or inches), the startup benchmark, the Standard tier within budget on an Iris Xe laptop, a real-gallery lux comparison, and fixes from the M2 curator sessions."
+demo = "The benchmark table on the 780M and on an Iris Xe laptop, all within budget."
+
+[[epics]]
+id = "E5.1"
+milestone = "M5"
+title = "Ray-traced shadows"
+area = "gpu"
+goal = "Acceleration structures kept up to date from the render world, and ray-traced soft shadows from every fixture."
+demo = "Frame shadows with ray-traced penumbrae beside the Standard tier's shadow maps."
+
+[[epics]]
+id = "E5.2"
+milestone = "M5"
+title = "Reflections in glazing and varnish"
+area = "gpu"
+goal = "Ray-traced reflections for glazing and varnish, replacing reflection probes in the Ray-traced tier."
+demo = "A glazed watercolour reflecting the room behind the viewer."
+
+[[epics]]
+id = "E5.3"
+milestone = "M5"
+title = "Dynamic bounced light and denoising"
+area = "gpu"
+goal = "Many-light sampling, cached dynamic indirect light and an in-house temporal denoiser, converging to the path-traced image when still."
+demo = "A light moved in real time with bounced light following, and the converged image against the engine."
+
+[[epics]]
+id = "E5.4"
+milestone = "M5"
+title = "GPU path tracer"
+area = "gpu"
+goal = "A GPU path tracer using ray queries that agrees with the CPU engine within 1% lux and FLIP 0.02, with OIDN's GPU back ends and the 4K still budget."
+demo = "A 4K still of gallery-50 from the RTX 2060 and its render time."
+
+[[epics]]
+id = "E5.5"
+milestone = "M5"
+title = "Upscaling"
+area = "gpu"
+goal = "The FSR 3.1 upscaler as an option for integrated GPUs."
+demo = "The 780M at 1080p output with and without FSR, with frame times."
+
+[[epics]]
+id = "E6.1"
+milestone = "M6"
+title = "Floor-plan underlay"
+area = "editor"
+goal = "Trace walls over a scaled image or PDF of an existing floor plan."
+demo = "A real gallery plan traced into walls."
+
+[[epics]]
+id = "E6.2"
+milestone = "M6"
+title = "Plinths, benches and vitrines"
+area = "doc"
+goal = "The first non-painting exhibits, through the Furniture component and the OnFloor and OnHost placements of ADR 0008."
+demo = "A room with a bench and a plinth placed among the hung works."
+
+[[epics]]
+id = "E6.3"
+milestone = "M6"
+title = "Daylight"
+area = "light"
+goal = "Windows and skylights with a sun and sky for a place and date, in every tier and in the lux readings."
+demo = "A skylit gallery at noon in June and in December, with the lux on each work."
+
+[[epics]]
+id = "E6.4"
+milestone = "M6"
+title = "Walkthroughs and glTF export"
+area = "editor"
+goal = "Walkthrough video along a camera path, and glTF export of the scene."
+demo = "A 30-second walkthrough video of gallery-50."
+
+[[epics]]
+id = "E6.5"
+milestone = "M6"
+title = "Catalogue 1.0 and HD textures"
+area = "assets"
+goal = "About 300 works with on-demand downloads, and tiled HD textures with virtual texturing for works above 8192 px."
+demo = "A close-up of a large work at HD resolution."
+
+[[epics]]
+id = "E6.6"
+milestone = "M6"
+title = "Labels and wall texts"
+area = "editor"
+goal = "Labels and wall texts with their sizes, placed beside works and listed in the exports."
+demo = "A wall elevation with labels."
+
+[[epics]]
+id = "E6.7"
+milestone = "M6"
+title = "Release 1.0"
+area = "build"
+goal = "Signed per-user installers for Windows, AppImage and Flatpak, update checks, a user guide, the macOS spike."
+demo = "The v1.0.0 release page."
+
+# =============================================================================================
+# M1 Walking skeleton
+# =============================================================================================
+
+[[tasks]]
+id = "M1-01"
+epic = "E1.1"
+title = "Module layout with cs_add_module, presets and a vcpkg baseline"
+area = "build"
+type = "chore"
+size = "M"
+owner = "agent"
+blocked_by = []
+touches = ["CMakeLists.txt", "CMakePresets.json", "cmake/CsModule.cmake", "cmake/CsOptions.cmake", "cmake/tests/", "vcpkg.json", "vcpkg-configuration.json", "core/", "tests/CMakeLists.txt", "tests/test_image.cpp", "tests/test_photometry.cpp", "libs/", "apps/CMakeLists.txt", "apps/pt/CMakeLists.txt", "tools/sanitizers/", ".github/workflows/ci.yml", ".gitignore", "README.md"]
+goal = "Move the project to the layout of the blueprint (section 7): every module under libs/ is one cs_add_module call that finds its own sources and tests, every module directory exists from the start with its declared dependencies, the presets cover every way the project is built, and dependencies come from vcpkg in manifest mode. After this, parallel tasks never edit a shared file list."
+context = [
+  "docs/product/blueprint.md, section 7: Modules, Files and layout, Built for parallel work",
+  "docs/adr/0001-engine.md: vcpkg in manifest mode; Qt installed outside vcpkg",
+  "The existing CMakeLists.txt (the cs_options target, sanitizers, warnings) and CMakePresets.json (debug, release, profile) are kept",
+  "vcpkg manifest mode: https://learn.microsoft.com/vcpkg/concepts/manifest-mode ; GitHub runners set VCPKG_INSTALLATION_ROOT, not VCPKG_ROOT",
+  "Catch2 and CTest: catch_discover_tests(... ADD_TAGS_AS_LABELS), SKIP_RETURN_CODE; Catch2 exits with code 4 for a skipped test",
+]
+acceptance = [
+  "cmake/CsModule.cmake defines cs_add_module(NAME <m> DEPS <modules> EXTERNAL <targets>): a library cs::<m> from every .cpp under libs/<m>/src/ (GLOB_RECURSE with CONFIGURE_DEPENDS, so a new subdirectory such as src/commands/ needs no CMake edit), public headers in libs/<m>/include/, and a test executable cs_<m>_tests from libs/<m>/tests/; a module with no sources yet is skipped without error",
+  "Test executables are labelled with their module name automatically (as well as their Catch2 tags), get CS_SOURCE_DIR (the repository root) to find tests/scenes/ and data/, count exit code 4 as skipped, and use the module's own tests/main.cpp instead of Catch2WithMain when one exists",
+  "libs/<m>/CMakeLists.txt exists for every module in blueprint section 7 (core, doc, geom, light, material, assets, world, engine, gpu, editor, ui) with the dependencies the blueprint allows; ui is only configured when CS_BUILD_APP is on",
+  "The root CMakeLists.txt includes every cmake/Cs*.cmake by glob, and apps/CMakeLists.txt adds every apps/*/ that has a CMakeLists.txt, so later tasks add helpers and apps without editing either file",
+  "Configure, build and test presets: debug (ASan and UBSan), release, profile, app (debug with CS_BUILD_APP=ON) and fuzz (Clang, CS_FUZZ=ON, every libs/<m>/fuzz/*.cpp a libFuzzer target; Linux only). debug and app set LSAN_OPTIONS to use tools/sanitizers/lsan.supp. Test presets set noTestsAction to error, so a label that matches nothing fails",
+  "`ctest --preset debug -R cmake_module_glob` passes: a fixture project under cmake/tests/ shows that a new source (also in a new subdirectory) and a new test file are built with no CMake edit, and that including a header of an undeclared module fails to compile",
+  "vcpkg.json declares catch2, glm and nlohmann-json with a pinned builtin-baseline; the presets use $VCPKG_ROOT's toolchain, and configuring without VCPKG_ROOT stops with a message saying how to install vcpkg",
+  ".github/workflows/ci.yml builds and tests through the presets, with VCPKG_ROOT set from VCPKG_INSTALLATION_ROOT, so this pull request's own CI passes",
+  "The existing image and photometry tests move to libs/core/tests and pass: `ctest --preset debug -L core` and `ctest --preset release -L core` report 100% passed",
+  "apps/pt still builds (cs-render replaces it in M1-17); the README's build section gives the new commands",
+]
+out_of_scope = [
+  "Any other dependency (M1-02); CI caching and the full compiler matrix (M1-30)",
+  "Generated registries and the integration-test executable (M1-34)",
+  "New code in any module; removing apps/pt (M1-17)",
+]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release",
+  "ctest --preset debug -R cmake_module_glob --output-on-failure",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-02"
+epic = "E1.1"
+title = "Dependencies for M1 and M2, licence files and the dependency policy"
+area = "build"
+type = "chore"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["vcpkg.json", "vcpkg-configuration.json", "libs/core/CMakeLists.txt", "libs/engine/CMakeLists.txt", "libs/gpu/CMakeLists.txt", "libs/assets/CMakeLists.txt", "libs/doc/CMakeLists.txt", "third_party/", "docs/dependencies.md", "scripts/check-dependencies.py", "scripts/tests/test_check_dependencies.py", "LICENSE", "NOTICE"]
+goal = "Declare in vcpkg the libraries milestones 1 and 2 use (ADR 0001), record every dependency and shipped data asset with its version and licence in docs/dependencies.md with a script that keeps them in sync, and add the Apache-2.0 licence. Open Image Denoise and KTX are added later by the tasks that first use them."
+context = [
+  "docs/adr/0001-engine.md, Libraries: the full list and licences",
+  "docs/adr/0009-platforms-licence-distribution.md: allowed licences, SPDX headers",
+  "docs/adr/0003-painting-materials.md and 0004-catalogue.md: shipped data must be CC0 or similar",
+  "NVIDIA FLIP (BSD-3), to vendor as a header: https://github.com/NVlabs/flip",
+]
+acceptance = [
+  "vcpkg.json adds embree, volk, vk-bootstrap, vulkan-memory-allocator, vulkan-headers, shader-slang, stb, tinyexr, tiff, lcms and miniz; each module's CMakeLists.txt links the ones the blueprint gives it; all configure and build on Linux (GCC) and Windows (MSVC). Where a port is missing or broken, a pinned prebuilt archive fetched by CMake with a SHA-256 is used and documented",
+  "NVIDIA FLIP's C++ header is vendored in third_party/flip/ with its licence file",
+  "docs/dependencies.md lists every library (name, version, licence, purpose, module), Qt (the pinned version, installed outside vcpkg, LGPL obligations), the Vulkan validation layers, clang-format 23.1.4, and data assets: test images, the UI font (an SIL Open Font License font chosen here), later the catalogue and IES files; and states the allowed licences",
+  "`python3 scripts/check-dependencies.py` exits 1 when a vcpkg.json dependency is missing from docs/dependencies.md or has a licence outside the allowed list, and 0 now; `python3 -m unittest discover -s scripts/tests` passes",
+  "LICENSE holds the Apache-2.0 text and NOTICE the project notice",
+]
+out_of_scope = [
+  "Using the new libraries beyond linking them (later tasks)",
+  "CI caching and compiler jobs (M1-30); Qt in CI (M1-31)",
+  "Open Image Denoise (M3) and KTX-Software (M4)",
+]
+verification = [
+  "python3 scripts/check-dependencies.py",
+  "python3 -m unittest discover -s scripts/tests",
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release",
+]
+
+[[tasks]]
+id = "M1-03"
+epic = "E1.1"
+title = "Spike: Vulkan tests in CI on lavapipe"
+area = "gpu"
+type = "spike"
+size = "S"
+owner = "agent"
+blocked_by = []
+touches = ["docs/adr/0010-gpu-tests-in-ci.md"]
+goal = "Decide how GPU tests and golden images run in GitHub Actions, so that M1-29 can add the job without guesswork. Time box: one session."
+context = [
+  "docs/adr/0002-rendering-tiers.md, Testing in CI",
+  "Lavapipe ray tracing (Mesa 24.1): https://phoronix.com/news/Lavapipe-RT-Pipelines-Mesa-24.1",
+  "ubuntu-24.04 runner image (no Mesa preinstalled): https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md",
+  "Vulkan SDK action with lavapipe and SwiftShader: https://github.com/jakoch/install-vulkan-sdk-action",
+  "Experiments run on a throwaway branch spike/lavapipe with a workflow triggered by pushes to that branch (workflow_dispatch only works from the default branch); only the decision record is merged",
+]
+acceptance = [
+  "docs/adr/0010-gpu-tests-in-ci.md records, from runs on the throwaway branch: the Mesa version and source (Ubuntu archive, a PPA or a pinned build) and its install time; vulkaninfo showing Vulkan 1.3, VK_KHR_ray_query and VK_EXT_headless_surface on lavapipe; where the validation layers come from and their version",
+  "The record states the measured time for lavapipe to render and read back a 256x256 image with a throwaway program, and the largest golden-image size and sample count that keep the GPU job under 10 minutes",
+  "The record compares the Windows options (mesa-dist-win lavapipe, SwiftShader, none) and recommends one",
+  "The record ends with the exact workflow YAML for M1-29, with every version pinned, and links the throwaway runs",
+]
+out_of_scope = ["Merging any workflow or code (M1-29 does that)"]
+verification = [
+  "test -f docs/adr/0010-gpu-tests-in-ci.md",
+  "The owner reads the record and the linked runs",
+]
+
+[[tasks]]
+id = "M1-04"
+epic = "E1.5"
+title = "Spike: Qt Widgets shell around a Vulkan viewport"
+area = "ui"
+type = "spike"
+size = "M"
+owner = "agent"
+blocked_by = []
+touches = ["docs/adr/0011-qt-vulkan-viewport.md"]
+goal = "Confirm or replace the toolkit choice of ADR 0006 before any UI is built on it: a Qt Widgets main window hosting a Vulkan surface whose instance, device and swapchain our code owns. Time box: one session."
+context = [
+  "docs/adr/0006-ui-and-interaction.md: the decision and its fallbacks",
+  "QWidget::createWindowContainer and QVulkanInstance::setVkInstance: https://doc.qt.io/qt-6/qvulkaninstance.html",
+  "Qt LGPL obligations: https://www.qt.io/development/open-source-lgpl-obligations",
+  "The prototype lives on a throwaway branch spike/qt-vulkan; only the decision record is merged",
+]
+acceptance = [
+  "A prototype on the throwaway branch shows a QMainWindow with a dock and a Vulkan viewport (our VkInstance wrapped by QVulkanInstance, our device and swapchain) drawing a rotating triangle",
+  "docs/adr/0011-qt-vulkan-viewport.md reports, with screenshots, whether each works on the 780M: Wayland and X11 sessions, window resize, scale factors 1.0, 1.5 and 2.0, relative mouse mode for walking (cursor hidden and captured)",
+  "The record includes the owner's result on Windows (RTX 2060), asked for in an issue comment with the exact commands to run",
+  "The record shows a QTest test on the offscreen platform grabbing a screenshot of the widgets in CI, and how Qt is installed in CI (action, version, time)",
+  "The record concludes: keep Qt Widgets, or switch to the Qt Quick or Dear ImGui fallback, and lists anything M1-26 must do differently",
+]
+out_of_scope = ["Merging prototype code (M1-26 builds the real shell)"]
+verification = [
+  "test -f docs/adr/0011-qt-vulkan-viewport.md",
+  "The owner reads the record and runs the prototype on Windows",
+]
+
+[[tasks]]
+id = "M1-05"
+epic = "E1.2"
+title = "Counter-based random numbers and sampling functions"
+area = "core"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/core/include/cs/core/random.hpp", "libs/core/include/cs/core/sampling.hpp", "libs/core/src/sampling.cpp", "libs/core/tests/test_random.cpp", "libs/core/tests/test_sampling.cpp"]
+goal = "Seedable random numbers that give the same render whatever the thread count, and the sampling functions the engine and the BRDFs use, each with a statistical test."
+context = [
+  "docs/product/blueprint.md, section 9: Determinism",
+  "PCG: https://www.pcg-random.org/ ; Physically Based Rendering, 4th edition, chapter 2 (Monte Carlo) and appendix A (sampling)",
+  "libs/core/include/cs/core/photometry.hpp: uniform_cone_intensity, whose solid angle the cone sampler must match",
+]
+acceptance = [
+  "cs::Rng (PCG32) seeded by cs::hash_seed(scene_seed, pixel_x, pixel_y, sample, dimension) is deterministic: a test fixes its first 8 outputs for seed 42",
+  "Uniform floats lie in [0, 1); a chi-square test over 64 bins and 10^6 draws stays below the 99.9% critical value",
+  "sample_cosine_hemisphere: the mean of cos(theta) over 10^6 samples is 2/3 within 0.005, and the returned pdf equals cos(theta)/pi within 1e-6",
+  "sample_uniform_cone(half_angle): every direction lies inside the cone, and pdf times 2*pi*(1 - cos(half_angle)) equals 1 within 1e-9",
+  "sample_uniform_sphere: the mean direction over 10^6 samples has length below 0.005",
+  "`ctest --preset debug -L core` passes",
+]
+out_of_scope = ["Low-discrepancy sequences (later, if noise demands)", "Light or BRDF sampling (M1-12, M1-15)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L core",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L core",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-06"
+epic = "E1.2"
+title = "Colour, exposure and tone mapping"
+area = "core"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/core/include/cs/core/colour.hpp", "libs/core/src/colour.cpp", "libs/core/include/cs/core/math.hpp", "libs/core/tests/test_colour.cpp", "libs/core/tests/test_math.cpp"]
+goal = "The colour and maths conventions every renderer shares: luminance in nits, colour temperature to RGB, physical camera exposure, the Khronos PBR Neutral tone mapper, vector types and orthonormal bases."
+context = [
+  "docs/adr/0002-rendering-tiers.md, Colour and exposure",
+  "Khronos PBR Neutral reference: https://github.com/KhronosGroup/ToneMapping",
+  "Exposure (EV100): Lagarde and de Rousiers, Moving Frostbite to PBR (2014), section 4.5",
+  "Orthonormal basis: Duff et al., Building an Orthonormal Basis, Revisited (JCGT 2017)",
+  "libs/core/include/cs/core/photometry.hpp: the unit conventions",
+]
+acceptance = [
+  "luminance(rgb) uses the Rec. 709 weights (0.2126, 0.7152, 0.0722)",
+  "cct_to_linear_rgb(kelvin) follows the blackbody (Planckian) locus, normalised to luminance 1: at 2700, 3000, 4000 and 6500 K the chromaticity is within delta-uv 0.001 of the locus point the test computes from Planck's law and the CIE 1931 2-degree observer; 3000 K has r > g > b; the result is continuous from 1667 K to 25000 K (no step above 0.01 between 1 K neighbours). (A blackbody at 6504 K is not D65, so it is not white)",
+  "ev100_from_average_luminance and exposure_scale follow EV100 = log2(L * 100 / 12.5) and H = 1 / (1.2 * 2^EV100); tests at 1 nit and 1000 nits",
+  "pbr_neutral(rgb) matches the Khronos reference at 10 listed inputs within 1e-5",
+  "math.hpp provides cs::Vec3f, Vec3d, Mat4f (glm) and onb_from_normal; for 10^4 random normals the basis is orthonormal within 1e-6",
+  "`ctest --preset debug -L core` passes",
+]
+out_of_scope = ["Spectral data and colour rendering metrics (after 1.0)", "Image files (M1-07)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L core",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-07"
+epic = "E1.2"
+title = "EXR and PNG files, and image comparison with FLIP"
+area = "core"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-02"]
+touches = ["libs/core/include/cs/core/image_io.hpp", "libs/core/src/image_io.cpp", "libs/core/include/cs/core/image_compare.hpp", "libs/core/src/image_compare.cpp", "libs/core/tests/test_image_io.cpp", "libs/core/tests/test_image_compare.cpp", "libs/core/tests/data/"]
+goal = "Write and read linear EXR images and display PNGs, and compare two images with a mean error and NVIDIA FLIP, which the golden-image tests and benchmarks build on."
+context = [
+  "docs/product/blueprint.md, section 9: Golden images",
+  "libs/core/include/cs/core/image.hpp: the linear-RGB Image; write_ppm stays",
+  "NVIDIA FLIP: https://github.com/NVlabs/flip (vendored by M1-02 in third_party/flip/)",
+  "tinyexr: https://github.com/syoyo/tinyexr ; stb_image_write",
+]
+acceptance = [
+  "write_exr then read_exr of a 37x23 image of random floats (including 1e4 and 1e-4) is bit-exact (32-bit float channels)",
+  "write_png(image, exposure) applies the exposure, PBR Neutral and the sRGB curve; reading it back with stb_image gives the expected 8-bit values within 1",
+  "compare(a, b) returns mean absolute error, maximum error and mean FLIP; identical images give 0 for all three; changing one pixel of a 64x64 image by 0.5 gives a mean absolute error of exactly 0.5/4096 per channel",
+  "For the committed pair in libs/core/tests/data/ (each at most 20 KB), mean FLIP matches the value of the FLIP reference implementation within 1e-4; the test says how the expected value was produced",
+  "compare refuses images of different sizes with an error message",
+  "write_exr can also write 16-bit half-float channels, which golden references use to stay small; a half round trip is within half-float precision",
+  "`ctest --preset debug -L core` passes",
+]
+out_of_scope = ["The golden-test runner (M1-18)", "Tone mapping itself (M1-06)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L core",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-08"
+epic = "E1.3"
+title = "Document store, MVP components and project folders"
+area = "doc"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/doc/include/", "libs/doc/src/", "libs/doc/tests/"]
+goal = "The document of ADR 0008 with every MVP component defined up front, so that later tasks add behaviour rather than editing the component list, and loading and saving a project as a folder of JSON."
+context = [
+  "docs/adr/0008-exhibit-data-model.md: Work, components, placements, library definitions",
+  "docs/adr/0007-project-files-undo-exports.md: the file layout, UUIDv7, SI units, stable key order",
+  "UUIDv7: https://www.rfc-editor.org/rfc/rfc9562",
+]
+acceptance = [
+  "Types for Work and every MVP component of ADR 0008 (Wall, Opening, Room, Exhibit, Framing, Placement with all five kinds, Track, Luminaire, LuxSensor, Viewpoint, Dimension) and project settings (centre line 1.50 m, eye height 1.60 m, opening hours 2184 per year, display units). Sizes are stored as width and height, named so",
+  "New ids are UUIDv7: 10^5 generated ids are unique and sort in creation order",
+  "load_project_folder and save_project_folder live in libs/doc/src/project_io.cpp; a fixture in libs/doc/tests/data/ with one of every component reloads and saves byte for byte (stable key order, 2-space indent, trailing newline)",
+  "Invalid documents fail with a message naming the JSON path (for example entities[3].placement.wall): one test each for an unknown component, a missing field, a wrong type, a dangling reference, and schemaVersion other than 1",
+  "`ctest --preset debug -L doc` passes",
+]
+out_of_scope = ["The skeleton scene (M1-32)", "The mutation API and undo (M1-09)", "The zip container (M2-21)", "Migrations (M2-22)", "Library definitions from data files (M2-06)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-09"
+epic = "E1.3"
+title = "Mutation API, transactions and undo"
+area = "doc"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-08", "M1-32"]
+touches = ["libs/doc/include/cs/doc/document.hpp", "libs/doc/src/document.cpp", "libs/doc/include/cs/doc/transaction.hpp", "libs/doc/src/transaction.cpp", "libs/doc/include/cs/doc/history.hpp", "libs/doc/src/history.cpp", "libs/doc/tests/test_transaction.cpp", "libs/doc/tests/test_history.cpp"]
+goal = "The one way to change a document: transactions that record each change's before and after values, giving undo, redo and change lists without any per-command undo code."
+context = [
+  "docs/adr/0007-project-files-undo-exports.md, Undo and redo",
+  "docs/adr/0008-exhibit-data-model.md, Code shape",
+]
+acceptance = [
+  "Document's public interface is read-only; all writes go through Transaction (add entity, remove entity, set or remove a component, set a work), and a committed transaction is applied atomically",
+  "Each committed transaction yields a change list (entity id, component kind, added, changed or removed); setting the same component twice in one transaction yields one change",
+  "Property test with a fixed seed: from tests/scenes/skeleton, 1000 random transactions, then undo of all of them, serialises byte-identical to the original; redo of all serialises byte-identical to the state after the 1000",
+  "Committing a new transaction after an undo clears the redo stack",
+  "Each transaction carries a name for the interface, for example 'Move Water Lilies'; the history exposes the names of the next undo and redo",
+  "`ctest --preset debug -L doc` passes",
+]
+out_of_scope = ["The autosave journal (M2-23)", "Editor commands (M1-25)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-10"
+epic = "E1.3"
+title = "Room, painting and box-frame meshes"
+area = "geom"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/geom/include/", "libs/geom/src/", "libs/geom/tests/"]
+goal = "The meshes the skeleton needs, generated from dimensions in metres: a room, a painting at its true size placed on a wall face, and a simple closed frame around it."
+context = [
+  "docs/adr/0008-exhibit-data-model.md: OnWall placement (u along the face from its left end, v the centre height, stand-off)",
+  "docs/adr/0003-painting-materials.md, Frames: rebate 5 to 10 mm",
+]
+acceptance = [
+  "room_mesh(6, 4, 3.5): floor, ceiling and four walls with inward normals and per-face UVs in metres; total area 118 m^2 within 1e-9",
+  "wall_face_frame(wall from (0,0) to (6,0), thickness 0.1, face A): the point (u = 3, v = 1.5) maps to world (3, 0.05, 1.5) within 1e-9, with u along the wall and v up",
+  "painting_quad(a work 0.73 m wide and 0.92 m high, OnWall u = 3, v = 1.5, stand-off 0.04): corners within 0.1 mm of the expected positions; normal points into the room",
+  "box_frame(work 0.73 wide x 0.92 high, member width 0.06, depth 0.04, rebate 0.005): sight opening 0.72 x 0.91 and outer size 0.84 x 1.03 (width x height), each within 1 mm; the mesh is closed (every edge shared by exactly two triangles); geom::is_closed(mesh) and geom::volume(mesh) are public, for later tasks' tests",
+  "`ctest --preset debug -L geom` passes",
+]
+out_of_scope = ["Walls with thickness, joins and openings (M2-01)", "Profiled frames (M2-05)", "Mats and glazing (M2-07)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L geom",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-11"
+epic = "E1.2"
+title = "Luminaires in candela: a generic spotlight"
+area = "light"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/light/include/", "libs/light/src/", "libs/light/tests/"]
+goal = "Fixtures as intensity distributions in candela, starting with a generic spotlight defined by lumens, beam angle and field angle, so that every renderer and the lux meter share one definition of a light."
+context = [
+  "libs/core/include/cs/core/photometry.hpp: candela, lumens, uniform_cone_intensity",
+  "docs/adr/0003-painting-materials.md, Fixtures",
+  "Beam angle (50% of peak) and field angle (10% of peak) per IES convention",
+]
+acceptance = [
+  "A Distribution interface: intensity_cd(direction in fixture space) and total_lumens()",
+  "GenericSpot(lumens, beam_angle, field_angle), both full cone angles as in IES files: intensity at half the beam angle is 50% of peak within 1%, at half the field angle 10% within 1%; integrating over the sphere returns the input lumens within 0.5%",
+  "With beam angle equal to field angle it reproduces cs::photometry::uniform_cone_intensity(lumens, beam_angle / 2) within 1e-6",
+  "Luminaire(position, aim point, distribution): the intensity towards the aim point equals the peak intensity",
+  "`ctest --preset debug -L light` passes",
+]
+out_of_scope = ["IES files (M3)", "Shadows and visibility (engine and GPU tasks)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L light",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-12"
+epic = "E1.2"
+title = "Lambertian paint layer and the reference BRDF interface"
+area = "material"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-05"]
+touches = ["libs/material/include/", "libs/material/src/", "libs/material/tests/"]
+goal = "The BRDF interface that the engine samples and the GPU tiers mirror, with the Lambertian base layer and the PaintingMaterial parameters of ADR 0003 (only the base layer active for now)."
+context = [
+  "docs/adr/0003-painting-materials.md: the layers and their parameters",
+  "Physically Based Rendering, 4th edition, chapter 9 (reflection models)",
+  "libs/core/include/cs/core/sampling.hpp (M1-05)",
+]
+acceptance = [
+  "BRDF interface in a local shading frame: eval(wo, wi) returns RGB, sample(wo, u) returns (wi, pdf, weight), pdf(wo, wi)",
+  "Lambert with albedo rho: eval equals rho/pi; Monte Carlo of the integral of f cos over the hemisphere (10^5 samples, fixed seed) equals rho within 0.5%",
+  "sample's pdf equals pdf() within 1e-6, and eval(a, b) equals eval(b, a), for 10^4 random direction pairs",
+  "PaintingMaterial holds base, coat, metal, fuzz and glazing parameters with the defaults of ADR 0003; only the base is evaluated",
+  "`ctest --preset debug -L material` passes",
+]
+out_of_scope = ["GGX, varnish, gilding and glazing (M3)", "Presets (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L material",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-13"
+epic = "E1.3"
+title = "Compile a document into a render world"
+area = "world"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-08", "M1-10", "M1-11", "M1-12", "M1-32"]
+touches = ["libs/world/include/", "libs/world/src/", "libs/world/tests/"]
+goal = "The render world: a renderer-neutral scene of meshes, instances, materials, lights in SI units and cameras, compiled from the document, which the engine and every GPU tier read so that they see identical input."
+context = [
+  "docs/adr/0008-exhibit-data-model.md, Code shape",
+  "docs/product/blueprint.md, section 7: How an edit flows",
+]
+acceptance = [
+  "compile(document) returns a World with meshes, instances with transforms, materials (painting base albedo by asset id and hash; walls Lambert 0.8 by default), lights (position, orientation, distribution) and cameras (perspective or orthographic) from viewpoints",
+  "For tests/scenes/skeleton: 3 instances (room, painting, frame) and 1 light whose peak intensity equals GenericSpot(800 lm, beam 15 degrees, field 25 degrees)'s; the painting's world corners equal geom::painting_quad's within 0.1 mm",
+  "Compiling twice gives identical worlds (ordering by entity id)",
+  "The world references images by asset id and content hash and loads no image data",
+  "`ctest --preset debug -L world` passes",
+]
+out_of_scope = ["Incremental updates (M2-24)", "Frames from styles, mats and glazing (M2-08)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L world",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-14"
+epic = "E1.3"
+title = "Import an image as a linear texture with mipmaps"
+area = "assets"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-02"]
+touches = ["libs/assets/include/", "libs/assets/src/", "libs/assets/tests/"]
+goal = "Load PNG and JPEG images into linear light with a correct mip chain, and compute the effective resolution of a work, refusing images too large to be safe."
+context = [
+  "docs/adr/0005-machine-learning.md: faithful resampling, effective resolution (3438 / distance in mm)",
+  "docs/adr/0004-catalogue.md, Resolution",
+  "The sRGB transfer function in libs/core/src/image.cpp",
+]
+acceptance = [
+  "8- and 16-bit PNG and JPEG load through stb_image; sRGB values convert with the exact sRGB curve: 8-bit 188 becomes 0.5029 within 1e-4",
+  "Mips average in linear light: a 2x2 checkerboard of sRGB 0 and 255 becomes linear 0.5, not sRGB 128",
+  "A 1000 x 600 image has 10 mip levels",
+  "effective_resolution: 4000 px across 800 mm is 5.0 px/mm, and the closest sharp viewing distance is 688 mm within 1 mm",
+  "Images over 16384 px on a side or 512 MB decoded are refused with a message",
+  "`ctest --preset debug -L assets` passes",
+]
+out_of_scope = ["ICC profiles and TIFF (M2-09)", "KTX2 and the texture cache (M4)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L assets",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-15"
+epic = "E1.2"
+title = "Embree scene and the lux meter, with analytic accuracy tests"
+area = "engine"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-13", "M1-05", "M1-02"]
+touches = ["libs/engine/include/cs/engine/scene.hpp", "libs/engine/src/scene.cpp", "libs/engine/include/cs/engine/lux.hpp", "libs/engine/src/lux.cpp", "libs/engine/tests/test_scene.cpp", "libs/engine/tests/test_lux.cpp", "libs/core/include/cs/core/thread_pool.hpp", "libs/core/src/thread_pool.cpp", "libs/core/tests/test_thread_pool.cpp"]
+goal = "The calculation engine's ray-traced scene and its lux meter: illuminance at a point from the renderer's own lights, direct and indirect, checked against the inverse-square and cosine laws."
+context = [
+  "docs/adr/0002-rendering-tiers.md: the calculation engine; accuracy tolerances",
+  "The lux meter design of the learning-era guide (`git show 066f128:docs/milestone-1.md`, section 7): cosine-weighted sampling, each sample contributes pi times the luminance it finds",
+  "Embree 4 API: https://www.embree.org/api.html",
+  "Use the physics-reviewer subagent before opening the pull request",
+]
+acceptance = [
+  "An Embree scene built from a World answers ray queries with the hit instance, distance and normal",
+  "lux_at(point, normal, options{samples, seed}) returns direct illuminance (shadow rays to every luminaire) and total illuminance (adding cosine-weighted indirect paths), each with a standard error",
+  "[accuracy] A 1000 cd isotropic point 2 m above a large floor gives 250 lux direct within 1% and within 3 standard errors; a sensor 2 m from the light, tilted so the light arrives 60 degrees from its normal, reads 125 lux within 1%",
+  "[accuracy] GenericSpot(1000 lm, beam 30 degrees, field 30 degrees), a uniform cone of 15 degrees half-angle, pointing straight down from 2 m gives 1167.7 lux within 1%",
+  "A blocker between the light and the sensor makes the direct illuminance 0",
+  "Results are bit-identical with 1 and 8 threads for the same seed",
+  "`ctest --preset debug -L engine` and `-L accuracy` pass",
+  "cs::ThreadPool in libs/core (fixed worker count, parallel_for over index ranges, cancellation by token) is used by the lux meter; a test checks that work is spread and results do not depend on the worker count",
+]
+out_of_scope = ["Images (M1-16)", "Per-work lux grids and background jobs (M2-28)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L engine",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L accuracy",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-16"
+epic = "E1.2"
+title = "Path tracer with next-event estimation and the white furnace test"
+area = "engine"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-15"]
+touches = ["libs/engine/include/cs/engine/path_tracer.hpp", "libs/engine/src/path_tracer.cpp", "libs/engine/tests/test_path_tracer.cpp"]
+goal = "A progressive path tracer that renders the render world in absolute luminance, deterministically, and passes the white furnace test: the reference image every other tier is compared with."
+context = [
+  "docs/adr/0002-rendering-tiers.md",
+  "Physically Based Rendering, 4th edition, chapter 13 (light transport: path tracing, next-event estimation)",
+  "The white furnace check of the learning-era guide (`git show 066f128:docs/milestone-1.md`, section 7)",
+  "Use the physics-reviewer subagent before opening the pull request",
+]
+acceptance = [
+  "render(world, camera, options{size, spp, seed, direct_only}) accumulates linear radiance in nits into a cs::Image, with next-event estimation to every luminaire, Lambert bounces and Russian roulette after 3 bounces; a uniform environment emitter exists for tests",
+  "[accuracy] White furnace: a closed sphere mesh of albedo 1 inside a uniform 100-nit environment renders 100 nits within 1% averaged over the image and within 3% at every pixel, at 256 spp",
+  "[accuracy] A Lambert floor of albedo 0.5 under 250 lux renders rho*E/pi = 39.79 nits within 1%",
+  "Images are bit-identical with 1 and 8 threads for the same seed",
+  "direct_only mode renders without indirect bounces, for comparisons with the Standard tier",
+  "`ctest --preset debug -L engine` passes",
+]
+out_of_scope = ["Textures and the command-line app (M1-17)", "Denoising (M3)", "GGX materials (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L engine",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L accuracy",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-17"
+epic = "E1.3"
+title = "cs-render: headless renders and lux reports; remove pt"
+area = "engine"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-16", "M1-07", "M1-06", "M1-14"]
+touches = ["apps/cs-render/", "apps/pt/", "libs/engine/include/cs/engine/textures.hpp", "libs/engine/src/textures.cpp", "libs/engine/tests/test_textures.cpp", "README.md", "libs/engine/include/cs/engine/work_lux.hpp", "libs/engine/src/work_lux.cpp", "libs/engine/tests/test_work_lux.cpp"]
+goal = "One command that turns a project folder into a path-traced image and a lux report, used by tests, skills and the owner; it replaces the learning-era pt app."
+context = [
+  "docs/product/blueprint.md, section 7: Applications",
+  "docs/adr/0002-rendering-tiers.md: Colour and exposure",
+  "tests/scenes/skeleton/ (M1-08)",
+]
+acceptance = [
+  "`cs-render <project-folder> --tier path --size 256x144 --spp 64 --seed 1 --out <prefix>` writes <prefix>.exr (linear nits), <prefix>.png (EV100 exposure from the viewpoint, PBR Neutral, sRGB) and <prefix>.lux.json",
+  "The engine samples painting textures (bilinear on the base mip) from assets; a test renders a 2x2-texel texture face-on and finds each texel's colour in its quadrant",
+  "lux.json gives, per exhibit, direct and total illuminance from engine::work_lux_grid (a 5 x 5 grid on the work's face, behind any glazing, which the app and the lux service reuse) with mean, minimum, maximum and standard error; for the skeleton, the direct value at the centre matches the analytic I/d^2 * cos value computed in the test within 1%",
+  "apps/pt is deleted; nothing references it; the README shows cs-render",
+  "The command above runs in under 10 s in a release build on the reference CPU (time stated in the PR)",
+]
+out_of_scope = ["The golden-test runner (M1-18)", "The Standard tier in cs-render (M1-29)"]
+verification = [
+  "cmake --preset release && cmake --build --preset release && ./build/release/apps/cs-render/cs-render tests/scenes/skeleton --tier path --size 256x144 --spp 64 --seed 1 --out build/out/skeleton",
+  "ctest --preset debug -L engine",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Attach build/out/skeleton.png to the pull request: the test chart, upright, centred on the wall, in its frame, lit by the spot."
+
+[[tasks]]
+id = "M1-18"
+epic = "E1.1"
+title = "Golden-image test runner"
+area = "build"
+type = "test"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-17"]
+touches = ["cmake/CsGolden.cmake", "apps/cs-render/", "tests/golden/"]
+goal = "Golden-image tests that are added by creating a directory and updated only on purpose, so that visual changes are tested rather than eyeballed."
+context = [
+  "docs/product/blueprint.md, section 9: Golden images",
+  "libs/core/include/cs/core/image_compare.hpp (M1-07)",
+]
+acceptance = [
+  "Each tests/golden/<name>/test.json (scene, tier, size, spp, seed, tolerances for mean FLIP and mean absolute error) is found by glob and registered as CTest test golden.<name> with label golden (and gpu when the tier is not path)",
+  "`cs-render golden tests/golden/<name>` renders, compares with ref.<driver>.exr (cpu for the engine) and on failure writes the render, a difference image and a FLIP heat map to build/<preset>/golden-out/<name>/",
+  "tests/golden/skeleton-path/ (128x72, the reference a 16-bit half EXR of at most 60 KB) passes; raising the light's lumens by 10% makes it fail with the difference images written",
+  "`cs-render golden <dir> --update` rewrites the reference; without --update nothing in tests/ is written; a missing reference for the running driver makes the test skip (CTest SKIP_RETURN_CODE), not pass",
+  "tests/golden/README.md explains how to add and update references, and that an update needs a reason in its pull request",
+]
+out_of_scope = ["GPU goldens and the CI job (M1-29)"]
+verification = [
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L golden --output-on-failure",
+]
+
+[[tasks]]
+id = "M1-19"
+epic = "E1.4"
+title = "Vulkan device bootstrap, headless, with validation as test failure"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-02"]
+touches = ["libs/gpu/include/cs/gpu/device.hpp", "libs/gpu/src/device.cpp", "libs/gpu/tests/test_device.cpp", "libs/gpu/tests/main.cpp", ".claude/agents/gpu-reviewer.md", "tools/sanitizers/lsan.supp"]
+goal = "A Vulkan 1.3 device that runs with or without a window, chooses lavapipe or a real GPU, and turns every validation message into a failing test, so that synchronisation and lifetime bugs are caught where they happen."
+context = [
+  "docs/adr/0001-engine.md: Vulkan 1.3, volk, vk-bootstrap, VMA; validation on in debug and CI",
+  "vk-bootstrap: https://github.com/charles-lunarg/vk-bootstrap ; VMA: https://gpuopen.com/vulkan-memory-allocator/",
+  "CLAUDE.md: the gpu-reviewer subagent is created with this task",
+]
+acceptance = [
+  "Creates an instance and device through volk and vk-bootstrap with Vulkan 1.3, dynamic rendering, synchronization2 and buffer device address, plus a VMA allocator; works headless or with a surface supplied later, enabling VK_KHR_swapchain when created for presentation",
+  "CS_GPU_DEVICE (a substring of the device name) chooses the device; a device report gives name, driver, API version and whether VK_KHR_ray_query is available",
+  "In tests, any validation error or warning fails the running test with the message; a test makes a known-invalid call and asserts that the hook fired",
+  "[gpu] tests pass on lavapipe (VK_DRIVER_FILES set to lavapipe's ICD) and on the Radeon 780M; with no Vulkan device present they skip rather than fail",
+  ".claude/agents/gpu-reviewer.md exists: reads code and runs tests without editing; reviews synchronisation, resource lifetimes, memory use and validation cleanliness; its description says to use it on every pull request touching libs/gpu",
+  "Under the debug preset, LeakSanitizer reports from inside the Vulkan loader, Mesa or LLVM are suppressed in tools/sanitizers/lsan.supp, each entry with a comment; nothing in this repository's code is suppressed",
+]
+out_of_scope = ["Pipelines and shaders (M1-20)", "Swapchains (M1-23)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-20"
+epic = "E1.4"
+title = "Slang shaders at build time and an offscreen triangle"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-19"]
+touches = ["cmake/CsShaders.cmake", "libs/gpu/CMakeLists.txt", "libs/gpu/shaders/", "libs/gpu/include/cs/gpu/pipeline.hpp", "libs/gpu/src/pipeline.cpp", "libs/gpu/include/cs/gpu/offscreen.hpp", "libs/gpu/src/offscreen.cpp", "libs/gpu/tests/test_offscreen.cpp"]
+goal = "Shaders written in Slang, compiled and embedded at build time, and the first pixels: a triangle rendered offscreen and read back into a cs::Image."
+context = [
+  "docs/adr/0001-engine.md: Slang pinned, compiled at build time, never at run time",
+  "Slang user guide: https://shader-slang.org/slang/user-guide/",
+  "Dynamic rendering: VK_KHR_dynamic_rendering (core in 1.3)",
+]
+acceptance = [
+  "Every libs/gpu/shaders/*.slang is compiled to SPIR-V by the pinned slangc at build time (found by glob) and embedded in the library; a syntax error fails the build",
+  "An offscreen target (RGBA16F colour and depth) renders with dynamic rendering and reads back to cs::Image",
+  "[gpu] A 64x64 red triangle: the centre pixel is exactly (1, 0, 0) and the corners (0, 0, 0); validation clean on lavapipe and the 780M",
+  "`ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["The render world on the GPU (M1-21)", "Lighting (M1-22)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-21"
+epic = "E1.4"
+title = "Upload the render world: meshes, materials and textures"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-20", "M1-13", "M1-14"]
+touches = ["libs/gpu/include/cs/gpu/scene.hpp", "libs/gpu/src/scene.cpp", "libs/gpu/src/upload.cpp", "libs/gpu/tests/test_scene.cpp"]
+goal = "The render world on the GPU: geometry, per-instance data, materials and painting textures with full mip chains, uploaded through staging buffers and freed cleanly."
+context = [
+  "libs/world (M1-13), libs/assets (M1-14)",
+  "VMA usage patterns: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html",
+]
+acceptance = [
+  "A GPU scene built from a World: vertex and index buffers, per-instance transforms and material indices, a materials buffer, textures with full mip chains from assets, uploaded with one submission",
+  "[gpu] Uploading tests/scenes/skeleton: the vertex buffer read back equals the World's vertices exactly, and mip 0 of the painting texture read back equals the linear image within 1e-3",
+  "GPU memory in use is reported from VMA, and VMA reports zero allocations after the scene is destroyed; validation clean",
+  "`ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["Texture residency and budgets (M2-27)", "Incremental updates (M2-24)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-22"
+epic = "E1.4"
+title = "Standard tier: exact direct light from spotlights"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-21", "M1-06", "M1-11", "M1-15", "M1-34"]
+touches = ["libs/gpu/shaders/standard.slang", "libs/gpu/shaders/common/", "libs/gpu/include/cs/gpu/standard_tier.hpp", "libs/gpu/src/standard_tier.cpp", "libs/gpu/tests/test_standard_tier.cpp", "tests/integration/test_standard_vs_engine.cpp"]
+goal = "The Standard tier's first pass: every pixel lit exactly by every luminaire's candela distribution, tone mapped like the engine, with an illuminance output that proves the light is right."
+context = [
+  "docs/adr/0002-rendering-tiers.md: the Standard tier; accuracy tolerances",
+  "libs/light GenericSpot (M1-11); libs/core colour (M1-06)",
+  "Use the physics-reviewer and gpu-reviewer subagents before opening the pull request",
+]
+acceptance = [
+  "A forward pass shades Lambert surfaces with every luminaire: L = rho/pi * I(direction) * cos(theta) / d^2, without shadows, into linear radiance; a tone-mapping pass applies EV100 exposure, PBR Neutral and sRGB, and a test of patches of known luminance matches cs::pbr_neutral within 1/255",
+  "The spotlight profile in the shader matches light::GenericSpot at 100 directions within 1e-4",
+  "An illuminance output per pixel: [gpu][accuracy] in the inverse-square scene the floor under a 1000 cd light reads 250 lux within 1%; in the skeleton scene the painting centre reads within 2% of engine::lux_at's direct value (an integration test, since gpu may not depend on engine)",
+  "[gpu] The skeleton renders validation-clean on lavapipe and the 780M; a 256x144 render is attached to the pull request",
+  "`ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["Shadows (M2-26)", "Indirect light (M3)", "cs-render's standard tier and GPU goldens (M1-29)", "The swapchain (M1-23)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Attach the 256x144 render of the skeleton from the 780M: the spot's pool of light on the wall around the painting, no shadows yet."
+
+[[tasks]]
+id = "M1-23"
+epic = "E1.4"
+title = "Swapchain presenter for a window surface"
+area = "gpu"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-20"]
+touches = ["libs/gpu/include/cs/gpu/presenter.hpp", "libs/gpu/src/presenter.cpp", "libs/gpu/tests/test_presenter.cpp"]
+goal = "Present rendered frames to any window surface, recreating the swapchain on resize, without knowing which toolkit made the window."
+context = [
+  "docs/adr/0006-ui-and-interaction.md: the renderer owns its swapchain; Qt only supplies the surface",
+  "VK_EXT_headless_surface (supported by lavapipe) for tests",
+]
+acceptance = [
+  "A presenter takes a VkSurfaceKHR, creates the swapchain, recreates it on resize or VK_ERROR_OUT_OF_DATE_KHR, and presents an offscreen image (blit with conversion to the surface's sRGB format) with two frames in flight",
+  "[gpu] With a headless surface on lavapipe: 100 frames with 3 resizes between them, validation clean, and no Vulkan objects left at shutdown",
+  "`ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["The Qt window (M1-26)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-24"
+epic = "E1.5"
+title = "Orbit and walk camera controllers"
+area = "editor"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-13"]
+touches = ["libs/editor/include/cs/editor/camera_controller.hpp", "libs/editor/src/camera_controller.cpp", "libs/editor/tests/test_camera_controller.cpp"]
+goal = "Toolkit-free camera control: orbiting a target, and walking at eye height inside the room, driven by abstract input events so that it is tested without a window."
+context = [
+  "docs/adr/0006-ui-and-interaction.md, Interaction conventions: Views",
+  "The World's cameras and room bounds (M1-13)",
+]
+acceptance = [
+  "Controllers consume input events (mouse delta, wheel, key states, elapsed time) and produce a camera (position, orientation, field of view)",
+  "Walk: eye height from the project settings (1.60 m); holding forward for 1.0 s at 1.4 m/s moves 1.4 m within 1 mm; pitch is clamped to plus or minus 85 degrees; the eye stays at least 0.25 m from the room's walls",
+  "Orbit: dragging changes yaw and pitch around the target at a constant distance within 1e-6; each wheel notch zooms by 10%, down to 0.3 m",
+  "Switching from orbit to walk keeps the view direction",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Collision with free walls and openings (M2-14)", "Qt input wiring (M1-27)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-25"
+epic = "E1.5"
+title = "Commands and tools: new room, add a painting, light it"
+area = "editor"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-09", "M1-10"]
+touches = ["libs/editor/include/cs/editor/commands/", "libs/editor/src/commands/", "libs/editor/include/cs/editor/tool.hpp", "libs/editor/src/tool.cpp", "libs/editor/tests/test_commands.cpp", "libs/editor/tests/test_tool.cpp"]
+goal = "The first editor commands, written on the mutation API so that each is one undoable transaction (build a room, hang a work at the centre line, light it the way the conventions say), and the Tool interface that the wall and hanging tools of M2 implement."
+context = [
+  "docs/adr/0006-ui-and-interaction.md: centre line; CCI track distance (ceiling height - 1.6 m) * tan 30 degrees from the wall face; aim at 30 degrees from vertical by sliding along the track",
+  "docs/adr/0007-project-files-undo-exports.md: transactions",
+  "libs/geom wall_face_frame (M1-10)",
+]
+acceptance = [
+  "A Tool interface (toolkit-free input events in; transactions, a preview and guide descriptors out) and parse_typed_value, which turns text such as 'u=2.35', 'h=1.60' or '4.25' into a field and a value in metres",
+  "new_room(width, depth, height) creates a Room and four walls lettered A to D, in one transaction",
+  "add_work(image asset, width, height) creates a Work, an Exhibit, a box Framing and an OnWall placement at the centre of wall A on the project's centre line, in one transaction",
+  "add_spot_for(exhibit): a generic 800 lm spot (beam 15 degrees, field 25 degrees, full angles) on a ceiling track 1.097 m from the wall face for a 3.5 m ceiling (within 1 mm), slid along the track so that its aim at the centre of the work's face (stand-off included) is 30 degrees from vertical within 0.1 degree; for the skeleton that is 0.465 m along the track from the point opposite the work, within 1 mm",
+  "Each command undoes in one step, and the document after undo serialises identical to before",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Free walls (M2-02)", "Import dialogs (M2-11)", "Dim to target (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-26"
+epic = "E1.5"
+title = "Application shell with the Vulkan viewport"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-04", "M1-22", "M1-23", "M1-34"]
+touches = ["libs/ui/", "apps/curation/", "cmake/CsQt.cmake"]
+goal = "The desktop application: a Qt Widgets main window around the Vulkan viewport (as ADR 0011 decided), showing the Standard tier of a project, with features that register themselves so that UI tasks do not collide."
+context = [
+  "docs/adr/0006-ui-and-interaction.md and docs/adr/0011-qt-vulkan-viewport.md (M1-04)",
+  "libs/gpu presenter (M1-23) and Standard tier (M1-22)",
+  "Qt Test on the offscreen platform: https://doc.qt.io/qt-6/qtest-overview.html",
+]
+acceptance = [
+  "apps/curation opens a main window (File: New, Open folder, Save, Quit) hosting the viewport as ADR 0011 decided, showing the Standard tier of an opened project folder; resizing and moving between displays of different scale recreate the swapchain without validation messages",
+  "Every libs/ui/src/features/*.cpp is registered through cs_generate_registry (M1-34), so adding a feature never edits main_window.cpp; the File menu (file_menu.cpp) and an inspector dock that hosts pages registered by later features (inspector_host.cpp) are themselves features",
+  "[ui] An offscreen QTest opens tests/scenes/skeleton, checks the title and docks, and saves a screenshot of the widgets to build/<preset>/ui-out/",
+  "Without a window surface (the offscreen platform) the viewport renders into M1-20's offscreen target instead, so UI tests run headless; Qt is found at the version pinned in docs/dependencies.md",
+]
+out_of_scope = ["Commands and panels (M1-27)", "CI for the app (M1-31)", "Packaging (M4)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app",
+  "QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Run ./build/app/apps/curation/curation tests/scenes/skeleton (or /run) and attach a screenshot of the window."
+
+[[tasks]]
+id = "M1-27"
+epic = "E1.5"
+title = "Walking skeleton: build a room, hang a painting, light it, walk"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-26", "M1-24", "M1-25", "M1-15", "M1-17"]
+touches = ["libs/ui/src/features/skeleton_commands.cpp", "libs/ui/src/features/camera_input.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_walking_skeleton.cpp", ".claude/agents/ux-reviewer.md", "docs/product/screens/m1-walking-skeleton.png"]
+goal = "The walking skeleton a curator can see: build a room, hang a painting at its true size, light it, walk around it and read its lux, all in the app."
+context = [
+  "docs/product/blueprint.md, section 3: journeys J1 and J2 (their first steps)",
+  "libs/editor commands (M1-25) and camera controllers (M1-24); engine::lux_at (M1-15)",
+  "CLAUDE.md: the ux-reviewer subagent is created with this task",
+]
+acceptance = [
+  "Room > New room: width, depth and height fields (defaults 6, 4, 3.5 m) create the room",
+  "Works > Add painting: a file dialog and width and height fields hang the work on wall A at the centre line in a box frame; Lights > Add spot lights the work just added (selection arrives with M2-14)",
+  "Orbit by default; Tab toggles walk (W, A, S, D and mouse look with the cursor captured; Esc releases it)",
+  "A lux panel shows the work's mean direct and total lux from engine::work_lux_grid, computed on a worker thread and updated within 1 s of a change; [ui] an offscreen test runs the three commands and checks the panel's numbers equal cs-render's lux report for the saved project within 1%",
+  "docs/product/screens/m1-walking-skeleton.png (at most 300 KB) shows the result",
+  ".claude/agents/ux-reviewer.md exists: looks at screenshots of a UI change and checks them against the journeys of the blueprint; its description says to use it on every pull request that changes libs/ui",
+]
+out_of_scope = ["Selecting and moving works (M2-20)", "Saving as .curation (M2-25)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Use /run to build a room, add the test chart as a painting, add a spot, walk to it, and attach the screenshot."
+
+[[tasks]]
+id = "M1-28"
+epic = "E1.1"
+title = "cs-bench, the empty-room scene and the first baseline"
+area = "build"
+type = "test"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-22", "M1-33"]
+touches = ["apps/cs-bench/", "bench/scenes/empty-room/", "bench/baselines/"]
+goal = "Measure the budgets of the blueprint instead of hoping for them: a benchmark runner, the first benchmark scene, and the first baseline on the reference hardware."
+context = [
+  "docs/product/blueprint.md, section 6: budgets; section 9: Benchmarks",
+  "bench/budgets.json and scripts/perf-compare.py (M1-33)",
+  "Vulkan timestamp queries: https://docs.vulkan.org/samples/latest/samples/api/timestamp_queries/README.html",
+]
+acceptance = [
+  "`cs-bench <scene> --tier standard --size 1920x1080 --frames 600 --out <file>.json` renders a scripted camera path offscreen and writes the result schema of scripts/perf-compare.py: frame time p50, p95 and p99 (GPU timestamps and CPU), GPU memory in use, peak resident memory, load time to first frame, device, driver and git revision",
+  "`cs-bench --device-report` prints the GPU, driver and API version and a machine slug (for example radeon-780m) used to name baselines",
+  "bench/scenes/empty-room/ exists; [gpu] a 10-frame 320x180 run passes in ctest on lavapipe",
+  "Baselines are one file per machine, scene and tier: bench/baselines/<machine>/<scene>-<tier>.json. On the 780M, empty-room at 1080p has p95 at most 8 ms, saved as bench/baselines/radeon-780m/empty-room-standard.json (the PR includes the perf-compare table)",
+]
+out_of_scope = ["gallery-50 (M2-29)", "Lux, bake and still benchmarks (M2-28, M3)"]
+verification = [
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L bench",
+  "./build/release/apps/cs-bench/cs-bench bench/scenes/empty-room --tier standard --size 1920x1080 --frames 600 --out build/bench/empty-room.json && python3 scripts/perf-compare.py build/bench/empty-room.json --budgets bench/budgets.json --baseline bench/baselines/radeon-780m/empty-room-standard.json --milestone M1",
+]
+
+[[tasks]]
+id = "M1-29"
+epic = "E1.4"
+title = "GPU and golden tests on lavapipe in CI"
+area = "build"
+type = "test"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-03", "M1-18", "M1-22"]
+touches = [".github/workflows/gpu.yml", "apps/cs-render/", "tests/golden/skeleton-standard/"]
+goal = "Every pull request runs the GPU tests and golden images on software Vulkan, with failed goldens uploading their difference images."
+context = [
+  "docs/adr/0010-gpu-tests-in-ci.md (M1-03): the workflow to use",
+  "tests/golden/README.md (M1-18)",
+]
+acceptance = [
+  "`cs-render --tier standard` renders through the Standard tier offscreen, and `cs-render --device-report` prints the Vulkan device report (used in bug reports)",
+  "tests/golden/skeleton-standard/ has references for lavapipe and the 780M (radv) and passes on both; against the engine's direct-only render of the same view, mean FLIP is at most 0.05",
+  ".github/workflows/gpu.yml installs the pinned Mesa lavapipe and validation layers from ADR 0010 and runs `ctest -L gpu` and `ctest -L golden` on every pull request; failed goldens upload build/*/golden-out/ as an artefact; the run time is stated in the PR",
+]
+out_of_scope = ["Hardware runners (optional, later)", "Benchmarks in CI (M2-29)"]
+verification = [
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L golden",
+  "The gpu workflow passes on the pull request",
+]
+
+[[tasks]]
+id = "M1-30"
+epic = "E1.1"
+title = "CI: binary caches and the full compiler matrix"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-02"]
+touches = [".github/workflows/ci.yml"]
+goal = "CI that is fast enough to run on every push and strict enough to catch what one compiler misses: cached dependencies and objects, and GCC, Clang with sanitizers, and MSVC, all with warnings as errors."
+context = [
+  "vcpkg binary caching with the files provider: https://learn.microsoft.com/vcpkg/consume/binary-caching-default",
+  "The presets of M1-01; the checks job (format, scripts, task file) already in ci.yml",
+]
+acceptance = [
+  "vcpkg binary packages are cached (files provider under actions/cache, keyed on vcpkg.json, the baseline and the triplet) and compiler output through ccache",
+  "Jobs: Linux GCC release, Linux Clang with the debug preset (AddressSanitizer and UndefinedBehaviorSanitizer), Windows MSVC release; all with CS_WARNINGS_AS_ERRORS on; each runs its tests; the checks job also runs `python3 scripts/check-dependencies.py`",
+  "A second run with no changes configures and builds Linux debug in under 5 minutes (the PR states the first and second times)",
+]
+out_of_scope = ["GPU tests (M1-29)", "Qt and the app (M1-31)"]
+verification = [
+  "The CI run on the pull request: every job green, and the timings in the PR",
+]
+
+[[tasks]]
+id = "M1-31"
+epic = "E1.5"
+title = "The app in CI: builds on Windows and Linux, UI tests on lavapipe"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-26", "M1-29", "M1-30"]
+touches = [".github/workflows/ci.yml", ".github/workflows/gpu.yml"]
+goal = "Every pull request builds the Qt application on both platforms and runs its UI tests headless, so UI regressions are caught like any other."
+context = [
+  "docs/dependencies.md: the pinned Qt version; docs/adr/0011-qt-vulkan-viewport.md (M1-04): how Qt is installed in CI",
+  "docs/adr/0010-gpu-tests-in-ci.md (M1-03): lavapipe in the gpu workflow",
+]
+acceptance = [
+  "Qt is installed at the pinned version and cached; ci.yml builds the app preset on Windows and Linux",
+  "The gpu workflow runs `ctest --preset app -L ui` with QT_QPA_PLATFORM=offscreen on lavapipe and uploads the UI tests' screenshots as an artefact",
+  "The PR states the added CI time",
+]
+out_of_scope = ["Packaging (M4)"]
+verification = [
+  "The CI run on the pull request: app builds on both platforms, UI tests green, screenshots attached",
+]
+
+[[tasks]]
+id = "M1-32"
+epic = "E1.3"
+title = "The skeleton test scene and its test chart"
+area = "doc"
+type = "test"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-08"]
+touches = ["tests/scenes/skeleton/", "tools/test-chart/", "libs/doc/tests/test_skeleton_scene.cpp"]
+goal = "The small scene most of milestone 1 is tested on: a room, one framed work with a chart whose patches and orientation can be checked in any render, and one spotlight."
+context = [
+  "libs/doc project folders (M1-08)",
+  "docs/adr/0006-ui-and-interaction.md: CCI track distance and aiming",
+]
+acceptance = [
+  "tools/test-chart/make_test_chart.py (Python standard library only) writes a PNG of at most 50 KB: a 4 x 6 grid of patches with documented sRGB values and an orientation mark in the top-left; `--check` verifies a committed chart byte for byte",
+  "tests/scenes/skeleton/ is a project folder: a 6 x 4 x 3.5 m room; one work 0.73 m wide and 0.92 m high on wall A at u = 3.0 m and centre height 1.50 m, stand-off 0.04 m, in a box frame, showing the chart; one generic spot (800 lm, beam 15 degrees, field 25 degrees, full angles) on a ceiling track 1.097 m from the wall face, aimed at the work at 30 degrees from vertical; one viewpoint at eye height 3 m from the wall",
+  "The scene loads with doc::load_project_folder and saves back byte-identical (test_skeleton_scene)",
+]
+out_of_scope = ["Rendering it (M1-17, M1-22)"]
+verification = [
+  "python3 tools/test-chart/make_test_chart.py --check tests/scenes/skeleton/assets/",
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+]
+
+[[tasks]]
+id = "M1-33"
+epic = "E1.1"
+title = "Budgets as data and the benchmark comparison script"
+area = "build"
+type = "test"
+size = "S"
+owner = "agent"
+blocked_by = []
+touches = ["bench/budgets.json", "scripts/perf-compare.py", "scripts/tests/test_perf_compare.py"]
+goal = "The performance budgets of the blueprint as data, and a script that compares a benchmark result with them and with the machine's baseline, so every later benchmark has a pass or fail."
+context = [
+  "docs/product/blueprint.md, section 6: every budget, its scene, tier and reference hardware",
+  "docs/roadmap.md, Every budget has a benchmark: when each is first measured",
+]
+acceptance = [
+  "bench/budgets.json holds every budget of blueprint section 6: metric, limit, unit, scene, tier, reference hardware and enforced_from (the milestone from which exceeding it fails)",
+  "scripts/perf-compare.py documents the result schema (the one cs-bench writes), prints a table (metric, budget, baseline, now, change, verdict) and exits 1 if a budget enforced at or before --milestone is exceeded, or a metric is more than 10% worse than --baseline; budgets not yet enforced are reported as such",
+  "Unit tests (standard library only) cover pass, fail, not yet enforced, regression and a missing baseline; `python3 -m unittest discover -s scripts/tests` passes",
+]
+out_of_scope = ["cs-bench itself (M1-28)"]
+verification = [
+  "python3 -m unittest discover -s scripts/tests",
+  "python3 scripts/perf-compare.py --help",
+]
+
+[[tasks]]
+id = "M1-34"
+epic = "E1.1"
+title = "Generated registries and the integration-test executable"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["cmake/CsRegistry.cmake", "cmake/CsIntegration.cmake", "tests/integration/"]
+goal = "Two pieces of build plumbing that keep parallel work conflict-free and module boundaries intact: lists that grow by adding a file, and one place for tests that compare modules."
+context = [
+  "docs/product/blueprint.md, section 7: Built for parallel work; module dependency rules",
+  "CLAUDE.md: never add a dependency edge to make a test compile",
+]
+acceptance = [
+  "cs_generate_registry(<module> <dir>) generates a source file that declares and calls one registration function per file in libs/<m>/src/<dir>/ (the function name derived from the file name); a fixture under cmake/tests/ proves that adding a file adds a call with no other edit",
+  "tests/integration/ builds cs_integration_tests (label integration), the one test executable allowed to link every module, for checks that compare modules (the GPU tiers against the engine, editor cameras rendered by the GPU); a placeholder test passes",
+]
+out_of_scope = ["Any real registry or integration test (the tasks that need them)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L integration && ctest --preset debug -R cmake_registry",
+]
+
+# =============================================================================================
+# M2 Build and hang
+# =============================================================================================
+
+[[tasks]]
+id = "M2-01"
+epic = "E2.1"
+title = "Walls with thickness, joined corners and openings"
+area = "geom"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-10"]
+touches = ["libs/geom/include/cs/geom/walls.hpp", "libs/geom/src/walls.cpp", "libs/geom/tests/test_walls.cpp"]
+goal = "Meshes for free-standing and connected walls of any length and thickness, joined cleanly at corners, with doorways and passages cut through them."
+context = [
+  "docs/adr/0008-exhibit-data-model.md: Wall and Opening components",
+  "libs/geom room_mesh and wall_face_frame (M1-10)",
+]
+acceptance = [
+  "A 4 m long, 3 m high, 0.1 m thick wall gives two faces of 12 m^2 each; with a 1 x 2.1 m opening at u = 1.5 each face is 9.9 m^2 and the reveal faces exist",
+  "Two walls sharing an endpoint at 90 degrees are mitred: no gap and no overlap (the summed volume equals the analytic volume within 1e-9 m^3); the same at 45 and 135 degrees",
+  "The six walls of an L-shaped room form a closed outline; each wall mesh is closed",
+  "An opening outside its wall or overlapping another opening is rejected with a message",
+  "`ctest --preset debug -L geom` passes",
+]
+out_of_scope = ["Curved walls (after 1.0)", "The drawing tool (M2-02)", "Windows with glazing (1.0)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L geom",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-02"
+epic = "E2.1"
+title = "Wall tool: draw walls with typed lengths and snapping"
+area = "editor"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-25"]
+touches = ["libs/editor/include/cs/editor/tools/wall_tool.hpp", "libs/editor/src/tools/wall_tool.cpp", "libs/editor/tests/test_wall_tool.cpp"]
+goal = "Draw walls as a curator would from a plan: point to point, typing lengths, snapping to right angles and existing endpoints, each wall one undoable step."
+context = [
+  "docs/adr/0006-ui-and-interaction.md, Building: a measurements box as in SketchUp, right-angle and endpoint snapping, a 1 cm grid, walls lettered A, B, C",
+  "libs/doc transactions (M1-09); the Tool interface and parse_typed_value (M1-25)",
+]
+acceptance = [
+  "A toolkit-free state machine: click to start, click to end; typing 4.25 and Enter after the first click makes a 4.25 m wall along the current direction",
+  "Endpoints snap to existing endpoints within 15 cm and directions to multiples of 90 degrees from the previous wall within 5 degrees; otherwise positions snap to a 1 cm grid",
+  "Closing a loop creates a Room outline; walls are lettered A, B, C in creation order; each wall is one transaction",
+  "A scripted test draws an L-shaped room of six walls with typed lengths; every corner is within 0.1 mm of its expected position",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Plan-view UI (M2-04)", "Openings (M2-03)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-03"
+epic = "E2.1"
+title = "Openings and wall finishes"
+area = "editor"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-25", "M2-06"]
+touches = ["libs/editor/include/cs/editor/commands/openings.hpp", "libs/editor/src/commands/openings.cpp", "libs/editor/include/cs/editor/commands/finishes.hpp", "libs/editor/src/commands/finishes.cpp", "libs/editor/tests/test_openings.cpp", "data/finishes/wall-"]
+goal = "Doorways and passages on walls, and paint colours on wall faces from the built-in finishes, as commands."
+context = [
+  "docs/adr/0008-exhibit-data-model.md: Opening, Wall face finishes",
+  "libs/doc library loader (M2-06)",
+]
+acceptance = [
+  "add_opening(wall, u, width, height, sill, kind) succeeds inside the wall and returns a message when the opening leaves the wall or overlaps another; moving a wall's end keeps its openings' u",
+  "set_face_finish(wall, face, finish) uses a finish from data/finishes/; at least eight wall finishes ship (white, warm grey, dark grey, deep red, Prussian blue, sage green, black, plaster), each a file data/finishes/wall-<name>.json with linear albedo and roughness",
+  "Each command is one transaction",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["The UI (M2-04)", "Floor finishes (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-04"
+epic = "E2.1"
+title = "Plan view and wall drawing in the app"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-02", "M2-18", "M2-31", "M1-27"]
+touches = ["libs/ui/src/features/walls.cpp", "libs/ui/src/widgets/measurements_box.cpp", "libs/ui/include/cs/ui/widgets/measurements_box.hpp", "libs/ui/tests/test_walls_ui.cpp", "docs/product/screens/m2-walls.png"]
+goal = "A curator draws a room in plan view with typed lengths, entirely in the app, and walks through it."
+context = [
+  "docs/product/blueprint.md, journey J1",
+  "libs/editor wall tool (M2-02) and plan camera (M2-18); walls in the render world (M2-31)",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "A Wall tool in the toolbar works in plan view; a measurements box accepts typed lengths while drawing; dimensions are shown on each wall",
+  "[ui] An offscreen test draws an L-shaped room through synthetic mouse and key events and finds six walls with the expected lengths within 1 mm",
+  "docs/product/screens/m2-walls.png shows the plan view with dimensions",
+]
+out_of_scope = ["Inspector, doorways and finishes (M2-34)", "Floor-plan underlay (1.0)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Use /run to draw an L-shaped room, walk through it, and attach the screenshots."
+
+[[tasks]]
+id = "M2-05"
+epic = "E2.2"
+title = "Parametric frames from a profile"
+area = "geom"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-10"]
+touches = ["libs/geom/include/cs/geom/frame.hpp", "libs/geom/src/frame.cpp", "libs/geom/tests/test_frame.cpp"]
+goal = "Any frame style fitted to any work: a 2D moulding profile swept around the work with mitred corners, so that one style serves every size and aspect ratio."
+context = [
+  "docs/adr/0003-painting-materials.md, Frames: member width, depth, rebate, mitred corners",
+  "libs/geom box_frame (M1-10), which this generalises",
+]
+acceptance = [
+  "frame_from_profile(profile, work size, member width, depth, rebate): a closed 2D profile swept around the rectangle with mitred corners",
+  "For a 73 x 92 cm work and a 5 mm rebate, the sight opening is 72 x 91 cm within 1 mm, for each of three test profiles",
+  "Each mesh is closed with outward normals; UVs run along the moulding (u in metres of arc length)",
+  "Widening the member from 6 to 10 cm grows the outer size by 8 cm on each axis within 1 mm",
+  "`ctest --preset debug -L geom` passes",
+]
+out_of_scope = ["Round and oval works (after 1.0)", "Ornament decals (1.0)", "Mats and glazing (M2-07)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L geom",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-06"
+epic = "E2.2"
+title = "Built-in library: frame styles and finishes as data files"
+area = "doc"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-08", "M1-32"]
+touches = ["libs/doc/include/cs/doc/library.hpp", "libs/doc/src/library.cpp", "libs/doc/tests/test_library.cpp", "data/frames/", "data/finishes/frame-", "libs/doc/src/project_io.cpp", "tests/scenes/skeleton/project.json"]
+goal = "Library definitions as one data file per item, discovered at run time, so that adding a frame style or finish is a new file rather than a code change; and the six MVP frame styles."
+context = [
+  "docs/adr/0008-exhibit-data-model.md, Library definitions: a project stores copies of the definitions it uses",
+  "docs/adr/0003-painting-materials.md, Frames: the six MVP styles and their dimensions",
+]
+acceptance = [
+  "load_library(dir) reads every data/frames/*.json and data/finishes/*.json, validating each with messages that name the file and JSON path",
+  "Six frame styles ship (gilt cassetta, Dutch ebonised reverse, nineteenth-century hollow gilt, modern oak strip, floater, works on paper with mat and anti-reflective glass), each with profile points, member width, depth, rebate and a finish; their frame finishes ship as data/finishes/frame-<name>.json",
+  "A project stores copies of the definitions it uses: saving and loading with an empty built-in library gives the same frames",
+  "A test adds a style file to a temporary library directory and finds it without code changes",
+  "`ctest --preset debug -L doc` passes",
+]
+out_of_scope = ["Fixture types (M3)", "Frame geometry (M2-05)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-07"
+epic = "E2.2"
+title = "Mats and glazing panes"
+area = "geom"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-05"]
+touches = ["libs/geom/include/cs/geom/mat.hpp", "libs/geom/src/mat.cpp", "libs/geom/tests/test_mat.cpp"]
+goal = "The mat (passe-partout) and the glazing pane that works on paper need, sized from the work."
+context = [
+  "docs/adr/0003-painting-materials.md, Frames: mat border 4 to 10 cm, bottom 0.6 to 2.5 cm wider, window overlapping the work by 3 to 6 mm",
+]
+acceptance = [
+  "mat(work width and height, border, bottom extra, overlap): the window is the work minus twice the overlap on each axis; the outer size is the window plus twice the border, plus the bottom extra on the height; a 45 degree bevel on the window edge. For a work 0.73 m wide and 0.92 m high, overlap 4 mm, border 8 cm and bottom extra 1.5 cm: window 0.722 x 0.912 m and outer 0.882 x 1.087 m, each within 0.5 mm. The frame's sight opening is then sized to the mat's outer size",
+  "glazing_pane(opening): a 2 mm pane the size of the frame's opening plus its rebate, in front of the mat",
+  "Meshes are closed (geom::is_closed)",
+  "`ctest --preset debug -L geom` passes",
+]
+out_of_scope = ["Glazing's optical behaviour (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L geom",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-08"
+epic = "E2.2"
+title = "Frames, mats and glazing in the render world"
+area = "world"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-05", "M2-06", "M2-07", "M1-13", "M2-31"]
+touches = ["libs/world/src/compile.cpp", "libs/world/src/exhibits.cpp", "libs/world/tests/test_exhibits.cpp"]
+goal = "Exhibits appear in the render world with the frame style, mat and glazing their Framing component names, so every renderer shows them."
+context = [
+  "libs/world compile (M1-13); libs/geom frames and mats (M2-05, M2-07); libs/doc library (M2-06)",
+]
+acceptance = [
+  "An exhibit compiles to its painting, frame from its style's profile, and when the style has them a mat and a glazing pane flagged as glazing",
+  "Compiling the skeleton (a work 0.73 m wide and 0.92 m high) once per style: the four moulding styles show a 0.72 x 0.91 m sight opening (5 mm rebate), the floater a 0.75 x 0.94 m opening (a 1 cm gap all round), and the works-on-paper style a 0.722 x 0.912 m mat window (4 mm overlap), each within 1 mm; an exhibit compiles to 2 to 4 instances",
+  "`ctest --preset debug -L world` passes",
+]
+out_of_scope = ["Glazing's appearance (M3)", "Incremental updates (M2-24)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L world",
+  "cmake --preset release && cmake --build --preset release && ./build/release/apps/cs-render/cs-render tests/scenes/skeleton --tier path --size 256x144 --spp 64 --seed 1 --out build/out/frames",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Attach renders of the skeleton work in each of the six styles (cs-render, path tier)."
+
+[[tasks]]
+id = "M2-09"
+epic = "E2.3"
+title = "Colour-managed import: ICC profiles and 16-bit images"
+area = "assets"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-14", "M1-02"]
+touches = ["libs/assets/include/cs/assets/import.hpp", "libs/assets/src/import.cpp", "libs/assets/src/icc.cpp", "libs/assets/tests/test_import_colour.cpp", "libs/assets/tests/data/icc/"]
+goal = "Images from museums and photographers arrive in the colour they were made in: embedded ICC profiles in PNG and JPEG honoured, and 16-bit images kept at full precision."
+context = [
+  "docs/adr/0004-catalogue.md, Pipeline step 5: convert to linear colour from the embedded ICC profile",
+  "Little CMS: https://www.littlecms.com/",
+]
+acceptance = [
+  "Embedded ICC profiles in PNG and JPEG (sRGB, Adobe RGB, Display P3, ProPhoto) convert to linear Rec. 709: an Adobe RGB (0, 255, 0) pixel matches lcms2's reference transform within 1e-3; images without a profile are treated as sRGB; out-of-gamut values are clamped at 0 and the clamp is counted in the import report",
+  "16-bit PNG keeps its precision: a 16-bit ramp survives the import with no two neighbouring values merged",
+  "Test images in libs/assets/tests/data/icc/ total at most 60 KB",
+  "`ctest --preset debug -L assets` passes; /security-review run on the ICC path and answered in the PR",
+]
+out_of_scope = ["TIFF and fuzz targets (M2-32)", "KTX2 encoding (M4)", "The import dialog (M2-11)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L assets",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-10"
+epic = "E2.3"
+title = "Parse dimensions and media from museum text"
+area = "editor"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/editor/include/cs/editor/parse_text.hpp", "libs/editor/src/parse_text.cpp", "libs/editor/tests/test_parse_text.cpp", "libs/editor/tests/data/museum_strings.toml", "data/presets/"]
+goal = "Turn the dimension and medium lines curators paste from collection records into a true size and a material preset, so that imports are prefilled."
+context = [
+  "docs/adr/0004-catalogue.md, known traps in museum data (framed and unframed sizes, inches first, sheet and image sizes)",
+  "docs/adr/0003-painting-materials.md: the twelve presets",
+]
+acceptance = [
+  "parse_dimensions over at least 40 committed real-world strings (styles of the Met, Cleveland, NGA, SMK and auction catalogues: '73 x 92 cm', '28 3/4 x 36 1/4 in. (73 x 92 cm)', 'H. 73 cm; W. 92 cm', 'framed: 95 x 114 cm', 'sheet: 30 x 40 cm; image: 25 x 35 cm') returns height and width in mm (museum strings give height first), which surface was measured and a confidence; every expected value matches",
+  "parse_medium maps at least 30 committed medium lines to preset ids (oil on canvas, tempera on panel, watercolour, gouache, pastel, ink, graphite, etching and so on); unknown text gives 'unknown' with low confidence",
+  "data/presets/<id>.json holds the twelve presets of ADR 0003 with their default finish, glazing and sensitivity class (material parameters are added in M3); parse_medium returns these ids",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["The import dialog (M2-11)", "Checklists (M2-12)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-11"
+epic = "E2.3"
+title = "Import dialog: four questions and the resolution warning"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-09", "M2-10", "M1-27", "M2-14"]
+touches = ["libs/ui/src/features/import_image.cpp", "libs/ui/src/features/import_dialog.cpp", "libs/ui/tests/test_import_ui.cpp", "docs/product/screens/m2-import.png"]
+goal = "Journey J3 in the app: drop an image on a wall, answer four prefilled questions, and the work hangs at its true size with a material that follows from the answers."
+context = [
+  "docs/product/blueprint.md, journey J3",
+  "docs/adr/0003-painting-materials.md, Import: four questions; docs/adr/0005-machine-learning.md: the resolution warning",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "Dropping an image file on a wall, or File > Import image, opens a dialog with true size (filled by parse_dimensions from pasted text), medium preset (from the medium text), finish and glazing (defaulted by preset)",
+  "The dialog says how close a visitor can stand before the image looks soft ('Sharp from about 0.7 m') and warns below 1 m",
+  "OK hangs the work at the drop point on the centre line in one transaction",
+  "[ui] An offscreen test imports a test image with pasted text '28 3/4 x 36 1/4 in. (73 x 92 cm)' and finds a Work 730 mm high and 920 mm wide",
+  "docs/product/screens/m2-import.png shows the dialog",
+]
+out_of_scope = ["Material appearance of presets (M3)", "Checklists (M2-12, M2-13)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-12"
+epic = "E2.3"
+title = "A fuzzed CSV reader for checklists"
+area = "editor"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["libs/editor/include/cs/editor/csv.hpp", "libs/editor/src/csv.cpp", "libs/editor/tests/test_csv.cpp", "libs/editor/fuzz/fuzz_csv.cpp"]
+goal = "Read the CSV files collection systems export, robustly and safely, as the first half of checklist import."
+context = [
+  "RFC 4180: https://www.rfc-editor.org/rfc/rfc4180",
+  "CLAUDE.md: parsers get a fuzz target and /security-review",
+]
+acceptance = [
+  "read_csv(bytes) handles RFC 4180 quoting and embedded newlines, a UTF-8 byte-order mark, CRLF and LF, and detects a comma or semicolon delimiter from the header line",
+  "Invalid UTF-8, unterminated quotes and ragged rows produce errors that name the line; limits of 10,000 rows, 200 columns and 1 MB per field are enforced",
+  "A libFuzzer target runs 60 s without findings; `ctest --preset debug -L editor` passes; /security-review run and answered in the PR",
+]
+out_of_scope = ["Mapping columns to works (M2-33)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "cmake --preset fuzz && cmake --build --preset fuzz && ./build/fuzz/libs/editor/fuzz_csv -max_total_time=60",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-13"
+epic = "E2.3"
+title = "Checklist panel"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-33", "M2-11"]
+touches = ["libs/ui/src/features/checklist_panel.cpp", "libs/ui/tests/test_checklist_ui.cpp", "docs/product/screens/m2-checklist.png"]
+goal = "The checklist as a table beside the viewport: which works are placed, which are not, and dragging a row onto a wall hangs it."
+context = [
+  "libs/editor checklist import (M2-12)",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "A dock with the works (number, title, artist, size, placed or not); an Import checklist action",
+  "Dragging a row onto a wall face hangs the work at the drop point on the centre line; selection in the table and the viewport stay in step through editor::Selection",
+  "[ui] An offscreen test imports the 40-row sample and hangs row 1 by a synthetic drag",
+  "docs/product/screens/m2-checklist.png shows the panel",
+]
+out_of_scope = ["Conservation columns (M3)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-14"
+epic = "E2.4"
+title = "Picking and walk collision through scene queries"
+area = "editor"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-15", "M1-24", "M2-31"]
+touches = ["libs/editor/include/cs/editor/picking.hpp", "libs/editor/src/picking.cpp", "libs/editor/src/camera_controller.cpp", "libs/editor/tests/test_picking.cpp", "libs/editor/include/cs/editor/selection.hpp", "libs/editor/src/selection.cpp", "libs/editor/tests/test_selection.cpp"]
+goal = "Know what is under the cursor, in the terms a curator works in (this work, wall A at 2.35 m), and walk through doorways but not through walls."
+context = [
+  "libs/engine scene queries (M1-15)",
+  "libs/editor camera controllers (M1-24)",
+]
+acceptance = [
+  "pick(ray) returns the entity, and for walls the face and the hit point in the face's (u, v)",
+  "In the skeleton, a ray at the painting's centre returns its exhibit; a ray at its frame returns the same exhibit; a ray at the wall returns wall A, face A, with u and v within 1 mm",
+  "Walking uses ray queries against all walls: the eye stays at least 0.25 m from every wall and passes through a 1 m wide opening",
+  "editor::Selection (the selected entities, with change notifications) is the one selection model the viewport and every panel share",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Moving things (M2-15)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-15"
+epic = "E2.4"
+title = "Move works along a wall, with centre-line snapping and typed values"
+area = "editor"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-14", "M1-25"]
+touches = ["libs/editor/include/cs/editor/tools/hang_tool.hpp", "libs/editor/src/tools/hang_tool.cpp", "libs/editor/tests/test_hang_tool.cpp"]
+goal = "The heart of hanging: drag a work along its wall with its centre snapping to the centre line, or type exact positions."
+context = [
+  "docs/adr/0006-ui-and-interaction.md, Hanging",
+  "docs/adr/0007-project-files-undo-exports.md: a whole drag is one transaction",
+  "The Tool interface and parse_typed_value (M1-25)",
+]
+acceptance = [
+  "Dragging a work on a face moves its (u, v) with the pointer; v snaps to the centre line (project value, or the wall's override) within 3 cm and the tool reports a guide",
+  "With the snap-off modifier held, no snapping happens",
+  "Typing u=2.35 or h=1.60 sets exact values",
+  "Dragging past a corner moves the work onto the adjacent face; works cannot move off the face or over an opening (clamped, with a warning)",
+  "A whole drag is one transaction: one undo restores the start",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Neighbour snapping (M2-16)", "The viewport UI (M2-20)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-16"
+epic = "E2.4"
+title = "Snapping to neighbours: equal gaps, alignment and margins"
+area = "editor"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-15"]
+touches = ["libs/editor/include/cs/editor/snapping.hpp", "libs/editor/src/snapping.cpp", "libs/editor/tests/test_snapping.cpp"]
+goal = "Snapping that knows how works are hung: equal gaps between neighbours, aligned centres, tops or bottoms, the wall's centre and margins from corners and doors, with guides to show why."
+context = [
+  "docs/adr/0006-ui-and-interaction.md, Hanging: snap targets, only the nearest candidates",
+]
+acceptance = [
+  "Candidates: equal gap to the left and right neighbours (with the guide label '= 42 cm = 42 cm'), alignment of centre, top or bottom with any work on the face, the face's centre, and a margin (30 cm by default) from corners and openings",
+  "Only the nearest candidate per axis within the threshold applies; guides are returned as descriptors (kind, endpoints, label) for the renderer",
+  "At least ten scripted scenarios give the expected snapped positions within 1 mm and the expected guides",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Drawing guides (M2-19)", "Group commands (M2-17)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-17"
+epic = "E2.4"
+title = "Group commands and overlap warnings"
+area = "editor"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-16"]
+touches = ["libs/editor/include/cs/editor/commands/arrange.hpp", "libs/editor/src/commands/arrange.cpp", "libs/editor/include/cs/editor/warnings.hpp", "libs/editor/src/warnings.cpp", "libs/editor/tests/test_arrange.cpp"]
+goal = "Arrange several works at once (distribute evenly, centre on the wall, align to the centre line) and flag works that overlap or crowd a doorway."
+context = [
+  "docs/adr/0006-ui-and-interaction.md, Hanging: group commands, overlaps flagged",
+]
+acceptance = [
+  "distribute_evenly(selection) keeps the outer two works and makes all gaps equal within 1 mm; centre_group_on_face; align_to_centre_line; align_tops and align_bottoms",
+  "warnings(document) lists pairs of works whose frames overlap and works closer than the margin to an opening",
+  "Each command is one transaction",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["Salon-hang layout (1.0)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-18"
+epic = "E2.4"
+title = "Plan and wall-elevation cameras"
+area = "editor"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-22", "M1-24", "M1-34"]
+touches = ["libs/editor/include/cs/editor/camera_views.hpp", "libs/editor/src/camera_views.cpp", "libs/editor/tests/test_camera_views.cpp", "tests/integration/test_elevation_view.cpp"]
+goal = "The two orthographic views hanging needs: a plan from above, and an elevation square to one wall face."
+context = [
+  "docs/adr/0006-ui-and-interaction.md, Views",
+  "World cameras support orthographic projection (M1-13)",
+]
+acceptance = [
+  "plan_camera(world) frames the whole floor with a 5% margin; elevation_camera(wall, face) looks square at the face and frames its full width and height with a 5% margin",
+  "[gpu] An integration test renders the skeleton's wall A in the Standard tier; the render in elevation has the painting's rectangle at the expected pixel rectangle within 1 px",
+  "`ctest --preset debug -L editor` and `-L integration` pass",
+]
+out_of_scope = ["Overlays (M2-19)", "UI (M2-20)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor && ctest --preset debug -L integration",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-19"
+epic = "E2.4"
+title = "Viewport overlays: lines, dimension marks, outlines and labels"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-22", "M1-29"]
+touches = ["libs/gpu/include/cs/gpu/overlay.hpp", "libs/gpu/src/overlay.cpp", "libs/gpu/src/font_atlas.cpp", "libs/gpu/shaders/overlay.slang", "libs/gpu/tests/test_overlay.cpp", "libs/gpu/tests/data/overlay/", "data/fonts/"]
+goal = "Draw editor information on top of the scene (snapping guides, dimension lines with their numbers, selection outlines, labels), legible at any display scale, as a pass of its own that the caller records after the tier."
+context = [
+  "docs/adr/0006-ui-and-interaction.md: overlays are drawn by the renderer, not by Qt",
+  "gpu may not depend on editor: the overlay API takes its own primitives, and libs/ui maps the editor's guide descriptors onto them",
+  "The UI font chosen and recorded in docs/dependencies.md by M1-02",
+]
+acceptance = [
+  "An OverlayPass that records after any tier into the same target, drawing world-space lines with constant pixel width, dimension marks, text from a signed-distance-field atlas built with stb_truetype from the bundled font, and selection outlines; the tiers' code is untouched",
+  "[gpu] Renders of a fixed set of primitives at display scales 1 and 2 match references in libs/gpu/tests/data/overlay/ (at most 40 KB each) with mean FLIP at most 0.02 on lavapipe, using core's image comparison; the label '42 cm' is legible in both (attach them to the PR)",
+  "`ctest --preset debug -L gpu` passes; validation clean",
+]
+out_of_scope = ["Mapping editor guides to primitives (M2-20)", "Gizmos for lights (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-20"
+epic = "E2.4"
+title = "Hanging in the viewport: drag with guides and the elevation view"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-15", "M2-16", "M2-18", "M2-19", "M1-27"]
+touches = ["libs/ui/src/features/hanging.cpp", "libs/ui/src/features/view_menu.cpp", "libs/ui/tests/test_hanging_ui.cpp", "docs/product/screens/m2-hanging.png"]
+goal = "Journey J1's hanging step in the app: select a work, drag it along its wall with guides, and switch to the wall elevation."
+context = [
+  "docs/product/blueprint.md, journey J1",
+  "libs/editor selection (M2-14), hang tool and snapping (M2-15, M2-16); cameras (M2-18); overlays (M2-19)",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "Clicking selects a work (editor Selection); dragging moves it along its wall with the editor's guides drawn through the overlay pass; typed values work while dragging",
+  "A View menu switches between orbit, walk, plan and the elevation of the selected wall",
+  "[ui] An offscreen test drags a work 50 cm to the right with synthetic events and finds u changed by 0.50 m within 1 cm and v on the centre line",
+  "docs/product/screens/m2-hanging.png shows the elevation view with guides during a drag",
+]
+out_of_scope = ["The work inspector and the Arrange menu (M2-35)", "Lighting tools (M3)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Use /run to hang three works on one wall in the elevation view, and attach the screenshot."
+
+[[tasks]]
+id = "M2-21"
+epic = "E2.5"
+title = "The .curation file: zip container with atomic save"
+area = "doc"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-09", "M1-02"]
+touches = ["libs/doc/include/cs/doc/container.hpp", "libs/doc/src/container.cpp", "libs/doc/tests/test_container.cpp", "libs/doc/fuzz/"]
+goal = "One file per project that a curator can email, saved so that a crash or full disk never destroys the previous version, and opened as untrusted input."
+context = [
+  "docs/adr/0007-project-files-undo-exports.md, The file",
+  "miniz: https://github.com/richgel999/miniz",
+  "CLAUDE.md: parsers get a fuzz target and /security-review",
+]
+acceptance = [
+  "save_project(document, Name.curation) writes a zip of manifest.json, project.json, assets/<sha256>.<ext> and thumbnails/; open_project reads the zip or the folder form",
+  "Zip and folder forms round-trip with project.json byte-identical; imported assets are copied once per content hash",
+  "Saving writes Name.curation.tmp, flushes, renames over the original and keeps the previous file as Name.curation.bak; a test that stops after writing the temporary file finds the original intact",
+  "Entries with absolute paths or '..', more than 10,000 entries, or more than 4 GB uncompressed are refused with a message",
+  "A libFuzzer target runs 60 s without findings; `ctest --preset debug -L doc` passes; /security-review run and answered in the PR",
+]
+out_of_scope = ["Migrations (M2-22)", "The journal (M2-23)", "Menus (M2-25)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "cmake --preset fuzz && cmake --build --preset fuzz && ./build/fuzz/libs/doc/fuzz_container -max_total_time=60",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-22"
+epic = "E2.5"
+title = "Schema versions and migrations"
+area = "doc"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-06", "M1-34", "M1-02"]
+touches = ["libs/doc/include/cs/doc/migrate.hpp", "libs/doc/src/migrate.cpp", "libs/doc/src/migrations/", "libs/doc/CMakeLists.txt", "libs/doc/tests/test_migrate.cpp", "libs/doc/tests/data/migrations/", "libs/doc/src/project_io.cpp"]
+goal = "Every future change to the file format arrives with a migration, one file each, tested against golden inputs and outputs, so that old projects always open."
+context = [
+  "docs/adr/0007-project-files-undo-exports.md, Versioning",
+]
+acceptance = [
+  "Migrations are pure JSON-to-JSON functions, one per file in libs/doc/src/migrations/, registered with cs_generate_registry (M1-34), so adding one edits no shared list",
+  "Loading runs every migration from the file's version to the current one; a test migration from a v0 fixture to v1 has golden input and output files",
+  "A file with a newer schemaVersion opens read-only with a message naming both versions; unknown fields survive a load and save",
+  "`ctest --preset debug -L doc` passes",
+]
+out_of_scope = ["Real schema changes (none yet)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-23"
+epic = "E2.5"
+title = "Autosave journal and crash recovery"
+area = "doc"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-09", "M2-21"]
+touches = ["libs/doc/include/cs/doc/journal.hpp", "libs/doc/src/journal.cpp", "libs/doc/tests/test_journal.cpp"]
+goal = "No lost work: every committed change is journalled, and after a crash the project comes back exactly as it was at the last complete change."
+context = [
+  "docs/adr/0007-project-files-undo-exports.md, Autosave and recovery",
+]
+acceptance = [
+  "While a project is open there is a lock file and a journal (one JSON line per committed transaction) in the app data folder, with a full snapshot every 5 minutes or 200 transactions",
+  "recover(lock) replays the snapshot and journal: after 500 random transactions and a simulated crash at random points (including a torn last line), the recovered document serialises identical to the state after the last complete line",
+  "Autosave never writes to the user's file; a clean save or close removes the journal",
+  "`ctest --preset debug -L doc` passes",
+]
+out_of_scope = ["The recovery dialog (M2-25)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-24"
+epic = "E2.6"
+title = "Incremental render-world updates from change lists"
+area = "world"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-09", "M2-08"]
+touches = ["libs/world/include/cs/world/update.hpp", "libs/world/src/update.cpp", "libs/world/tests/test_update.cpp"]
+goal = "Edits update only what they change in the render world, so a drag stays smooth in a 50-work gallery and the engine knows which lux readings to redo."
+context = [
+  "docs/product/blueprint.md, section 7: How an edit flows",
+  "docs/adr/0008-exhibit-data-model.md: a test compares incremental updates with a full rebuild",
+]
+acceptance = [
+  "apply(change list) updates only the affected instances, meshes and lights, and increments the world's revision",
+  "Property test with a fixed seed: 500 random transactions applied incrementally give a world equal to a full compile",
+  "Moving one work rebuilds only that exhibit's 2 to 4 instances (counted in the test)",
+  "`ctest --preset debug -L world` passes",
+]
+out_of_scope = ["GPU-side updates beyond re-uploading changed instances (M2-27)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L world",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-25"
+epic = "E2.5"
+title = "Save, open, recent files, undo, redo and recovery in the app"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-21", "M2-23", "M1-27"]
+touches = ["libs/ui/src/features/project_menu.cpp", "libs/ui/src/features/edit_menu.cpp", "libs/ui/tests/test_project_ui.cpp", "libs/ui/src/features/file_menu.cpp", "docs/product/screens/m2-recovery.png"]
+goal = "The file and edit behaviour every desktop user expects, including a recovery prompt after a crash."
+context = [
+  "libs/doc container (M2-21), journal (M2-23), history (M1-09)",
+]
+acceptance = [
+  "File: New, Open, Save, Save As, ten recent files; Edit: Undo and Redo with platform shortcuts and the action's name ('Undo Move Water Lilies'); an unsaved-changes prompt; the title shows an unsaved marker",
+  "After a crash, the next launch offers to recover the project",
+  "[ui] An offscreen test edits a project, simulates a crash, reopens the window and recovers the edit",
+  "docs/product/screens/m2-recovery.png shows the recovery prompt (the E2.5 demo)",
+]
+out_of_scope = ["Autosave settings (later)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-26"
+epic = "E2.6"
+title = "Spotlight shadow maps, cached while lights are still"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-22", "M1-29", "M1-34"]
+touches = ["libs/gpu/include/cs/gpu/shadows.hpp", "libs/gpu/src/shadows.cpp", "libs/gpu/shaders/shadow.slang", "libs/gpu/shaders/standard.slang", "libs/gpu/src/standard_tier.cpp", "libs/gpu/tests/test_shadows.cpp", "tests/golden/skeleton-standard/", "tests/integration/test_shadows_vs_engine.cpp"]
+goal = "Frames cast shadows on the works they hold, as they do under a real spotlight, in the Standard tier, without re-rendering shadows while nothing moves."
+context = [
+  "docs/adr/0002-rendering-tiers.md: soft shadow maps cached while lights are still; tolerances",
+  "Use the physics-reviewer and gpu-reviewer subagents before opening the pull request",
+]
+acceptance = [
+  "One shadow map per spotlight in an atlas, with percentage-closer filtering; a light's map re-renders only when the light or geometry in its frustum changes (counted in a test)",
+  "[gpu][accuracy] An integration test: on the skeleton, the illuminance output over a 5 x 5 grid on the work is within 5% of the engine's direct lux, excluding cells within 1 cm of the frame's shadow edge",
+  "tests/golden/skeleton-standard/ references are updated with the reason in the PR; validation clean",
+  "`ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["Ray-traced shadows (M5)", "Indirect light (M3)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L golden",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Attach the skeleton in the Standard tier before and after: the frame's shadow on the top of the work."
+
+[[tasks]]
+id = "M2-27"
+epic = "E2.6"
+title = "Texture residency by on-screen size, within a budget"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-21", "M2-26"]
+touches = ["libs/gpu/include/cs/gpu/residency.hpp", "libs/gpu/src/residency.cpp", "libs/gpu/src/scene.cpp", "libs/gpu/tests/test_residency.cpp", "libs/gpu/shaders/standard.slang"]
+goal = "Many large works in a small amount of video memory: each work keeps the detail its size on screen needs, within the tier's texture budget, without hitches."
+context = [
+  "docs/adr/0004-catalogue.md, Residency; docs/adr/0002-rendering-tiers.md, GPU memory budgets",
+  "libs/gpu scene (M1-21)",
+]
+acceptance = [
+  "Each work's texture is resident at the mip level its projected size needs (one texel per pixel), within the tier's texture budget (Standard: 768 MB by default); requests are ordered by screen coverage",
+  "Uploads are capped at 32 MB per frame (configurable), so no single frame stalls on a large texture",
+  "[gpu] 50 works with 4096^2 textures and a 256 MB budget: resident texture memory stays at most 256 MB; the work nearest the camera gets mip 0; an evicted work falls back to a smaller mip, never to a missing texture",
+  "`ctest --preset debug -L gpu` passes; validation clean",
+]
+out_of_scope = ["KTX2 and BC7 (M4)", "Tiled virtual texturing (1.0)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-28"
+epic = "E2.6"
+title = "Lux on every work, recomputed in the background"
+area = "engine"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-15", "M2-24", "M1-28", "M2-29"]
+touches = ["libs/engine/include/cs/engine/lux_service.hpp", "libs/engine/src/lux_service.cpp", "libs/engine/tests/test_lux_service.cpp", "apps/cs-bench/"]
+goal = "Every work's lux statistics kept current as the curator edits, computed off the UI thread, redoing only the works an edit affects."
+context = [
+  "docs/adr/0002-rendering-tiers.md: lux on every work within 1 s at 2% standard error",
+  "docs/adr/0003-painting-materials.md: the meter reads at the work's surface, behind glazing",
+  "libs/world revisions (M2-24); engine::work_lux_grid (M1-17); cs-bench and gallery-50 (M1-28, M2-29)",
+]
+acceptance = [
+  "Per exhibit, a 5 x 5 grid on the work's surface gives mean, minimum, maximum, uniformity (minimum over mean) and standard error, for direct and total light",
+  "After a change, only works lit by an affected light or themselves changed are recomputed; jobs run on a thread pool, are cancelled when a newer world revision arrives, and their results carry their revision",
+  "[accuracy] For the skeleton, the values equal cs-render's lux report within 1%",
+  "`cs-bench <scene> --lux` measures the time to fresh readings for all works; on gallery-50 it is at most 1 s at 2% standard error on the reference CPU (PR states the number)",
+  "`ctest --preset debug -L engine` passes",
+]
+out_of_scope = ["Conservation classes and exposure (M3)", "UI beyond the existing lux panel and checklist column"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L engine",
+  "cmake --preset release && cmake --build --preset release && ./build/release/apps/cs-bench/cs-bench build/bench/scenes/gallery-50 --lux --out build/bench/lux.json",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-29"
+epic = "E2.6"
+title = "The gallery-50 benchmark scene and a memory check in CI"
+area = "build"
+type = "test"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-28", "M1-29", "M2-08", "M2-27", "M2-31", "M1-31"]
+touches = ["apps/cs-bench/", "bench/baselines/", ".github/workflows/gpu.yml"]
+goal = "The full-gallery benchmark the budgets are written against, generated reproducibly through the document model and checked for memory on every pull request."
+context = [
+  "docs/product/blueprint.md, section 6: gallery-50 (two rooms, 50 framed works with 4k textures, 40 spotlights)",
+  "cs-bench (M1-28); perf-compare.py and enforced_from in bench/budgets.json (M1-33); the gpu workflow (M1-29)",
+  "Only libs/doc writes project files: the generator uses it",
+]
+acceptance = [
+  "`cs-bench generate gallery-50 --out build/bench/scenes/gallery-50` writes the scene deterministically through libs/doc: an 8 x 6 m and a 6 x 6 m room, 4 m high, joined by a passage, 50 framed works across the six styles, 40 spotlights, and 4096^2 procedural test textures; generating twice gives identical files; nothing generated is committed",
+  "The gpu workflow generates gallery-50 and runs cs-bench on it on lavapipe (60 frames at 640x360), failing if GPU memory exceeds 1.5 GB or peak resident memory minus GPU memory exceeds 2 GB (on lavapipe GPU memory lives in the process)",
+  "A run on the 780M at 1080p is saved as bench/baselines/radeon-780m/gallery-50-standard.json; `perf-compare.py --milestone M2` passes (frame time is enforced from M4) and the PR reports p95 against the 16.7 ms budget with the largest costs if over",
+]
+out_of_scope = ["Optimising to the frame-time budget (M3 and M4)"]
+verification = [
+  "cmake --preset release && cmake --build --preset release && ./build/release/apps/cs-bench/cs-bench generate gallery-50 --out build/bench/scenes/gallery-50",
+  "./build/release/apps/cs-bench/cs-bench build/bench/scenes/gallery-50 --tier standard --size 1920x1080 --frames 600 --out build/bench/gallery-50.json && python3 scripts/perf-compare.py build/bench/gallery-50.json --budgets bench/budgets.json --baseline bench/baselines/radeon-780m/gallery-50-standard.json --milestone M2",
+]
+
+[[tasks]]
+id = "M2-30"
+epic = "E2.4"
+title = "Journey J1 as an automated test"
+area = "editor"
+type = "test"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-02", "M2-03", "M2-33", "M2-15", "M2-16", "M2-17", "M2-21"]
+touches = ["libs/editor/tests/test_journey_j1.cpp", "libs/editor/tests/data/journeys/"]
+goal = "Prove journey J1 end to end through the editor library, so it stays working as everything else changes."
+context = [
+  "docs/product/blueprint.md, journey J1",
+  "The editor tools and commands of M2",
+]
+acceptance = [
+  "Through the editor library, without a UI: draw an L-shaped room of six walls with typed lengths, add a door, import a 40-row checklist, hang all 40 works on four walls on the centre line and distribute them evenly, save as .curation, reopen",
+  "The reopened project.json is byte-identical to the saved one; every work's centre is at 1.50 m within 1 mm, gaps on each wall are equal within 1 mm, and warnings() is empty",
+  "The test runs in under 5 s in a release build in CI",
+]
+out_of_scope = ["The UI"]
+verification = [
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -R journey_j1 --output-on-failure",
+]
+
+[[tasks]]
+id = "M2-31"
+epic = "E2.1"
+title = "Walls, openings, finishes and placeholders in the render world"
+area = "world"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-01", "M2-06", "M1-13"]
+touches = ["libs/world/src/compile.cpp", "libs/world/src/walls.cpp", "libs/world/tests/test_walls_world.cpp"]
+goal = "Free walls with their doorways and painted faces, and works without an image, appear in the render world, so every renderer, the walk camera and the lux meter see the room the curator drew."
+context = [
+  "libs/geom walls (M2-01); libs/doc library finishes (M2-06); libs/world compile (M1-13)",
+  "docs/adr/0008-exhibit-data-model.md: Wall, Opening, Room; placeholders for works without images",
+]
+acceptance = [
+  "Every Wall compiles to its mesh with openings cut, each face with the material of its finish (linear albedo and roughness from the library); Rooms give floors and ceilings from their outlines",
+  "A Work without an image compiles to a mid-grey (albedo 0.5) card of its true size, flagged as a placeholder",
+  "An L-shaped room of six walls with a 1 x 2.1 m doorway compiles to meshes whose face areas match geom's within 1e-9 m^2; a ray through the doorway in engine::Scene reaches the next room (integration test)",
+  "`ctest --preset debug -L world` and `-L integration` pass",
+]
+out_of_scope = ["Frames, mats and glazing (M2-08)", "Incremental updates (M2-24)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L world && ctest --preset debug -L integration",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-32"
+epic = "E2.3"
+title = "TIFF import and fuzz targets for every image loader"
+area = "assets"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-09"]
+touches = ["libs/assets/src/tiff.cpp", "libs/assets/tests/test_import_tiff.cpp", "libs/assets/tests/data/tiff/", "libs/assets/fuzz/"]
+goal = "Read the TIFF masters museums and photographers deliver, and fuzz every image loader, because images come from outside."
+context = [
+  "libtiff; the import path of M2-09",
+  "CLAUDE.md: parsers get a fuzz target and /security-review",
+]
+acceptance = [
+  "8- and 16-bit RGB TIFF (uncompressed, LZW, Deflate) with or without an ICC profile load through the M2-09 path; CMYK and multi-page TIFF are refused with a message",
+  "A libFuzzer target for each loader (PNG, JPEG, TIFF, ICC) runs 60 s without findings",
+  "Test images in libs/assets/tests/data/tiff/ total at most 60 KB; `ctest --preset debug -L assets` passes; /security-review run and answered in the PR",
+]
+out_of_scope = ["The import dialog (M2-11)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L assets",
+  "cmake --preset fuzz && cmake --build --preset fuzz && for f in build/fuzz/libs/assets/fuzz_*; do $f -max_total_time=60; done",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-33"
+epic = "E2.3"
+title = "Checklist rows to works, with placeholders"
+area = "editor"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-12", "M2-10", "M1-25"]
+touches = ["libs/editor/include/cs/editor/checklist.hpp", "libs/editor/src/checklist.cpp", "libs/editor/tests/test_checklist.cpp", "libs/editor/tests/data/checklists/"]
+goal = "Bring a whole exhibition checklist in at once from the collection system's export, so that every work arrives with its size before any image is found."
+context = [
+  "docs/product/blueprint.md, journey J1",
+  "read_csv (M2-12); parse_dimensions and parse_medium (M2-10)",
+]
+acceptance = [
+  "Columns are mapped by English header names, with samples in libs/editor/tests/data/checklists/ (generic, TMS-like, Axiell-like) and an explicit mapping override",
+  "Each row becomes a Work (number, title, artist, date, height and width, medium preset, accession number, lender) in one transaction for the whole import; images are matched by accession number or number in a chosen folder; rows without an image become placeholder works",
+  "A 40-row sample imports with no errors and per-row warnings for sizes it could not parse",
+  "`ctest --preset debug -L editor` passes",
+]
+out_of_scope = ["The checklist panel (M2-13)", "Exporting the hanging list (M4)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-34"
+epic = "E2.1"
+title = "Wall inspector, doorways and finishes in the app"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-04", "M2-03"]
+touches = ["libs/ui/src/features/walls_inspector.cpp", "libs/ui/src/features/openings_dialog.cpp", "libs/ui/tests/test_walls_inspector_ui.cpp"]
+goal = "Edit a wall's height, label and paint, and add a doorway, from the app."
+context = [
+  "libs/editor openings and finishes (M2-03); the inspector host feature (M1-26)",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "A wall page in the inspector edits height, thickness, label and each face's finish (a swatch list from the library)",
+  "An opening dialog adds a doorway by offset, width and height, showing the editor's validation message when it does not fit",
+  "[ui] An offscreen test paints face A of wall B and adds a 1 x 2.1 m doorway, and finds both in the document",
+]
+out_of_scope = ["Plan-view drawing (M2-04)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-35"
+epic = "E2.4"
+title = "Work inspector and the Arrange menu"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-20", "M2-17"]
+touches = ["libs/ui/src/features/work_inspector.cpp", "libs/ui/src/features/arrange_menu.cpp", "libs/ui/tests/test_work_inspector_ui.cpp"]
+goal = "Exact values and group arrangement for the selected works: the inspector and the Arrange menu."
+context = [
+  "libs/editor group commands (M2-17); the inspector host feature (M1-26)",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "A work page in the inspector shows title, size, frame style (one of six), distance along the wall, centre height and gaps to neighbours, all editable",
+  "An Arrange menu offers distribute evenly, centre on wall, align to centre line, align tops and align bottoms, enabled only when the selection allows",
+  "[ui] An offscreen test selects three works and distributes them; the gaps are equal within 1 mm",
+]
+out_of_scope = ["Lux and conservation pages (M2-37, M3)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-36"
+epic = "E2.6"
+title = "Incremental GPU scene updates"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-24", "M2-27"]
+touches = ["libs/gpu/src/scene.cpp", "libs/gpu/src/scene_update.cpp", "libs/gpu/include/cs/gpu/scene.hpp", "libs/gpu/tests/test_scene_update.cpp"]
+goal = "The GPU scene follows the render world's revisions by uploading only what changed, so dragging a work in a 50-work gallery does not rebuild everything."
+context = [
+  "libs/world revisions and change lists (M2-24); libs/gpu scene (M1-21) and residency (M2-27)",
+  "Use the gpu-reviewer subagent before opening the pull request",
+]
+acceptance = [
+  "apply(world change list) updates instance data, uploads new or changed meshes, frees removed ones, and requests textures for new works through residency; buffers in use by frames in flight are never overwritten",
+  "[gpu] Moving one work re-uploads only its 2 to 4 instances (counted); after 200 random transactions applied incrementally the GPU buffers read back equal a full rebuild",
+  "Validation clean; `ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["Acceleration structures (M5)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-37"
+epic = "E2.6"
+title = "Lux on every work in the app"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-28", "M2-13"]
+touches = ["libs/ui/src/features/lux_bridge.cpp", "libs/ui/src/features/checklist_panel.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_lux_ui.cpp", "docs/product/screens/m2-gallery-50.png"]
+goal = "Every work's lux in front of the curator, kept current as they edit: the lux service of M2-28 behind the checklist and the lux panel."
+context = [
+  "libs/engine lux service (M2-28); the checklist panel (M2-13); the lux panel (M1-27)",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "The app runs the lux service in the background; the checklist gains mean, minimum and maximum lux columns, and the lux panel uses the service instead of computing itself",
+  "[ui] An offscreen test moves the skeleton's light and sees the work's mean lux change within 1 s, equal to cs-render's report within 1%",
+  "docs/product/screens/m2-gallery-50.png shows gallery-50 with the lux columns filled (the E2.6 demo)",
+]
+out_of_scope = ["Conservation classes and warnings (M3)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]

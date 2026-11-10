@@ -17,7 +17,7 @@ struct Rgb {
 // The path tracer accumulates light into an Image; conversion to 8-bit values
 // happens only when a file is written.
 class Image {
-public:
+  public:
     // Creates a black image. Throws std::invalid_argument if a size is not positive.
     Image(int width, int height);
 
@@ -33,7 +33,7 @@ public:
     // Throws std::runtime_error if the file cannot be written.
     void write_ppm(const std::filesystem::path& path) const;
 
-private:
+  private:
     int width_;
     int height_;
     std::vector<Rgb> pixels_;
@@ -42,4 +42,4 @@ private:
 // Converts one linear channel value to an 8-bit sRGB value for display.
 unsigned char linear_to_srgb8(float linear);
 
-}  // namespace cs
+} // namespace cs

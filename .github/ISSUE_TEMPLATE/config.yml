@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Roadmap and blueprint
+    url: https://github.com/groundbeeflover/curation_sandbox/blob/main/docs/roadmap.md
+    about: Milestones, epics and the plan behind every task.

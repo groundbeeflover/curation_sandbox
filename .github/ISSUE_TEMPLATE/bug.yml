@@ -1,0 +1,45 @@
+name: Bug
+description: Something does not do what its issue, the documentation or common sense says.
+title: "[bug] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. Screenshots or renders help.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps, a project file or scene, or a command. The smaller the better.
+      render: sh
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0, or the output of `git rev-parse --short HEAD`
+    validations:
+      required: true
+  - type: textarea
+    id: system
+    attributes:
+      label: System
+      description: Operating system, GPU and driver (the device report from `cs-render --device-report` once it exists), quality tier.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area, if you know it
+      options: [unknown, build, core, doc, geom, light, material, assets, world, engine, gpu, editor, ui]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output, validation messages, or a crash log.
+      render: text
