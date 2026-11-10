@@ -27,6 +27,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -46,6 +47,12 @@ TASK_FIELDS = ("id", "epic", "title", "area", "type", "size", "owner", "blocked_
                "goal", "context", "acceptance", "out_of_scope", "verification")
 VAGUE = re.compile(r"\b(works well|properly|correctly|looks good|nice|as expected)\b", re.I)
 BOARD_COLUMNS = ("Backlog", "Ready", "In progress", "In review", "Done")
+# Pull requests are squash-merged with the pull request's title; branches are deleted after merge.
+REPO_SETTINGS = {"allow_squash_merge": True, "allow_merge_commit": False,
+                 "allow_rebase_merge": False, "delete_branch_on_merge": True,
+                 "squash_merge_commit_title": "PR_TITLE",
+                 "squash_merge_commit_message": "COMMIT_MESSAGES"}
+WRITE_PAUSE_S = 1.0  # GitHub's secondary rate limit allows about 80 content writes a minute
 
 
 # ---------------------------------------------------------------------------------------------
@@ -391,6 +398,8 @@ class GitHub:
         proc = subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True)
         if proc.returncode != 0:
             raise RuntimeError(f"gh {' '.join(args[:3])} ... failed: {proc.stderr.strip()}")
+        if write:
+            time.sleep(WRITE_PAUSE_S)
         return proc.stdout
 
     def gh_json(self, *args: str) -> object:
@@ -457,6 +466,34 @@ def run(data: dict, gh: GitHub, only_milestone: str | None, update_bodies: bool,
     say = print
     mode = "APPLY" if gh.apply else ("DRY RUN, offline" if gh.offline else "DRY RUN")
     say(f"== {mode}: {gh.repo}")
+
+    # Repository merge settings and branch protection --------------------------------------------
+    say("\n-- repository settings")
+    if gh.offline:
+        say("   would set: " + ", ".join(f"{k}={v}" for k, v in REPO_SETTINGS.items()))
+    else:
+        have = gh.gh_json("api", f"repos/{gh.repo}")
+        diff = {k: v for k, v in REPO_SETTINGS.items() if have.get(k) != v}
+        if not diff:
+            say("   ok      squash merge only, branches deleted after merge")
+        for k, v in diff.items():
+            say(f"   set     {k}: {have.get(k)} -> {v}")
+        if diff and gh.apply:
+            args = ["api", "-X", "PATCH", f"repos/{gh.repo}"]
+            for k, v in diff.items():
+                args += ["-F" if isinstance(v, bool) else "-f", f"{k}={str(v).lower() if isinstance(v, bool) else v}"]
+            gh.gh(*args, write=True)
+        try:
+            gh.gh("api", f"repos/{gh.repo}/branches/main/protection")
+            say("   ok      main is protected (rules are managed by hand)")
+        except RuntimeError as err:
+            if "Upgrade to GitHub Pro" in str(err):
+                say("   note    branch protection is unavailable for a private repository on GitHub "
+                    "Free; set it when the repository is public or on Pro")
+            elif "not protected" in str(err).lower() or "404" in str(err):
+                say("   note    main is not protected: set the rules by hand (docs/roadmap.md)")
+            else:
+                raise
 
     # Labels ------------------------------------------------------------------------------------
     existing_labels = gh.labels()
