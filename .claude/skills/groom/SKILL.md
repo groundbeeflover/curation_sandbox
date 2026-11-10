@@ -106,6 +106,19 @@ python3 scripts/github-bootstrap.py --milestone <M> --apply
 Commit the roadmap and tasks.toml changes on the groom branch and open a pull request
 (`docs: groom <date>`), so main changes only through pull requests.
 
+## Close a finished milestone
+
+When every task and epic of a milestone is closed and its exit criteria in `docs/roadmap.md`
+are met (each check names the tasks that deliver it), propose to the owner:
+
+- closing the GitHub milestone;
+- an annotated tag on `main`: `v0.0.<n>` for milestones 1 to 3 (`v0.0.1` for M1), `v0.1.0` for
+  M4 (the curator alpha) and `v1.0.0` for M6, with the milestone's exit-criteria table as the
+  message (`git tag -a <tag> -F <file> origin/main && git push origin <tag>`);
+- the milestone's demo screenshots linked in the Progress table.
+
+Tag only after the owner agrees: a pushed tag is public history.
+
 ## Once, after the first week of sessions
 
 Suggest running `/fewer-permission-prompts` to add the commands sessions actually ran to the
