@@ -12,3 +12,9 @@
 compile_commands.json
 *.swp
 .DS_Store
+
+# Claude Code: the project's settings, skills and subagents are committed, even where a global
+# ignore file excludes .claude/; worktrees and personal overrides are not.
+!.claude/
+.claude/worktrees/
+.claude/settings.local.json
