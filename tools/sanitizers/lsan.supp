@@ -1,0 +1,5 @@
+# LeakSanitizer suppressions, used by the debug, app and fuzz presets through LSAN_OPTIONS.
+#
+# Only leaks in code we do not own belong here (a driver, Qt, a system library), one line each
+# with the reason above it, in the form `leak:<function, library or file name>`. A leak in our
+# own code is fixed, never suppressed.

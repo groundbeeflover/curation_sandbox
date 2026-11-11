@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# cs_add_module(NAME <m> [DEPS <modules>...] [EXTERNAL <targets>...])
+#
+# The whole of libs/<m>/CMakeLists.txt. Everything is found by glob, so adding a file, or a
+# subdirectory such as src/commands/, never edits a CMake list:
+#
+#   libs/<m>/src/**/*.cpp       the library cs::<m> (target cs_<m>); src/ is also a private
+#                               include directory, for headers only the module uses
+#   libs/<m>/include/cs/<m>/    its public headers, included as <cs/<m>/...>
+#   libs/<m>/tests/**/*.cpp     the Catch2 executable cs_<m>_tests; tests/main.cpp, when it
+#                               exists, replaces Catch2's main
+#   libs/<m>/fuzz/*.cpp         with CS_FUZZ, one libFuzzer executable cs_<m>_fuzz_<file> each
+#
+# DEPS are other modules, linked PRIVATE: a module sees the headers of the modules it declares
+# and of no others, not even its dependencies' dependencies. That is how the build enforces the
+# module graph of blueprint section 7 (the engine reads the world, never the document): an
+# include of an undeclared module does not compile. A module's public headers may therefore use
+# only modules that every module declaring it also declares (core, in practice).
+#
+# EXTERNAL are third-party targets (glm::glm, Qt6::Widgets), linked PUBLIC, because a module's
+# headers may expose their types.
+#
+# A module with no sources yet becomes a header-only INTERFACE target, so the modules that
+# declare it still configure and link; it compiles nothing.
+
+function(cs_add_module)
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME" "DEPS;EXTERNAL")
+    if(NOT arg_NAME)
+        message(FATAL_ERROR "cs_add_module: NAME is required")
+    endif()
+    if(arg_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "cs_add_module(${arg_NAME}): unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+    endif()
+
+    set(name ${arg_NAME})
+    set(target cs_${name})
+    set(dir ${CMAKE_CURRENT_SOURCE_DIR})
+    list(TRANSFORM arg_DEPS PREPEND "cs::" OUTPUT_VARIABLE deps)
+
+    # Every test in this directory (unit tests and fuzz smoke runs) gets the module's name as a
+    # CTest label, next to its Catch2 tags: `ctest -L <m>`.
+    set_property(DIRECTORY PROPERTY LABELS ${name})
+
+    file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${dir}/src/*.cpp")
+    if(sources)
+        add_library(${target} ${sources})
+        target_include_directories(${target} PUBLIC "${dir}/include" PRIVATE "${dir}/src")
+        target_link_libraries(${target} PUBLIC ${arg_EXTERNAL} PRIVATE cs_options ${deps})
+    else()
+        add_library(${target} INTERFACE)
+        target_include_directories(${target} INTERFACE "${dir}/include")
+        target_link_libraries(${target} INTERFACE ${arg_EXTERNAL})
+    endif()
+    add_library(cs::${name} ALIAS ${target})
+
+    # Tests and fuzzers see the same modules as the library they test.
+    set(links cs::${name} ${deps} cs_options)
+
+    if(CS_BUILD_TESTS)
+        file(GLOB_RECURSE tests CONFIGURE_DEPENDS "${dir}/tests/*.cpp")
+        if(tests)
+            set(test_target cs_${name}_tests)
+            add_executable(${test_target} ${tests})
+            if(EXISTS "${dir}/tests/main.cpp")
+                set(catch Catch2::Catch2)
+            else()
+                set(catch Catch2::Catch2WithMain)
+            endif()
+            target_link_libraries(${test_target} PRIVATE ${links} ${catch})
+            # The repository root, to find tests/scenes/ and data/.
+            target_compile_definitions(${test_target} PRIVATE CS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+            # PRE_TEST: tests are listed when ctest runs, with ctest's environment (sanitizer
+            # options), not at build time. catch_discover_tests also sets SKIP_RETURN_CODE 4,
+            # Catch2's exit code for a skipped test, so SKIP() shows as skipped, not failed.
+            catch_discover_tests(${test_target}
+                TEST_PREFIX "${name}: "
+                ADD_TAGS_AS_LABELS
+                DISCOVERY_MODE PRE_TEST)
+        endif()
+    endif()
+
+    if(CS_FUZZ)
+        file(GLOB fuzzers CONFIGURE_DEPENDS "${dir}/fuzz/*.cpp")
+        foreach(fuzzer IN LISTS fuzzers)
+            get_filename_component(stem "${fuzzer}" NAME_WE)
+            set(fuzz_target cs_${name}_fuzz_${stem})
+            add_executable(${fuzz_target} "${fuzzer}")
+            target_link_libraries(${fuzz_target} PRIVATE ${links})
+            target_compile_options(${fuzz_target} PRIVATE -fsanitize=fuzzer)
+            target_link_options(${fuzz_target} PRIVATE -fsanitize=fuzzer)
+            if(CS_BUILD_TESTS)
+                # A short, seeded smoke run; real fuzzing runs the executable directly.
+                add_test(NAME "${name}: fuzz ${stem}" COMMAND ${fuzz_target} -runs=1000 -seed=1)
+                set_tests_properties("${name}: fuzz ${stem}" PROPERTIES LABELS fuzz)
+            endif()
+        endforeach()
+    endif()
+endfunction()

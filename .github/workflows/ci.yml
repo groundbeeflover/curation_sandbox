@@ -1,5 +1,6 @@
-# Builds and tests every pull request and every push to main on Linux and Windows, plus a fast
-# job for formatting, the planning scripts and the task file. GPU tests live in gpu.yml (M1-29).
+# Builds and tests every pull request and every push to main on Linux and Windows through the
+# CMake presets, plus a fast job for formatting, the planning scripts and the task file. GPU
+# tests live in gpu.yml (M1-29); vcpkg caching and the full compiler matrix arrive with M1-30.
 name: CI
 
 on:
@@ -38,49 +39,47 @@ jobs:
       - name: Task file
         run: python3 scripts/github-bootstrap.py --check
 
+  # The release preset on Linux and Windows, the debug preset (ASan and UBSan) on Linux. The
+  # libraries come from the runner's vcpkg in manifest mode (vcpkg.json); its clone is fetched
+  # first, because the pinned builtin-baseline can be newer than the runner image.
   build-and-test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        include:
+          - { os: ubuntu-24.04, preset: release }
+          - { os: windows-2022, preset: release }
+          - { os: ubuntu-24.04, preset: debug }
+    name: build-and-test (${{ matrix.os }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: vcpkg
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin
+
+      - name: MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Compiler cache (Linux)
         if: runner.os == 'Linux'
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-release
+          key: ${{ matrix.os }}-${{ matrix.preset }}
 
       - name: Configure
         shell: bash
         run: |
           launcher=""
           if [ "$RUNNER_OS" = "Linux" ]; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCS_WARNINGS_AS_ERRORS=ON $launcher
+          cmake --preset ${{ matrix.preset }} -DCS_WARNINGS_AS_ERRORS=ON $launcher
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
-        run: ctest --test-dir build --build-config Release --output-on-failure
-
-  sanitizers:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: ubuntu-24.04-sanitizers
-
-      - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCS_SANITIZERS=ON -DCS_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-
-      - name: Build
-        run: cmake --build build --parallel
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --preset ${{ matrix.preset }}

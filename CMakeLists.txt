@@ -1,54 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.25)
+
+# ---- vcpkg -------------------------------------------------------------------
+# Dependencies come from vcpkg in manifest mode (vcpkg.json, ADR 0001). The presets point
+# CMAKE_TOOLCHAIN_FILE at $VCPKG_ROOT; without a toolchain, $VCPKG_ROOT is used directly.
+set(cs_vcpkg_help [=[
+vcpkg was not found: set VCPKG_ROOT to a vcpkg checkout. To install vcpkg once:
+    git clone https://github.com/microsoft/vcpkg ~/vcpkg
+    ~/vcpkg/bootstrap-vcpkg.sh -disableMetrics      (Windows: bootstrap-vcpkg.bat)
+    export VCPKG_ROOT=~/vcpkg                       (and add this line to your shell profile)
+Then configure again, for example with `cmake --preset debug`.]=])
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    if("$ENV{VCPKG_ROOT}" STREQUAL "")
+        message(FATAL_ERROR "${cs_vcpkg_help}")
+    endif()
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "")
+endif()
+if(CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg\\.cmake$" AND NOT EXISTS "${CMAKE_TOOLCHAIN_FILE}")
+    message(FATAL_ERROR "${cs_vcpkg_help}\n(looked for ${CMAKE_TOOLCHAIN_FILE})")
+endif()
 
 project(CurationSandbox
     VERSION 0.1.0
     DESCRIPTION "A digital maquette for exhibitions, with physically accurate light"
     LANGUAGES CXX)
 
-# ---- Options -----------------------------------------------------------------
-option(CS_BUILD_TESTS "Build the unit tests" ON)
-option(CS_SANITIZERS "Build with AddressSanitizer and UndefinedBehaviorSanitizer (GCC and Clang)" OFF)
-option(CS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
-
-# ---- Language settings -------------------------------------------------------
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Writes compile_commands.json, which editors (clangd, VS Code) use to understand the code.
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Default to a debug build when nothing else is asked for.
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
-endif()
-
-# ---- Shared compiler flags ---------------------------------------------------
-# Every target links cs_options, so they all get the same warnings and sanitizers.
-add_library(cs_options INTERFACE)
-
-if(MSVC)
-    target_compile_options(cs_options INTERFACE /W4 /permissive- /utf-8)
-    if(CS_WARNINGS_AS_ERRORS)
-        target_compile_options(cs_options INTERFACE /WX)
-    endif()
-else()
-    target_compile_options(cs_options INTERFACE -Wall -Wextra -Wpedantic)
-    if(CS_WARNINGS_AS_ERRORS)
-        target_compile_options(cs_options INTERFACE -Werror)
-    endif()
-    if(CS_SANITIZERS)
-        # Sanitizers catch memory errors and undefined behaviour while the program runs.
-        target_compile_options(cs_options INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
-        target_link_options(cs_options INTERFACE -fsanitize=address,undefined)
-    endif()
-endif()
-
-# ---- Project parts -----------------------------------------------------------
-add_subdirectory(core)
-add_subdirectory(apps)
+# ---- Helpers -----------------------------------------------------------------
+# Every cmake/Cs*.cmake is included, so a task adds a helper without editing this file.
+file(GLOB cs_helpers CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/cmake/Cs*.cmake")
+foreach(helper IN LISTS cs_helpers)
+    include("${helper}")
+endforeach()
 
 if(CS_BUILD_TESTS)
     enable_testing()
+    find_package(Catch2 3 CONFIG REQUIRED)
+    include(Catch)
+endif()
+
+# ---- Project parts -----------------------------------------------------------
+# Every module under libs/ (blueprint section 7). Modules may name each other in any order;
+# links are resolved once all of them are configured.
+file(GLOB cs_modules CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/libs/*/CMakeLists.txt")
+foreach(module IN LISTS cs_modules)
+    get_filename_component(module_dir "${module}" DIRECTORY)
+    add_subdirectory("${module_dir}")
+endforeach()
+
+add_subdirectory(apps)
+
+if(CS_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

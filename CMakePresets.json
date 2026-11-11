@@ -6,7 +6,8 @@
       "name": "base",
       "hidden": true,
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}"
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
     },
     {
       "name": "debug",
@@ -35,16 +36,66 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
+    },
+    {
+      "name": "app",
+      "displayName": "Debug, with sanitizers and the Qt app",
+      "description": "The debug preset plus the ui module and the desktop app (needs Qt 6)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "CS_BUILD_APP": "ON"
+      }
+    },
+    {
+      "name": "fuzz",
+      "displayName": "libFuzzer targets",
+      "description": "Clang with ASan, UBSan and libFuzzer: every libs/<module>/fuzz/*.cpp is a fuzz target",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_COMPILER": "clang",
+        "CS_SANITIZERS": "ON",
+        "CS_FUZZ": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
-    { "name": "profile", "configurePreset": "profile" }
+    { "name": "profile", "configurePreset": "profile" },
+    { "name": "app", "configurePreset": "app" },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    }
   ],
   "testPresets": [
-    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "profile", "configurePreset": "profile", "output": { "outputOnFailure": true } }
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "sanitized",
+      "hidden": true,
+      "inherits": "base",
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/sanitizers/lsan.supp"
+      }
+    },
+    { "name": "debug", "configurePreset": "debug", "inherits": "sanitized" },
+    { "name": "release", "configurePreset": "release", "inherits": "base" },
+    { "name": "profile", "configurePreset": "profile", "inherits": "base" },
+    { "name": "app", "configurePreset": "app", "inherits": "sanitized" },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "inherits": "sanitized",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    }
   ]
 }

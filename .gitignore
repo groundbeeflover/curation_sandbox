@@ -1,6 +1,9 @@
-# Build output
+# Build output (vcpkg installs the libraries into build/<preset>/vcpkg_installed/)
 /build/
 /out/
+
+# Personal presets, for example one that sets VCPKG_ROOT
+CMakeUserPresets.json
 
 # Rendered images
 /renders/

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "curation-sandbox",
+  "version-semver": "0.1.0",
+  "description": "A digital maquette for exhibitions, with physically accurate light",
+  "license": "Apache-2.0",
+  "builtin-baseline": "27560a5fe9ff2ba4a08a0d7a5800a679684fa733",
+  "dependencies": [
+    "catch2",
+    "glm",
+    "nlohmann-json"
+  ]
+}
