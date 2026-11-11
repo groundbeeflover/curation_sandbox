@@ -44,6 +44,8 @@ times roughly halve once the repository is published (ADR 0009).
 | [5](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42934657548) | The candidate, green on both platforms, building lavapipe with the X11 platform when the cache misses (5 min 48 s) |
 | [6](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42935610251) | On a cache hit, the restored lavapipe needed `libxcb-keysyms`, which runners lack; the `ldd` guard failed the job as intended |
 | [7](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42936187579) | The final candidate, green on both platforms, with warm timings (Mesa's shader cache on). [Attempt 1](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42936187579/attempts/1) misses the cache and builds lavapipe in 3 min 29 s. [Attempt 2](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42936187579/attempts/2) hits every cache: the whole Linux job took 46 s, 26 s of them the spike's benchmark. The Windows job took 4 min 37 s, 2 min 33 s of them the build |
+| [8](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42937457847) | After M1-01 merged: the build follows `ci.yml` through presets and vcpkg. The test steps fail because the presets now treat "no tests found" as an error, a guard M1-29 keeps |
+| [9](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42938198397) | The final candidate, after the code review: LLVM pinned by package version, caches keyed on the workflow's hash, the device report checking each required extension, and placeholder `gpu` and `golden` tests (spike only). [Attempt 1](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42938198397/attempts/1) misses the cache (lavapipe built in 4 min 47 s); [attempt 2](https://github.com/groundbeeflover/curation_sandbox/actions/runs/42938198397/attempts/2) hits it, and the whole Linux job took 2 min, 74 s of them configuring through vcpkg. The Windows job took 3 min 16 s |
 
 ## Linux: where Mesa comes from
 
@@ -51,7 +53,7 @@ times roughly halve once the repository is published (ADR 0009).
 | --- | --- | --- | --- |
 | Ubuntu 24.04 archive (`mesa-vulkan-drivers`, noble-updates) | 25.2.8-0ubuntu0.24.04.4 with LLVM 20.1.2 | **No.** Noble released with 24.0.5; stable-release updates replaced it with 25.2.8, and superseded builds leave the mirrors | 11 to 24 s, with `apt-get update`, vulkan-tools and the archive's validation layers |
 | kisak-mesa PPA | 26.2.6~kisak1 | **No.** The PPA keeps only its latest build, and has a single maintainer | about the same as the archive |
-| **The Mesa release tarball, built for lavapipe only (chosen)** | **26.2.6** (SHA-256 checked), LLVM 18.1.3 from noble's release pocket, linked statically | **Yes**, by version and checksum | 3 min 29 s to 5 min 48 s when the cache misses (dependencies 17 to 20 s, the build the rest); **1 s** to restore the 22 MB cache entry |
+| **The Mesa release tarball, built for lavapipe only (chosen)** | **26.2.6** (SHA-256 checked), LLVM 18.1.3 (`llvm-18-dev=1:18.1.3-1ubuntu1` from noble's release pocket, pinned), linked statically | **Yes**, by version and checksum | 3 min 29 s to 5 min 48 s when the cache misses (dependencies 17 to 20 s, the build the rest); **1 s** to restore the 22 MB cache entry |
 
 The build configures `-Dvulkan-drivers=swrast -Dgallium-drivers=llvmpipe -Dplatforms=x11` and
 disables everything else. Two details matter:
@@ -61,8 +63,10 @@ disables everything else. Two details matter:
   (`LVP_USE_WSI_PLATFORM` in `lvp_device.c`). Run 4 shows the extension missing without it.
 - **LLVM is linked statically.** The cached library then does not depend on the LLVM versions
   preinstalled on the runner image (16 to 20 today), which change over time. Its remaining
-  dependencies (zlib, zstd, tinfo, libdrm, libxcb) are on the runner image. The job checks
-  `ldd` before using the library, which caught one missing library in run 6.
+  dependencies (zlib, zstd, tinfo, libdrm, libxcb) are on the runner image. In run 6, one more
+  (`libxcb-keysyms`, which Mesa links when its development package happens to be installed)
+  made the loader skip the driver. The build no longer installs that package, and the job now
+  runs `ldd` on the library first and fails with the missing library's name.
 
 Mesa 26.2.6 is also the version on the owner's Arch Linux machine and in mesa-dist-win. That
 matters for the golden images (see below).
@@ -165,8 +169,8 @@ The budget for the Linux job, with every cache hit:
 
 | Part | Measured or assumed |
 | --- | --- |
-| Checkout, restoring lavapipe, layers and ccache, configure | about 15 s (measured; run 7, attempt 2) |
-| Build in release | 2 to 62 s today (measured). With vcpkg's dependencies and M1-30's binary cache: **assumed at most 4 min**, the main uncertainty |
+| Checkout, restoring lavapipe, layers and ccache | about 15 s (measured; runs 7 and 9, attempt 2) |
+| Configure and build in release | 75 to 80 s today, almost all of it vcpkg installing three ports without a binary cache (measured, run 9). With all of milestone 1's dependencies and M1-30's binary cache: **assumed at most 4 min**, the main uncertainty |
 | GPU unit tests (`-L gpu`): one process per Catch2 test case, about 0.05 to 0.2 s each warm | at most 1 min |
 | Safety margin: runners varied by 35%; cache misses add about 6 min, but only after a version bump | 2 min |
 | **Golden images (`-L golden`)** | **at most 2 min** |
@@ -184,17 +188,18 @@ Assume five times the spike's cost.
 | Ray queries or the GPU path tracer, 128×128, 256 spp | 1.7 s | 9 s | about 13 |
 | Ray queries or the GPU path tracer, 512×512, 256 spp | 25 s | 2 min | one, alone |
 
-The largest goldens that fit are therefore 512×512 with 256 frames for the Standard tier
+On time alone, the largest goldens that fit are 512×512 with 256 frames for the Standard tier
 (about 9 s each, a dozen of them), and 256×256 with 64 spp or 128×128 with 256 spp for
 ray-query tiers (8 to 9 s each, about 14). A 512×512 ray-query golden at 256 spp would use the
-whole budget alone. So the limits are:
+whole budget alone. The blueprint also caps goldens at 128 to 256 pixels, to keep references at
+tens of kilobytes. The limits are therefore:
 
-- **Goldens are 256×256 by default** (128×128 when that shows the feature), matching the
-  blueprint. 512×512 is the largest allowed, and its pull request must say why.
-- **At most 64 samples per pixel**: accumulated frames for the Standard tier, spp for
-  ray-query tiers. Up to 256 is allowed at 128×128.
-- Each golden should take **under 10 s** on CI. ctest's timeout of 120 s catches a runaway
-  test, and M1-29 states the measured time of `-L golden` in its pull request.
+- **Size: 128×128 to 256×256**, as the blueprint says; 256×256 by default.
+- **Samples: at most 64 per pixel at 256×256, and at most 256 at 128×128.** That means
+  accumulated frames for the Standard tier and spp for ray-query tiers.
+- **Time: under 10 s per golden on CI.** This is the binding limit when a tier's work per
+  pixel turns out heavier than assumed. ctest's timeout of 120 s catches a runaway test, and
+  M1-29 states the measured time of `-L golden` in its pull request.
 
 On Windows, lavapipe is slower (2.4 ms raster and 42 ms rq per sample at 256×256). Building
 acceleration structures takes **2 to 5 s per process**, and Mesa's shader cache did not
@@ -228,21 +233,33 @@ Two Windows details for M1-29:
   layers 1.4.363. It does not run goldens: the spike found its lavapipe images identical to
   Linux's, so running them again would only cost a second, slower build. Tests that need
   `VK_EXT_headless_surface` or a swapchain skip when the device lacks the extension.
+- **A green job means the tests ran.** The presets already fail when a label matches no
+  tests (M1-01). The workflow sets `CS_REQUIRE_GPU=1`; M1-19's test harness must then fail,
+  not skip, when it finds no Vulkan device. The device report fails the job when lavapipe or
+  the layers lack an extension the tests rely on. Goldens run even when a GPU unit test failed,
+  so a pull request shows both.
 - **Golden references for lavapipe** are one set, named for lavapipe and its Mesa version, as
-  `tests/golden/README.md` (M1-18) lays out. They can be produced on Linux CI or on a machine
-  with the same Mesa. Mesa, LLVM and the layers change only together with a deliberate pull
-  request that bumps the versions below (and the cache keys with them) and updates the
-  lavapipe references.
-- Goldens follow the limits above: 256×256, at most 64 samples, under 10 s each, and
-  `-L golden` under 2 min.
+  `tests/golden/README.md` (M1-18) lays out. **CI's build is the authority.** References are
+  taken from the job's `golden-out` artefact. The owner's Arch Linux machine produced identical
+  images for the spike's scene, but it runs LLVM 23 rather than 18 and moves on its own
+  schedule, so a local regeneration that disagrees with CI loses. Mesa, LLVM and the layers
+  change only together with a deliberate pull request that bumps the versions below and
+  updates the lavapipe references.
+- Goldens follow the limits above: at most 256×256, at most 64 samples at that size, under
+  10 s each, and `-L golden` under 2 min.
 - Every action is pinned to a commit SHA, with the release as a comment.
 
 ## The workflow for M1-29
 
-This is the candidate that ran green in run 8, with two differences. The trigger is the
-project's usual one instead of the spike branch. The spike-only step, which ran `lvpbench`
-because the repository has no GPU tests yet, is removed. On today's main, `-L gpu` and
-`-L golden` find no tests and pass; M1-19 and M1-18 add them. The build steps mirror
+This is the candidate that ran green in run 9, with three differences:
+
+- The trigger is the project's usual one instead of the spike branch.
+- The spike-only steps that ran `lvpbench` are removed.
+- So is the spike's `cmake/CsSpikeTests.cmake`, which registered one placeholder test per
+  label. On today's main, `-L gpu` and `-L golden` find no tests, and the presets turn that
+  into a failure. M1-29 starts only after M1-18, M1-19 and M1-22 have added real tests.
+
+The build steps mirror
 `ci.yml` as M1-01 left it (presets, vcpkg from the runner image, the MSVC environment on
 Windows), and should follow it when M1-30 adds vcpkg's binary cache.
 
@@ -271,6 +288,10 @@ env:
   MESA_DIST_WIN_SHA256: b2e00615feaba45942343c265cc8c5f576142ca682c1ac6661922d4b72492877
   VULKAN_SDK_VERSION: "1.4.363.1"
   VULKAN_SDK_SHA256: b7867d8ca658563813af666f34b93db87f1b1c7d9d69d97e924c210c7ba33eb8
+  # The Ubuntu 24.04 package lavapipe's static LLVM comes from (exact version, release pocket).
+  LLVM_PACKAGE_VERSION: "1:18.1.3-1ubuntu1"
+  # The GPU test harness (M1-19) fails instead of skipping when there is no Vulkan device.
+  CS_REQUIRE_GPU: "1"
 
 jobs:
   linux:
@@ -285,13 +306,14 @@ jobs:
 
       # Mesa: only lavapipe, built from the pinned release tarball with LLVM linked statically
       # (LLVM 18.1.3 from the Ubuntu 24.04 release pocket), so the cached build does not depend
-      # on the LLVM versions preinstalled on the runner image. About 5 minutes when the cache misses.
+      # on the LLVM versions preinstalled on the runner image. About 5 minutes when the cache
+      # misses. The key hashes this file, so any change to the build below rebuilds it.
       - name: Restore lavapipe
         id: mesa-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/mesa
-          key: lavapipe-${{ env.MESA_VERSION }}-llvm18-static-x11-ubuntu-24.04-v3
+          key: lavapipe-${{ env.MESA_VERSION }}-ubuntu-24.04-${{ hashFiles('.github/workflows/gpu.yml') }}
       # The X11 platform is what makes lavapipe expose VK_EXT_headless_surface and VK_KHR_swapchain.
       - name: Build lavapipe
         if: steps.mesa-cache.outputs.cache-hit != 'true'
@@ -299,10 +321,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             bison flex glslang-tools libdrm-dev libedit-dev libelf-dev libexpat1-dev libffi-dev \
-            libncurses-dev libpolly-18-dev libxml2-dev libzstd-dev llvm-dev ninja-build \
+            "libpolly-18-dev=${LLVM_PACKAGE_VERSION}" "llvm-18-dev=${LLVM_PACKAGE_VERSION}" \
+            libncurses-dev libxml2-dev libzstd-dev ninja-build \
             python3-mako python3-packaging python3-yaml zlib1g-dev \
             libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
             libxcb-randr0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxrandr-dev libxshmfence-dev
+          test "$(llvm-config-18 --version)" = 18.1.3
           pip install --break-system-packages meson==1.9.1
           curl -sSfL --retry 3 -o mesa.tar.xz "https://archive.mesa3d.org/mesa-${MESA_VERSION}.tar.xz"
           echo "${MESA_SHA256}  mesa.tar.xz" | sha256sum -c -
@@ -324,7 +348,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/vulkan-layers
-          key: vulkan-layers-${{ env.VULKAN_SDK_VERSION }}-linux-v1
+          key: vulkan-layers-${{ env.VULKAN_SDK_VERSION }}-linux-${{ hashFiles('.github/workflows/gpu.yml') }}
       - name: Extract the validation layers from the Vulkan SDK
         if: steps.layers-cache.outputs.cache-hit != 'true'
         run: |
@@ -340,9 +364,12 @@ jobs:
 
       - name: Device report
         run: |
-          ! ldd ~/mesa/lib/libvulkan_lvp.so | grep 'not found'
+          if ldd ~/mesa/lib/libvulkan_lvp.so | grep 'not found'; then exit 1; fi
           ~/vulkan-layers/bin/vulkaninfo --summary
-          ~/vulkan-layers/bin/vulkaninfo 2>/dev/null | grep -E 'VK_KHR_ray_query|VK_EXT_headless_surface|VK_LAYER_KHRONOS_validation' | sort -u
+          ~/vulkan-layers/bin/vulkaninfo > vulkaninfo.txt 2>&1 || true
+          for name in VK_KHR_ray_query VK_EXT_headless_surface VK_KHR_swapchain VK_LAYER_KHRONOS_validation; do
+            grep -q "$name" vulkaninfo.txt || { echo "::error::lavapipe or the layers lack $name"; exit 1; }
+          done
 
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
@@ -357,13 +384,16 @@ jobs:
       - name: Configure
         run: cmake --preset release -DCS_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
+        id: build
         run: cmake --build --preset release
 
       # lavapipe uses every core, so tests run one at a time. Mesa's shader cache stays on: it is
       # empty at the start of the job and saves about a second per test process after the first.
       - name: GPU tests
         run: ctest --preset release -L gpu --timeout 120
+      # Goldens run even when a GPU test failed, so the pull request shows both.
       - name: Golden images
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ctest --preset release -L golden --timeout 120
       - name: Upload golden differences
         if: failure()
@@ -406,7 +436,11 @@ jobs:
         shell: bash
         run: |
           "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" --summary
-          "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" 2>/dev/null | grep -E 'VK_KHR_ray_query|VK_EXT_headless_surface|VK_LAYER_KHRONOS_validation' | sort -u || true
+          "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" > vulkaninfo.txt 2>&1 || true
+          # lavapipe on Windows has no VK_EXT_headless_surface; tests that need it skip there.
+          for name in llvmpipe VK_KHR_ray_query VK_LAYER_KHRONOS_validation; do
+            grep -q "$name" vulkaninfo.txt || { echo "::error::lavapipe or the layers lack $name"; exit 1; }
+          done
 
       # The build mirrors ci.yml's Windows release job.
       - name: vcpkg
@@ -429,8 +463,14 @@ jobs:
 - The GPU job's results depend only on versions written in the workflow, not on what Ubuntu or
   GitHub ship that week. The cost is a cold Mesa build of about 5 minutes after each version
   bump. The Linux caches take about 35 MB; the Windows SDK action keeps its own 345 MB entry.
-- Lavapipe on CI and on the owner's machine produce the same images while they run the same
-  Mesa. Updating lavapipe references does not need CI.
+- The cache keys hash `gpu.yml`, so a pull request that edits the workflow rebuilds lavapipe
+  once (about 5 minutes). That is the price of never restoring a build that does not match the
+  workflow's own instructions.
+- Lavapipe on CI and on the owner's machine produced the same images for the same Mesa. A
+  developer can therefore check goldens locally, but references come from CI.
+- The lavapipe manifest is `lvp_icd.json` on Ubuntu and on Arch, not the `lvp_icd.x86_64.json`
+  that CLAUDE.md and several task verifications name. On those systems the documented command
+  loads no driver, and the GPU tests would skip. A follow-up fixes the commands.
 - Windows catches loader, registry and MSVC problems in GPU code, but it does not check
   goldens, and it cannot test anything that needs a surface.
 - Upgrading Mesa is a deliberate pull request: bump `MESA_VERSION` and both checksums,
@@ -440,8 +480,10 @@ jobs:
 
 ## Revisit
 
-- When M1-30 lands, measure the real build time in the GPU job. If the 10-minute budget is
-  tight, give the golden images their own job that reuses the build.
+- When M1-30 lands, measure the real build time in the GPU job. Today the GPU job builds the
+  release tree again, as `ci.yml` does. If the 10-minute budget gets tight, or the duplicate
+  builds cost too many minutes, run `-L gpu` and `-L golden` as steps of `ci.yml`'s release
+  jobs instead. M1-31 touches both files.
 - When the repository becomes public (4 vCPUs), loosen the golden limits.
 - When the GPU path tracer arrives (1.0), its goldens are the ones that hit the limits first.
 - If mesa-dist-win stops publishing, or lags the Linux version by more than a minor release:
