@@ -61,4 +61,4 @@ unsigned char linear_to_srgb8(float linear) {
     return static_cast<unsigned char>(std::lround(v * 255.0f));
 }
 
-}  // namespace cs
+} // namespace cs

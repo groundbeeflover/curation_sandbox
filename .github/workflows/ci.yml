@@ -1,23 +1,64 @@
-# Builds and tests every push on Linux and Windows, so code that only works
-# on your machine is caught early. Runs once the repository is on GitHub.
+# Builds and tests every pull request and every push to main on Linux and Windows, plus a fast
+# job for formatting, the planning scripts and the task file. GPU tests live in gpu.yml (M1-29).
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
+# A newer push to the same pull request cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  checks:
+    name: checks (format, scripts, task file)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned clang-format
+        run: pip install clang-format==23.1.4
+
+      - name: Formatting
+        run: python3 scripts/format.py --check
+
+      - name: Script tests
+        run: python3 -m unittest discover -s scripts/tests -v
+
+      - name: Task file
+        run: python3 scripts/github-bootstrap.py --check
+
   build-and-test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compiler cache (Linux)
+        if: runner.os == 'Linux'
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-release
+
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: |
+          launcher=""
+          if [ "$RUNNER_OS" = "Linux" ]; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCS_WARNINGS_AS_ERRORS=ON $launcher
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -26,12 +67,17 @@ jobs:
         run: ctest --test-dir build --build-config Release --output-on-failure
 
   sanitizers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-24.04-sanitizers
+
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCS_SANITIZERS=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCS_SANITIZERS=ON -DCS_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build build --parallel

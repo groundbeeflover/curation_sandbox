@@ -1,0 +1,105 @@
+name: Task
+description: One session, one branch, one pull request. Most tasks come from docs/roadmap/tasks.toml through scripts/github-bootstrap.py; use this form for tasks found along the way.
+title: "[M?-??] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A task must be finishable by a fresh Claude Code session given only this issue and CLAUDE.md, and reviewable in 10 to 20 minutes: roughly 50 to 400 changed lines of non-test code, at most about eight files, mostly in one area, with an automated check. `/groom` adds the labels from the fields below and rewrites the body into the standard layout.
+  - type: input
+    id: id
+    attributes:
+      label: ID
+      description: Milestone and number, as in the title, for example M2-31. Ask /groom for the next free number.
+      placeholder: M2-31
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [build, core, doc, geom, light, material, assets, world, engine, gpu, editor, ui]
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options: [feature, spike, test, bug, chore, docs]
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: S up to about 150 lines, M about 150 to 400, L only when indivisible (then fill in the design note).
+      options: [S, M, L]
+    validations:
+      required: true
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Owner
+      options: [agent, human]
+    validations:
+      required: true
+  - type: input
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: Issue numbers that must be closed first, or "none".
+      placeholder: "#12, #15"
+    validations:
+      required: true
+  - type: textarea
+    id: touches
+    attributes:
+      label: Touches
+      description: The files and directories this task may change. Tasks that run in parallel must not overlap.
+      placeholder: "`libs/geom/src/frame.cpp`, `libs/geom/tests/test_frame.cpp`"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences, what exists after this task and why.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Links to the blueprint, ADRs, specifications or papers, and the code to build on.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checks phrased as tests or commands with expected results and tolerances. Never "works well".
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What a session must not do in this task, because another task covers it.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: The exact commands to run, and for visual work the render or screenshot to produce.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: design-note
+    attributes:
+      label: Design note
+      description: Size L only. Why the task cannot be split, and the plan.
