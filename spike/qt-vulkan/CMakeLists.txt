@@ -33,7 +33,8 @@ if(TARGET Qt6::WaylandClient AND TARGET Qt6::GuiPrivate AND EXISTS "${wayland_pr
     message(STATUS "Wayland relative pointer: on")
 else()
     target_compile_definitions(spike_shell PRIVATE SPIKE_HAS_WAYLAND=0)
-    message(STATUS "Wayland relative pointer: off")
+    message(STATUS "Wayland relative pointer: off (Qt6::WaylandClient found: "
+        "${Qt6WaylandClient_FOUND}, Qt6::GuiPrivate found: ${Qt6GuiPrivate_FOUND})")
 endif()
 
 add_executable(qt-vulkan-spike src/main.cpp)
