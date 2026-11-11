@@ -29,8 +29,9 @@ Moving the baseline changes versions: update the rows in the same pull request. 
 upstream versions; vcpkg's port revisions (`#1`) are left out.
 
 When a port is missing or broken, a later task may fetch a pinned prebuilt archive from CMake
-with a SHA-256 instead, and documents it here. None does today: every library below comes from a
-vcpkg port. Slang's port is itself a download of Slang's release binaries, checked with SHA-512.
+with a SHA-256 instead, and documents it here. None does today: every library in the vcpkg
+tables comes from a port, and the only other code is FLIP, [vendored](#vendored). Slang's port is
+itself a download of Slang's release binaries, checked with SHA-512.
 
 ## Allowed licences
 
@@ -67,12 +68,12 @@ libraries are visible to the modules that declare it.
 | `lcms` | 2.19.1 | `MIT` | Little CMS 2: embedded ICC profiles converted to linear Rec. 709 on import | assets |
 | `miniz` | 3.1.2 | `MIT` | The zip container of `.curation` files; also tinyexr's compression | doc |
 | `nlohmann-json` | 3.12.0 | `MIT` | JSON of project files and manifests | doc |
-| `shader-slang` | 2026.21 | `Apache-2.0 WITH LLVM-exception` | `slangc`, which compiles the shaders to SPIR-V at build time. A build tool: its library is never linked or shipped, so the licences of what its binaries bundle (LLVM, glslang, SPIRV-Tools) do not reach our packages | gpu (build only) |
+| `shader-slang` | 2026.21 | `Apache-2.0 WITH LLVM-exception` | `slangc`, which compiles the shaders to SPIR-V at build time. A build tool, declared `"host": true` so that vcpkg installs it for the machine that builds: its library is never linked or shipped, so the licences of what its binaries bundle (LLVM, glslang, SPIRV-Tools) do not reach our packages | gpu (build only) |
 | `stb` | 2026-08-02 | `MIT OR Unlicense` | `stb_image` (PNG and JPEG import), `stb_image_write` (PNG output), later `stb_truetype` (the overlay's font atlas) | core; assets and gpu through core |
 | `tiff` | 4.7.2 | `libtiff` | TIFF import. Only the `zip` feature (Deflate; LZW is built in): JPEG, LZMA and other codecs are left out, which keeps the code that reads hostile files small | assets |
 | `tinyexr` | 3.2.0 | `BSD-3-Clause` | EXR read and write (it includes parts of OpenEXR, also BSD-3-Clause) | core |
 | `vk-bootstrap` | 1.4.363 | `MIT` | Vulkan instance and device selection, including headless | gpu |
-| `volk` | 1.4.363.0 | `MIT` | Loads the Vulkan loader and its functions at run time, so no loader is linked | gpu |
+| `volk` | 1.4.363.0 | `MIT` | Loads the Vulkan loader and its functions at run time, so no loader is linked. Its header-only target: gpu compiles volk itself, with the window-system defines its surfaces need | gpu |
 | `vulkan-headers` | 1.4.363.0 | `Apache-2.0 OR MIT` | The Vulkan API headers | gpu |
 | `vulkan-memory-allocator` | 3.5.0 | `MIT` | GPU memory allocation (VMA) | gpu |
 

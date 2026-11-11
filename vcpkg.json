@@ -21,7 +21,10 @@
     "lcms",
     "miniz",
     "nlohmann-json",
-    "shader-slang",
+    {
+      "name": "shader-slang",
+      "host": true
+    },
     "stb",
     {
       "name": "tiff",

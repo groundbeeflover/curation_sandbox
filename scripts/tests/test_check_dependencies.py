@@ -142,6 +142,18 @@ class CheckTests(unittest.TestCase):
         doc = DOC.replace("| `glm` | 1.0.3 | `MIT` |", "| `glm` | 1.0.3 | MIT |")
         self.assertEqual(problems(doc=doc), [])
 
+    def test_licence_in_several_code_spans_is_read_whole(self):
+        doc = DOC.replace("| `glm` | 1.0.3 | `MIT` |", "| `glm` | 1.0.3 | `MIT` AND `GPL-3.0-only` |")
+        found = problems(doc=doc)
+        self.assertEqual(len(found), 1)
+        self.assertIn("MIT AND GPL-3.0-only", found[0])
+
+    def test_escaped_pipe_stays_in_its_cell(self):
+        doc = DOC.replace("| maths | core |", "| maths \\| more maths | core |")
+        self.assertEqual(problems(doc=doc), [])
+        doc = DOC.replace("| `glm` | 1.0.3 | `MIT` |", "| `glm` | 1.0.3 | `MIT` \\| x |")
+        self.assertTrue(any("glm" in p for p in problems(doc=doc)))
+
     def test_row_for_a_port_not_in_the_manifest(self):
         manifest = dict(MANIFEST, dependencies=["glm", "embree"])
         found = problems(manifest)
@@ -172,9 +184,11 @@ class CheckTests(unittest.TestCase):
 
     def test_comment_in_a_code_block_is_not_a_heading(self):
         # Between a heading and its table: read as a heading, it would take the table.
-        doc = DOC.replace("## Libraries from vcpkg\n",
-                          "## Libraries from vcpkg\n\n```sh\n# install them\n```\n")
-        self.assertEqual(problems(doc=doc), [])
+        for fence in ["```", "~~~"]:
+            with self.subTest(fence=fence):
+                doc = DOC.replace("## Libraries from vcpkg\n",
+                                  f"## Libraries from vcpkg\n\n{fence}sh\n# install them\n{fence}\n")
+                self.assertEqual(problems(doc=doc), [])
 
 
 class InstalledTests(unittest.TestCase):
@@ -208,11 +222,15 @@ class InstalledTests(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("tbb", found[0])
 
-    def test_documented_pulled_in_port_no_longer_installed(self):
-        installed = {"glm": "1.0.3", "embree": "4.4.1", "vulkan-headers": "1.4.363.0"}
-        found = problems(installed=installed)
-        self.assertEqual(len(found), 1)
-        self.assertIn("zlib", found[0])
+    def test_documented_port_not_installed(self):
+        everything = {"glm": "1.0.3", "embree": "4.4.1", "vulkan-headers": "1.4.363.0",
+                      "zlib": "1.3.1"}
+        for missing in ["zlib", "embree"]:  # pulled in, and direct
+            with self.subTest(missing=missing):
+                installed = {n: v for n, v in everything.items() if n != missing}
+                found = problems(installed=installed)
+                self.assertEqual(len(found), 1)
+                self.assertIn(missing, found[0])
 
 
 class CommandLineTests(unittest.TestCase):

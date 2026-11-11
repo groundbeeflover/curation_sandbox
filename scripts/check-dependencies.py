@@ -11,8 +11,8 @@ Exits 1 and names each problem when:
   SPDX expression) that the "Allowed licences" table does not allow;
 - with --installed (the vcpkg_installed directory of a configured build): an installed port's
   version differs from the documented one, or a port is installed but not documented, or a
-  documented pulled-in port is no longer installed. Ports named vcpkg-* only build other ports
-  and are not listed.
+  documented port is not installed. Ports named vcpkg-* only build other ports and are not
+  listed.
 
 The test suite runs it on the repository, so CI checks it with the other script tests.
 Standard library only.
@@ -92,33 +92,37 @@ def licence_allowed(expr: str, allowed: set[str]) -> bool:
 # ---- Markdown tables ----------------------------------------------------------
 
 def cell_text(cell: str) -> str:
-    """The text in the cell's first backticks, or the whole cell if it has none."""
-    code = re.search(r"`([^`]*)`", cell)
-    return (code.group(1) if code else cell).strip()
+    """The cell without backticks, so `MIT` AND `GPL-3.0-only` is read whole."""
+    return cell.replace("`", "").strip()
+
+
+def table_cells(line: str) -> list[str]:
+    """A table row's cells; an escaped pipe (\\|) stays inside its cell."""
+    return [c.strip() for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
 
 
 def section_tables(doc: str) -> dict[str, list[dict[str, str]]]:
     """The first table under each heading, as rows keyed by column name."""
     tables: dict[str, list[dict[str, str]]] = {}
     heading = None
-    in_code = False  # a "# comment" in a fenced code block is not a heading
+    fence = None  # inside a fenced code block, a "# comment" is not a heading
     lines = doc.splitlines()
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        if line.startswith("```"):
-            in_code = not in_code
-        elif in_code:
-            pass
+        if fence is None and line.startswith(("```", "~~~")):
+            fence = line[:3]
+        elif fence is not None:
+            if line.startswith(fence):
+                fence = None
         elif line.startswith("#"):
             heading = line.lstrip("#").strip()
         elif line.startswith("|") and heading is not None and heading not in tables:
-            header = [c.strip() for c in line.strip("|").split("|")]
+            header = table_cells(line)
             rows = []
             i += 2  # the separator row
             while i < len(lines) and lines[i].strip().startswith("|"):
-                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
-                rows.append(dict(zip(header, cells)))
+                rows.append(dict(zip(header, table_cells(lines[i]))))
                 i += 1
             tables[heading] = rows
             continue
@@ -185,8 +189,8 @@ def check(manifest: dict, doc: str, installed: dict[str, str] | None = None) -> 
                                 f'or "{PULLED_IN}"')
             elif versions[name] != version:
                 problems.append(f"{name}: {version} is installed, the table says {versions[name]}")
-        for name in sorted(versions.keys() - direct - ports.keys()):
-            problems.append(f'{name} is listed in "{PULLED_IN}" but is not installed')
+        for name in sorted(versions.keys() - ports.keys()):
+            problems.append(f"{name} is documented but not installed")
     return problems
 
 
