@@ -1,0 +1,74 @@
+#version 460
+#extension GL_EXT_ray_query : require
+// Path-tracer-like work: camera ray, then per bounce a shadow ray to the spotlight and a cosine bounce.
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(set = 0, binding = 1, rgba32f) uniform image2D accum;
+layout(set = 0, binding = 2, std430) readonly buffer Tri { vec4 data[]; } tri;  // 2 per triangle: normal, albedo
+layout(push_constant) uniform PC {
+    vec4 cam_pos; vec4 cam_right; vec4 cam_up; vec4 cam_fwd; vec4 light_pos; vec4 light_dir; vec4 params;
+} pc;  // params: x cos_inner, y sample index, z weight, w bounces
+
+uint pcg(inout uint s) {
+    s = s * 747796405u + 2891336453u;
+    uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+float rnd(inout uint s) { return float(pcg(s) >> 8) * (1.0 / 16777216.0); }
+
+bool trace(vec3 o, vec3 d, float tmax, out float t, out int prim) {
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq, tlas, gl_RayFlagsOpaqueEXT, 0xFF, o, 1e-4, d, tmax);
+    while (rayQueryProceedEXT(rq)) {}
+    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
+        t = rayQueryGetIntersectionTEXT(rq, true);
+        prim = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
+        return true;
+    }
+    return false;
+}
+bool occluded(vec3 o, vec3 d, float tmax) {
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq, tlas, gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, o, 1e-4, d, tmax);
+    while (rayQueryProceedEXT(rq)) {}
+    return rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionNoneEXT;
+}
+
+void main() {
+    ivec2 size = imageSize(accum);
+    ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    if (px.x >= size.x || px.y >= size.y) return;
+    uint seed = uint(px.y * size.x + px.x) ^ (uint(pc.params.y) * 0x9E3779B9u);
+    pcg(seed);
+    vec2 ndc = (vec2(px) + vec2(rnd(seed), rnd(seed))) / vec2(size) * 2.0 - 1.0;
+    vec3 o = pc.cam_pos.xyz;
+    vec3 d = normalize(pc.cam_fwd.xyz + ndc.x * pc.cam_right.xyz - ndc.y * pc.cam_up.xyz);
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+    int bounces = int(pc.params.w);
+    for (int b = 0; b <= bounces; ++b) {
+        float t; int prim;
+        if (!trace(o, d, 1e4, t, prim)) break;
+        vec3 n = tri.data[2 * prim].xyz;
+        vec3 albedo = tri.data[2 * prim + 1].xyz;
+        if (dot(n, d) > 0.0) n = -n;
+        vec3 p = o + t * d + n * 1e-3;
+        vec3 to_l = pc.light_pos.xyz - p;
+        float d2 = dot(to_l, to_l);
+        vec3 l = to_l * inversesqrt(d2);
+        float cos_s = dot(n, l);
+        float cone = smoothstep(pc.light_dir.w, pc.params.x, dot(-l, normalize(pc.light_dir.xyz)));
+        if (cos_s > 0.0 && cone > 0.0 && !occluded(p, l, sqrt(d2)))
+            radiance += throughput * albedo / 3.14159265 * pc.light_pos.w * cone * cos_s / d2;
+        throughput *= albedo;
+        // cosine-weighted bounce
+        float r1 = rnd(seed), r2 = rnd(seed);
+        float phi = 6.2831853 * r1, sr = sqrt(r2);
+        vec3 tng = normalize(abs(n.x) > 0.5 ? cross(n, vec3(0, 1, 0)) : cross(n, vec3(1, 0, 0)));
+        vec3 btg = cross(n, tng);
+        d = normalize(tng * cos(phi) * sr + btg * sin(phi) * sr + n * sqrt(1.0 - r2));
+        o = p;
+    }
+    vec4 prev = imageLoad(accum, px);
+    imageStore(accum, px, prev + vec4(radiance * pc.params.z, pc.params.z));
+}
