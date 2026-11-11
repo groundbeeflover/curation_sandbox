@@ -121,6 +121,14 @@ class RenderTests(unittest.TestCase):
         self.assertIsNone(bootstrap.TITLE_ID.match("M2-07 no brackets"))
 
 
+class MilestoneTests(unittest.TestCase):
+    def test_due_dates_compare_by_date_only(self):
+        self.assertTrue(bootstrap.due_matches("2026-12-04T00:00:00Z", "2026-12-04"))
+        self.assertFalse(bootstrap.due_matches("2026-12-04T00:00:00Z", "2026-12-05"))
+        self.assertTrue(bootstrap.due_matches(None, None))
+        self.assertFalse(bootstrap.due_matches(None, "2026-12-04"))
+
+
 class RelationParsingTests(unittest.TestCase):
     def test_numbers_of_accepts_several_shapes(self):
         self.assertEqual(bootstrap.numbers_of(None), set())
