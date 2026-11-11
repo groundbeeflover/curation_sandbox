@@ -38,9 +38,7 @@ endif()
 
 add_executable(qt-vulkan-spike src/main.cpp)
 target_link_libraries(qt-vulkan-spike PRIVATE spike_shell)
-if(WIN32)
-    set_target_properties(qt-vulkan-spike PROPERTIES WIN32_EXECUTABLE ON)
-endif()
+# A console program on Windows too, so the status lines it prints are visible.
 
 enable_testing()
 add_executable(tst_shell tests/tst_shell.cpp)
