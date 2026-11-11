@@ -1,0 +1,95 @@
+# Throwaway CI for the M1-04 prototype (issue #39); lives only on the spike/qt-vulkan branch.
+# Answers two questions for ADR 0011: how Qt is installed in CI and how long it takes, and whether
+# a QTest on the offscreen platform can grab a screenshot of the shell with the viewport's frame.
+name: Spike Qt Vulkan
+
+on:
+  push:
+    branches: [spike/qt-vulkan]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: "6.12.0"
+  VULKAN_HEADERS_TAG: vulkan-sdk-1.4.363.0
+
+jobs:
+  linux-offscreen:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vulkan loader, lavapipe, validation layer, Wayland protocols
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libvulkan-dev \
+            mesa-vulkan-drivers vulkan-validationlayers wayland-protocols libxkbcommon-dev
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Configure
+        run: cmake -S spike/qt-vulkan -B build/spike -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQT_NO_PRIVATE_MODULE_WARNING=ON
+
+      - name: Build
+        run: cmake --build build/spike
+
+      - name: Offscreen UI test on lavapipe
+        env:
+          QT_QPA_PLATFORM: offscreen
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        run: ctest --test-dir build/spike -L ui --output-on-failure -V
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offscreen-screenshot
+          path: build/spike/ui-out/
+
+  windows-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Vulkan headers (the loader is opened at run time, so no SDK is needed)
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "$VULKAN_HEADERS_TAG" https://github.com/KhronosGroup/Vulkan-Headers.git "$RUNNER_TEMP/vh"
+          cmake -S "$RUNNER_TEMP/vh" -B "$RUNNER_TEMP/vh/build" -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/vulkan-headers"
+          cmake --install "$RUNNER_TEMP/vh/build"
+
+      - name: Configure
+        shell: bash
+        run: cmake -S spike/qt-vulkan -B build/spike -G "Visual Studio 17 2022" "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/vulkan-headers" -DQT_NO_PRIVATE_MODULE_WARNING=ON
+
+      - name: Build
+        run: cmake --build build/spike --config RelWithDebInfo
+
+      - name: Offscreen UI test (skips without a Vulkan driver)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build/spike -C RelWithDebInfo -L ui --output-on-failure -V
+
+      - name: Bundle with windeployqt
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/spike/RelWithDebInfo/qt-vulkan-spike.exe dist/
+          windeployqt --release --no-translations dist/qt-vulkan-spike.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qt-vulkan-spike-windows
+          path: dist/
