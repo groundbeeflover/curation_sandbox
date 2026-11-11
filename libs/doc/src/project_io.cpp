@@ -108,6 +108,32 @@ template <>
 constexpr std::array<std::string_view, 3> variant_kinds<WorkSource>{"catalogue", "import",
                                                                     "checklist"};
 
+// ---- Geometry rules ----------------------------------------------------------------------------
+// Later code divides by these lengths, so a length whose square is zero (or underflows to zero)
+// is refused: it has no direction.
+
+double squared_length(const Vec2& v) {
+    return v.x * v.x + v.y * v.y;
+}
+
+double squared_length(const Vec3& v) {
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+
+bool has_direction(const Vec2& from, const Vec2& to) {
+    return squared_length(Vec2{to.x - from.x, to.y - from.y}) > 0.0;
+}
+
+// Neighbouring points of a polyline differ, and so do the last and first of a closed one.
+bool neighbours_differ(const std::vector<Vec2>& points, bool closed) {
+    for (std::size_t i = 0; i + 1 < points.size(); ++i) {
+        if (!has_direction(points[i], points[i + 1])) {
+            return false;
+        }
+    }
+    return !closed || points.size() < 2 || has_direction(points.back(), points.front());
+}
+
 // ---- The schema --------------------------------------------------------------------------------
 // describe(v, s) calls v(key, member[, check]) for every member of s, in the order they are
 // written, then v.check(condition, key, problem) for each rule between members, which the reader
@@ -207,6 +233,7 @@ void describe(auto& v, Is<Wall> auto& s) {
     v("finishA", s.finish_a, LibraryIdText{});
     v("finishB", s.finish_b, LibraryIdText{});
     v("label", s.label);
+    v.check(has_direction(s.start_m, s.end_m), "end_m", "must differ from start_m");
 }
 
 void describe(auto& v, Is<Opening> auto& s) {
@@ -224,6 +251,8 @@ void describe(auto& v, Is<Room> auto& s) {
     v("ceilingHeight_m", s.ceiling_height_m);
     v("floorFinish", s.floor_finish, LibraryIdText{});
     v("ceilingFinish", s.ceiling_finish, LibraryIdText{});
+    v.check(neighbours_differ(s.outline_m, true), "outline_m",
+            "must not repeat a point next to itself, nor the first point at the end");
     v.check(s.ceiling_height_m > s.floor_height_m, "ceilingHeight_m",
             "must be greater than floorHeight_m");
 }
@@ -280,6 +309,8 @@ void describe(auto& v, Is<OnCeiling> auto& s) {
 void describe(auto& v, Is<Track> auto& s) {
     v("points_m", s.points_m, Count{2, max_points});
     v("height_m", s.height_m);
+    v.check(neighbours_differ(s.points_m, false), "points_m",
+            "must not repeat a point next to itself");
 }
 
 void describe(auto& v, Is<AimAtEntity> auto& s) {
@@ -300,7 +331,7 @@ void describe(auto& v, Is<Luminaire> auto& s) {
 void describe(auto& v, Is<LuxSensor> auto& s) {
     v("position_m", s.position_m);
     v("normal", s.normal);
-    v.check(s.normal != Vec3{}, "normal", "must not be zero");
+    v.check(squared_length(s.normal) > 0.0, "normal", "must not be zero or nearly so");
 }
 
 void describe(auto& v, Is<Viewpoint> auto& s) {
@@ -393,25 +424,30 @@ class Reader {
     };
 
     [[nodiscard]] Scope enter(std::string_view key) {
-        path_.push_back(Segment{key, 0});
+        path_.push_back(Segment{key, 0, false});
         return Scope(*this);
     }
 
     [[nodiscard]] Scope enter(std::size_t index) {
-        path_.push_back(Segment{{}, index});
+        path_.push_back(Segment{{}, index, true});
         return Scope(*this);
     }
 
+    // Keys come from the file and may be long (an unknown key); messages show the first 64 bytes.
     std::string path() const {
+        constexpr std::size_t shown = 64;
         std::string text;
         for (const Segment& segment : path_) {
-            if (segment.key.empty()) {
+            if (segment.is_index) {
                 text += '[' + std::to_string(segment.index) + ']';
             } else {
-                if (!text.empty()) {
+                if (&segment != &path_.front()) {
                     text += '.';
                 }
-                text += segment.key;
+                text += segment.key.substr(0, shown);
+                if (segment.key.size() > shown) {
+                    text += "...";
+                }
             }
         }
         return text;
@@ -425,8 +461,9 @@ class Reader {
 
   private:
     struct Segment {
-        std::string_view key; // empty for an array element
-        std::size_t index;
+        std::string_view key; // a member's key, which may be empty
+        std::size_t index;    // an array element's index
+        bool is_index;
     };
 
     std::string where_;
@@ -984,6 +1021,9 @@ std::string read_file(const std::filesystem::path& path) {
         throw too_large(path.string());
     }
     std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("cannot open " + path.string());
+    }
     std::string text(static_cast<std::size_t>(size), '\0');
     in.read(text.data(), static_cast<std::streamsize>(text.size()));
     if (!in || in.peek() != std::ifstream::traits_type::eof()) {
@@ -1030,9 +1070,19 @@ void save_project_folder(const Document& document, const std::filesystem::path& 
     // What is saved must open again: read it back before anything is written.
     read_document(file.string(), text);
     std::filesystem::create_directories(folder);
+    // A project.json.tmp already there, left by a failed save or planted in a folder someone sent,
+    // is removed first: remove() deletes a symbolic link itself, so the write below can never go
+    // through a link to a file outside the folder.
     const std::filesystem::path temporary = folder / "project.json.tmp";
-    write_file(temporary, text);
-    std::filesystem::rename(temporary, file);
+    std::filesystem::remove(temporary);
+    try {
+        write_file(temporary, text);
+        std::filesystem::rename(temporary, file);
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        throw;
+    }
 }
 
 } // namespace cs::doc

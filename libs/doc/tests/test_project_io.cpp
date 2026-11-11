@@ -761,8 +761,10 @@ TEST_CASE("parse_project_json(to_project_json(document)) gives back the document
         constexpr double tiny = std::numeric_limits<double>::denorm_min(); // about 4.9e-324
         Entity& room = data.entities[entity_id(1)];
         room.name = "";
-        room.room = Room{.outline_m = {{tiny, -tiny}, {1e300, 0.0}, {0.0, -1e-300}},
-                         .floor_height_m = -1.25,
+        // The outline's edges must have a direction (an edge of 1e-300 m has none), so the
+        // smallest values sit at a corner and in the floor height.
+        room.room = Room{.outline_m = {{tiny, -tiny}, {1e300, 0.0}, {0.0, -1.25}},
+                         .floor_height_m = -1e-300,
                          .ceiling_height_m = 1e15,
                          .floor_finish = std::nullopt,
                          .ceiling_finish = std::nullopt};
@@ -1046,6 +1048,34 @@ TEST_CASE("values at the edges of their ranges are accepted", "[doc][project_io]
         {"/entities/9/luminaire/dimming", 0.0},
         {"/entities/11/luxSensor/normal", Json::array({0.0, 0.0, -5.0})}, // not unit length
     });
+}
+
+TEST_CASE("geometry without a direction is rejected", "[doc][project_io]") {
+    // Later code normalises these directions, so a length that is zero, or whose square
+    // underflows to zero, must not load.
+    check_each_rejected_at({
+        {"/entities/0/wall/end_m", Json::array({0.0, 0.0}), "entities[0].wall.end_m"},
+        {"/entities/2/room/outline_m",
+         Json::array({Json::array({0.0, 0.0}), Json::array({8.0, 0.0}), Json::array({8.0, 0.0}),
+                      Json::array({0.0, 6.0})}),
+         "entities[2].room.outline_m"},
+        {"/entities/2/room/outline_m",
+         Json::array({Json::array({0.0, 0.0}), Json::array({8.0, 0.0}), Json::array({8.0, 6.0}),
+                      Json::array({0.0, 0.0})}),
+         "entities[2].room.outline_m"}, // the first point repeated at the end
+        {"/entities/8/track/points_m",
+         Json::array({Json::array({1.0, 1.5}), Json::array({1.0, 1.5})}),
+         "entities[8].track.points_m"},
+        {"/entities/11/luxSensor/normal", Json::array({1e-320, 0.0, 0.0}),
+         "entities[11].luxSensor.normal"},
+    });
+}
+
+TEST_CASE("an empty unknown key is named as such in the path", "[doc][project_io]") {
+    // A key that is "" must not be shown as an array index.
+    Json document = fixture_json();
+    document["entities"][0][""] = 1;
+    check_rejected_at(document, "entities[0].");
 }
 
 TEST_CASE("arrays shorter or longer than their limits are rejected", "[doc][project_io]") {
@@ -1375,6 +1405,29 @@ TEST_CASE("save_project_folder creates the folder, replaces project.json and lea
     CHECK(difference(read_file(project / "project.json"), fixture_text()).empty());
     CHECK(read_file(project / "assets" / "notes.txt") == "keep me");
     CHECK(read_file(project / "README.txt") == "keep me too");
+    CHECK_FALSE(std::filesystem::exists(project / "project.json.tmp"));
+}
+
+TEST_CASE("save_project_folder never writes through a project.json.tmp link in the folder",
+          "[doc][project_io]") {
+    // A project folder from someone else may hold a symbolic link named project.json.tmp that
+    // points at a file of the user's. Saving must replace the link, not write into its target.
+    const TempFolder folder("save_through_link");
+    const std::filesystem::path project = folder.path() / "project";
+    const std::filesystem::path outside = folder.path() / "outside.txt";
+    write_file(outside, "the user's file");
+    write_file(project / "project.json", fixture_text());
+    std::error_code error;
+    std::filesystem::create_symlink(outside, project / "project.json.tmp", error);
+    if (error) {
+        SKIP("symbolic links cannot be made here: " << error.message());
+    }
+
+    save_project_folder(load_project_folder(project), project);
+
+    CHECK(read_file(outside) == "the user's file");
+    CHECK_FALSE(std::filesystem::is_symlink(project / "project.json"));
+    CHECK(difference(read_file(project / "project.json"), fixture_text()).empty());
     CHECK_FALSE(std::filesystem::exists(project / "project.json.tmp"));
 }
 

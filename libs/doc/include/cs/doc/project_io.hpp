@@ -83,8 +83,10 @@ class ProjectError : public std::runtime_error {
 Document load_project_folder(const std::filesystem::path& folder);
 
 // Writes <folder>/project.json in the canonical form, creating the folder if needed. The text is
-// written to project.json.tmp first and then renamed over project.json, so a failed save leaves
-// the previous file whole. Other files in the folder are left alone. Throws ProjectError, before
+// written to project.json.tmp first and then renamed over project.json, so a save that fails
+// with an error leaves the previous file whole. (The data is not flushed to disk before the
+// rename; saves that survive a power cut come with the .curation file.) Other files in the folder
+// are left alone. Throws ProjectError, before
 // anything is written, if the document would not read back (a dangling reference, a value out of
 // range, a number that is not finite); std::runtime_error when the folder cannot be written.
 void save_project_folder(const Document& document, const std::filesystem::path& folder);

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <stdexcept>
 #include <utility>
 
 namespace cs::doc {
@@ -122,7 +123,11 @@ Uuid IdGenerator::next() {
         }
         if (rand_a > rand_a_mask) {
             // 2^74 ids in one millisecond: borrow the next millisecond (RFC 9562, section 6.2).
-            start_millisecond(std::min(last_ms_ + 1, max_ms));
+            // At the last millisecond 48 bits can hold (the year 10889), there is none to borrow.
+            if (last_ms_ == max_ms) {
+                throw std::overflow_error("no more version 7 UUIDs: the time field is full");
+            }
+            start_millisecond(last_ms_ + 1);
         } else {
             high_ = (high_ & ~rand_a_mask) | rand_a;
             low_ = variant_bits | rand_b;

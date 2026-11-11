@@ -67,7 +67,8 @@ class IdGenerator {
 
     explicit IdGenerator(std::uint64_t seed, Clock clock = unix_time_ms);
 
-    // A new id, greater than every id this generator has made before.
+    // A new id, greater than every id this generator has made before. Throws std::overflow_error
+    // only if 2^74 ids are asked for in the last millisecond that 48 bits can hold (year 10889).
     Uuid next();
 
   private:
