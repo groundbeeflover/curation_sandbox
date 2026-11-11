@@ -9,6 +9,7 @@
 // test), and changes only through the mutation API (ADR 0007).
 
 #include <cs/doc/components.hpp>
+#include <cs/doc/library.hpp>
 #include <cs/doc/uuid.hpp>
 #include <cs/doc/work.hpp>
 
@@ -34,18 +35,6 @@ struct ProjectSettings {
     bool operator==(const ProjectSettings&) const = default;
 };
 
-// A fixture type: the light a kind of fitting emits (ADR 0008, Library definitions). A generic
-// spot is a cone given by lumens and two full angles, as in IES files; IES distributions arrive
-// with milestone 3.
-struct FixtureType {
-    std::string name;
-    double flux_lm = 0.0;                 // > 0: at dimming 1
-    double beam_angle_rad = 0.0;          // > 0: full angle at 50% of the peak intensity
-    double field_angle_rad = 0.0;         // >= beam_angle_rad: full angle at 10% of the peak
-    double colour_temperature_k = 3000.0; // > 0
-    bool operator==(const FixtureType&) const = default;
-};
-
 // The components, in the order they are declared in Entity and written in project.json.
 enum class ComponentKind {
     wall,
@@ -61,14 +50,17 @@ enum class ComponentKind {
     dimension,
 };
 
-inline constexpr std::size_t component_kind_count = 11;
-
-inline constexpr std::array<ComponentKind, component_kind_count> all_component_kinds = {
+inline constexpr std::array all_component_kinds = {
     ComponentKind::wall,      ComponentKind::opening,   ComponentKind::room,
     ComponentKind::exhibit,   ComponentKind::framing,   ComponentKind::placement,
     ComponentKind::track,     ComponentKind::luminaire, ComponentKind::lux_sensor,
     ComponentKind::viewpoint, ComponentKind::dimension,
 };
+
+inline constexpr std::size_t component_kind_count = all_component_kinds.size();
+
+static_assert(static_cast<std::size_t>(ComponentKind::dimension) + 1 == component_kind_count,
+              "all_component_kinds lists every ComponentKind");
 
 // The component's key in project.json: "wall", ..., "luxSensor", "viewpoint", "dimension".
 std::string_view component_key(ComponentKind kind);
@@ -98,7 +90,7 @@ struct Entity {
 // they are written in.
 struct DocumentData {
     ProjectSettings settings;
-    std::map<LibraryId, FixtureType> fixture_types;
+    Library library; // the project's copies of the definitions it uses
     std::map<Uuid, Work> works;
     std::map<Uuid, Entity> entities;
     bool operator==(const DocumentData&) const = default;
@@ -109,20 +101,19 @@ class Document {
     // An empty project with the default settings.
     Document() = default;
 
-    // A document holding `data`. It is not checked here: load_project_folder checks what it
-    // reads, and the mutation API keeps a document valid.
+    // A document holding `data`. It is not checked here; load_project_folder checks what it
+    // reads, and save_project_folder refuses to write a document that would not read back.
     explicit Document(DocumentData data) : data_(std::move(data)) {}
 
     const ProjectSettings& settings() const { return data_.settings; }
-    const std::map<LibraryId, FixtureType>& fixture_types() const { return data_.fixture_types; }
+    const Library& library() const { return data_.library; }
     const std::map<Uuid, Work>& works() const { return data_.works; }
     const std::map<Uuid, Entity>& entities() const { return data_.entities; }
     const DocumentData& data() const { return data_; }
 
-    // nullptr when there is none with that id.
+    // nullptr when there is none with that id. Library definitions: library().find_...().
     const Entity* find_entity(const Uuid& id) const;
     const Work* find_work(const Uuid& id) const;
-    const FixtureType* find_fixture_type(const LibraryId& id) const;
 
     bool operator==(const Document&) const = default;
 

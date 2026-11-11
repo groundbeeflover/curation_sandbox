@@ -137,16 +137,16 @@ DocumentData every_component_data() {
                      .opening_hours_per_year = 2500.0,
                      .display_units = DisplayUnits::inches};
 
-    data.fixture_types["generic-spot-800"] = {.name = "Generic spot 800 lm",
-                                              .flux_lm = 800.0,
-                                              .beam_angle_rad = 0.4,
-                                              .field_angle_rad = 0.7,
-                                              .colour_temperature_k = 3000.0};
-    data.fixture_types["generic-wash-1200"] = {.name = "Generic wash 1200 lm",
-                                               .flux_lm = 1200.0,
-                                               .beam_angle_rad = 1.0,
-                                               .field_angle_rad = 1.6,
-                                               .colour_temperature_k = 4000.0};
+    data.library.fixture_types["generic-spot-800"] = {.name = "Generic spot 800 lm",
+                                                      .flux_lm = 800.0,
+                                                      .beam_angle_rad = 0.4,
+                                                      .field_angle_rad = 0.7,
+                                                      .colour_temperature_k = 3000.0};
+    data.library.fixture_types["generic-wash-1200"] = {.name = "Generic wash 1200 lm",
+                                                       .flux_lm = 1200.0,
+                                                       .beam_angle_rad = 1.0,
+                                                       .field_angle_rad = 1.6,
+                                                       .colour_temperature_k = 4000.0};
 
     // Every member of Work, with a catalogue source.
     data.works[work_id(0)] = Work{
@@ -402,9 +402,7 @@ void check_rejected_at(const Json& document, const std::string& path) {
     const std::optional<ProjectError> error = rejection(text_of(document));
     REQUIRE(error.has_value());
     CHECK(error->json_path() == path);
-    const std::string what = error->what();
-    CHECK_THAT(what, ContainsSubstring(path));
-    CHECK_THAT(what, StartsWith("project.json: " + path + ": "));
+    CHECK_THAT(std::string(error->what()), StartsWith("project.json: " + path + ": "));
 }
 
 // Rejected with an error somewhere under `prefix`, where the header leaves the exact member open
@@ -421,7 +419,7 @@ void check_rejected_under(const Json& document, const std::string& prefix) {
 struct Change {
     std::string pointer;
     Json value;
-    std::string path; // the JSON path the error must name
+    std::string path = {}; // the JSON path the error must name; unused when accepted
 };
 
 void check_each_rejected_at(const std::vector<Change>& changes) {
@@ -499,7 +497,7 @@ TEST_CASE("project settings default to a 1.50 m centre line, 1.60 m eye height, 
     CHECK(empty.settings() == settings);
     CHECK(empty.works().empty());
     CHECK(empty.entities().empty());
-    CHECK(empty.fixture_types().empty());
+    CHECK(empty.library().fixture_types.empty());
 }
 
 TEST_CASE("work sizes are stored as width_m and height_m", "[doc][project_io]") {
@@ -585,7 +583,7 @@ TEST_CASE("the every-component fixture loads with one of every component and pla
     const Document document = load_project_folder(fixture_folder());
     CHECK(document.entities().size() == ix::entity_count);
     CHECK(document.works().size() == 4);
-    CHECK(document.fixture_types().size() == 2);
+    CHECK(document.library().fixture_types.size() == 2);
 
     for (const ComponentKind kind : all_component_kinds) {
         CAPTURE(component_key(kind));
@@ -635,7 +633,7 @@ TEST_CASE("the every-component fixture reads as exactly the document it describe
 
     // Piece by piece first, so a failure says where.
     CHECK(loaded.settings() == expected.settings);
-    CHECK(loaded.fixture_types() == expected.fixture_types);
+    CHECK(loaded.library() == expected.library);
     for (const auto& [id, work] : expected.works) {
         CAPTURE(id.to_string());
         const Work* found = loaded.find_work(id);
@@ -679,11 +677,11 @@ TEST_CASE("find_entity, find_work and find_fixture_type look things up by id",
     CHECK(work->title == "Harbour at Dusk");
     CHECK(document.find_work(entity_id(ix::wall_a)) == nullptr);
 
-    const FixtureType* spot = document.find_fixture_type("generic-spot-800");
+    const FixtureType* spot = document.library().find_fixture_type("generic-spot-800");
     REQUIRE(spot != nullptr);
     CHECK(spot->flux_lm == 800.0);
-    CHECK(document.find_fixture_type("generic-spot-801") == nullptr);
-    CHECK(document.find_fixture_type("") == nullptr);
+    CHECK(document.library().find_fixture_type("generic-spot-801") == nullptr);
+    CHECK(document.library().find_fixture_type("") == nullptr);
 }
 
 // ---- Writing ---------------------------------------------------------------------------------
@@ -1035,18 +1033,18 @@ TEST_CASE("a value out of its range is rejected with its JSON path", "[doc][proj
 
 TEST_CASE("values at the edges of their ranges are accepted", "[doc][project_io]") {
     check_each_accepted({
-        {"/settings/openingHoursPerYear", 0.0, ""},
-        {"/settings/openingHoursPerYear", 8784.0, ""},
-        {"/library/fixtureTypes/0/fieldAngle_rad", 0.4, ""}, // equal to the beam angle
-        {"/works/0/material/baseRoughness", 1.0, ""},
-        {"/works/0/material/coatRoughness", 0.0, ""},
-        {"/works/0/sensitivity/maxLux", 0.0, ""},
-        {"/works/2/source/row", 1, ""},
-        {"/entities/3/framing/mat/bottomExtra_m", 0.0, ""},
-        {"/entities/4/opening/offset_m", 0.0, ""},
-        {"/entities/9/placement/distance_m", 0.0, ""},
-        {"/entities/9/luminaire/dimming", 0.0, ""},
-        {"/entities/11/luxSensor/normal", Json::array({0.0, 0.0, -5.0}), ""}, // not unit length
+        {"/settings/openingHoursPerYear", 0.0},
+        {"/settings/openingHoursPerYear", 8784.0},
+        {"/library/fixtureTypes/0/fieldAngle_rad", 0.4}, // equal to the beam angle
+        {"/works/0/material/baseRoughness", 1.0},
+        {"/works/0/material/coatRoughness", 0.0},
+        {"/works/0/sensitivity/maxLux", 0.0},
+        {"/works/2/source/row", 1},
+        {"/entities/3/framing/mat/bottomExtra_m", 0.0},
+        {"/entities/4/opening/offset_m", 0.0},
+        {"/entities/9/placement/distance_m", 0.0},
+        {"/entities/9/luminaire/dimming", 0.0},
+        {"/entities/11/luxSensor/normal", Json::array({0.0, 0.0, -5.0})}, // not unit length
     });
 }
 
@@ -1128,10 +1126,9 @@ TEST_CASE("a project with max_entities entities loads", "[doc][project_io]") {
         "eyeHeight_m": 1.6, "openingHoursPerYear": 2184.0, "displayUnits": "centimetres"},
         "library": {"fixtureTypes": []}, "works": [], "entities": [)";
     for (std::size_t i = 0; i < max_entities; ++i) {
-        char entity[160];
+        char entity[80];
         std::snprintf(entity, sizeof entity,
-                      R"(%s{"id": "01932f5e-8a00-7000-8000-%012zx", "name": "", "luxSensor": )"
-                      R"({"position_m": [1.0, 2.0, 1.5], "normal": [0.0, 1.0, 0.0]}})",
+                      R"(%s{"id": "01932f5e-8a00-7000-8000-%012zx", "name": ""})",
                       i == 0 ? "" : ",", i + 1);
         text += entity;
     }
@@ -1333,11 +1330,31 @@ TEST_CASE("load_project_folder rejects a project.json larger than max_project_js
         CHECK_THROWS_AS(load_project_folder(folder.path()), ProjectError);
     }
     SECTION("exactly at the limit") {
+        // A file at the limit is read and parsed, not refused for its size. It starts with a byte
+        // that is not JSON, so that the parser stops at once rather than reading 64 MiB.
         const TempFolder folder("load_at_size_limit");
-        write_padded(folder.path() / "project.json", max_project_json_bytes);
-        REQUIRE(std::filesystem::file_size(folder.path() / "project.json") ==
-                max_project_json_bytes);
-        CHECK(load_project_folder(folder.path()) == Document(every_component_data()));
+        const std::filesystem::path file = folder.path() / "project.json";
+        std::filesystem::create_directories(folder.path());
+        {
+            std::ofstream out(file, std::ios::binary);
+            const std::string chunk(std::size_t{1} << 20, ' ');
+            out.put('x');
+            for (std::size_t written = 1; written < max_project_json_bytes;) {
+                const std::size_t n = std::min(chunk.size(), max_project_json_bytes - written);
+                out.write(chunk.data(), static_cast<std::streamsize>(n));
+                written += n;
+            }
+            REQUIRE(out);
+        }
+        REQUIRE(std::filesystem::file_size(file) == max_project_json_bytes);
+        std::string what;
+        try {
+            (void)load_project_folder(folder.path());
+        } catch (const ProjectError& error) {
+            what = error.what();
+        }
+        CHECK_THAT(what, ContainsSubstring("invalid JSON"));
+        CHECK_THAT(what, !ContainsSubstring("larger than"));
     }
 }
 

@@ -69,17 +69,18 @@ struct LibraryIdText {};
 struct Sha256Text {};
 struct ExtensionText {};
 
-// A reference to something else in the document, checked once everything is read.
-enum class Target { work, entity, wall, room, track, fixture_type };
+// A reference to something else in the document, checked once everything is read: a work, an
+// entity (that has `component`, when one is given), or a library definition.
+enum class Target { work, entity, fixture_type };
 
 struct Ref {
     Target target;
+    std::optional<ComponentKind> component = std::nullopt;
 };
 
-// The file's schemaVersion, which must be schema_version.
-struct SchemaVersionCheck {};
-
 // ---- Spellings in the file ---------------------------------------------------------------------
+// Each enumeration and variant used in the schema has its names here; the empty primary templates
+// are refused by static_asserts where the names are used.
 
 template <class E> constexpr std::array<std::string_view, 0> enum_names{};
 template <> constexpr std::array<std::string_view, 2> enum_names<WallFace>{"A", "B"};
@@ -109,7 +110,9 @@ constexpr std::array<std::string_view, 3> variant_kinds<WorkSource>{"catalogue",
 
 // ---- The schema --------------------------------------------------------------------------------
 // describe(v, s) calls v(key, member[, check]) for every member of s, in the order they are
-// written. `s` is const when writing and not when reading.
+// written, then v.check(condition, key, problem) for each rule between members, which the reader
+// enforces once the members are read and the writer ignores. `s` is const when writing and not
+// when reading.
 
 template <class S, class T>
 concept Is = std::same_as<std::remove_const_t<S>, T>;
@@ -127,6 +130,12 @@ void describe(auto& v, Is<FixtureType> auto& s) {
     v("beamAngle_rad", s.beam_angle_rad, full_angle);
     v("fieldAngle_rad", s.field_angle_rad, full_angle);
     v("colourTemperature_K", s.colour_temperature_k, positive);
+    v.check(s.field_angle_rad >= s.beam_angle_rad, "fieldAngle_rad",
+            "must be at least beamAngle_rad");
+}
+
+void describe(auto& v, Is<Library> auto& s) {
+    v("fixtureTypes", s.fixture_types, Count{0, max_fixture_types});
 }
 
 void describe(auto& v, Is<AssetRef> auto& s) {
@@ -201,7 +210,7 @@ void describe(auto& v, Is<Wall> auto& s) {
 }
 
 void describe(auto& v, Is<Opening> auto& s) {
-    v("wall", s.wall, Ref{Target::wall});
+    v("wall", s.wall, Ref{Target::entity, ComponentKind::wall});
     v("offset_m", s.offset_m, non_negative);
     v("width_m", s.width_m, positive);
     v("height_m", s.height_m, positive);
@@ -215,6 +224,8 @@ void describe(auto& v, Is<Room> auto& s) {
     v("ceilingHeight_m", s.ceiling_height_m);
     v("floorFinish", s.floor_finish, LibraryIdText{});
     v("ceilingFinish", s.ceiling_finish, LibraryIdText{});
+    v.check(s.ceiling_height_m > s.floor_height_m, "ceilingHeight_m",
+            "must be greater than floorHeight_m");
 }
 
 void describe(auto& v, Is<Exhibit> auto& s) {
@@ -237,7 +248,7 @@ void describe(auto& v, Is<Framing> auto& s) {
 }
 
 void describe(auto& v, Is<OnWall> auto& s) {
-    v("wall", s.wall, Ref{Target::wall});
+    v("wall", s.wall, Ref{Target::entity, ComponentKind::wall});
     v("face", s.face);
     v("distance_m", s.distance_m);
     v("centreHeight_m", s.centre_height_m);
@@ -245,7 +256,7 @@ void describe(auto& v, Is<OnWall> auto& s) {
 }
 
 void describe(auto& v, Is<OnFloor> auto& s) {
-    v("room", s.room, Ref{Target::room});
+    v("room", s.room, Ref{Target::entity, ComponentKind::room});
     v("position_m", s.position_m);
     v("rotation_rad", s.rotation_rad);
 }
@@ -257,12 +268,12 @@ void describe(auto& v, Is<OnHost> auto& s) {
 }
 
 void describe(auto& v, Is<OnTrack> auto& s) {
-    v("track", s.track, Ref{Target::track});
+    v("track", s.track, Ref{Target::entity, ComponentKind::track});
     v("distance_m", s.distance_m, non_negative);
 }
 
 void describe(auto& v, Is<OnCeiling> auto& s) {
-    v("room", s.room, Ref{Target::room});
+    v("room", s.room, Ref{Target::entity, ComponentKind::room});
     v("position_m", s.position_m);
 }
 
@@ -289,6 +300,7 @@ void describe(auto& v, Is<Luminaire> auto& s) {
 void describe(auto& v, Is<LuxSensor> auto& s) {
     v("position_m", s.position_m);
     v("normal", s.normal);
+    v.check(s.normal != Vec3{}, "normal", "must not be zero");
 }
 
 void describe(auto& v, Is<Viewpoint> auto& s) {
@@ -324,15 +336,11 @@ void describe(auto& v, Is<Entity> auto& s) {
     v(component_key(ComponentKind::dimension), s.dimension);
 }
 
-// The whole file. A map is written as an array of objects, each with "id" first; section() is a
-// nested object with no type of its own.
+// The whole file, after its "schemaVersion" (read_document and write_document). A map is written
+// as an array of objects, each with "id" first.
 void describe(auto& v, Is<DocumentData> auto& s) {
-    int version = schema_version;
-    v("schemaVersion", version, SchemaVersionCheck{});
     v("settings", s.settings);
-    v.section("library", [&](auto& library) {
-        library("fixtureTypes", s.fixture_types, Count{0, max_fixture_types});
-    });
+    v("library", s.library);
     v("works", s.works, Count{0, max_works});
     v("entities", s.entities, Count{0, max_entities});
 }
@@ -355,9 +363,9 @@ template <class... T> constexpr bool is_variant<std::variant<T...>> = true;
 
 struct PendingRef {
     std::string path;
-    Target target;
-    Uuid id;              // for every target but fixture types
-    LibraryId library_id; // for fixture types
+    Ref ref;
+    Uuid id;              // for works and entities
+    LibraryId library_id; // for library definitions
 };
 
 // The state of one read: where it is in the file, for messages; the references to check once
@@ -409,8 +417,8 @@ class Reader {
         return text;
     }
 
-    void add_ref(Target target, const Uuid& id) { refs_.push_back({path(), target, id, {}}); }
-    void add_ref(const LibraryId& id) { refs_.push_back({path(), Target::fixture_type, {}, id}); }
+    void add_ref(const Ref& ref, const Uuid& id) { refs_.push_back({path(), ref, id, {}}); }
+    void add_ref(const Ref& ref, const LibraryId& id) { refs_.push_back({path(), ref, {}, id}); }
     const std::vector<PendingRef>& refs() const { return refs_; }
 
     std::vector<Uuid> entity_order; // entity ids in the order of the file
@@ -512,23 +520,20 @@ Uuid read_uuid(Reader& r, const Json& j) {
     return *id;
 }
 
+// The position of `name` in `names`; fails, listing them, when it is not there.
 template <std::size_t N>
-[[noreturn]] void fail_one_of(Reader& r, const std::array<std::string_view, N>& names) {
-    std::string problem = "expected one of ";
-    for (std::size_t i = 0; i < N; ++i) {
-        problem += (i == 0 ? "\"" : ", \"") + std::string(names[i]) + '"';
-    }
-    r.fail(problem);
-}
-
-template <class E> E read_enum(Reader& r, const Json& j) {
-    const std::string& text = read_string(r, j);
-    const auto& names = enum_names<E>;
-    const auto it = std::find(names.begin(), names.end(), text);
+std::size_t index_of(Reader& r, const std::array<std::string_view, N>& names,
+                     std::string_view name) {
+    static_assert(N > 0, "every enumeration and variant has its names");
+    const auto it = std::find(names.begin(), names.end(), name);
     if (it == names.end()) {
-        fail_one_of(r, names);
+        std::string problem = "expected one of ";
+        for (std::size_t i = 0; i < N; ++i) {
+            problem += (i == 0 ? "\"" : ", \"") + std::string(names[i]) + '"';
+        }
+        r.fail(problem);
     }
-    return static_cast<E>(it - names.begin());
+    return static_cast<std::size_t>(it - names.begin());
 }
 
 template <std::size_t N> std::array<double, N> read_numbers(Reader& r, const Json& j) {
@@ -567,15 +572,12 @@ class ObjectReader {
         }
     }
 
-    template <class F> void section(std::string_view key, F&& read_members) {
-        const Json* value = find(key);
-        const auto scope = r_.enter(key);
-        if (!value) {
-            r_.fail("missing");
+    // A rule between members, called by describe() after the members it compares.
+    void check(bool holds, std::string_view key, std::string_view problem) {
+        if (!holds) {
+            const auto scope = r_.enter(key);
+            r_.fail(std::string(problem));
         }
-        ObjectReader inner(r_, *value);
-        read_members(inner);
-        inner.finish();
     }
 
     // The "kind" of a variant's object.
@@ -597,11 +599,12 @@ class ObjectReader {
     }
 
     void finish() const {
-        if (used_.size() == j_.size()) {
+        if (used_count_ == j_.size()) {
             return;
         }
+        const auto used_end = used_.begin() + static_cast<std::ptrdiff_t>(used_count_);
         for (auto it = j_.begin(); it != j_.end(); ++it) {
-            if (std::find(used_.begin(), used_.end(), it.key()) == used_.end()) {
+            if (std::find(used_.begin(), used_end, it.key()) == used_end) {
                 const auto scope = r_.enter(it.key());
                 r_.fail(std::string(unknown_));
             }
@@ -612,14 +615,20 @@ class ObjectReader {
     Reader& r_;
     const Json& j_;
     std::string_view unknown_;
-    std::vector<std::string_view> used_; // keys from describe(), which outlive the reader
+    // The keys describe() found, which outlive the reader; a fixed array, because one is made for
+    // every object of the file.
+    std::array<std::string_view, 32> used_;
+    std::size_t used_count_ = 0;
 
     const Json* find(std::string_view key) {
         const auto it = j_.find(key);
         if (it == j_.end()) {
             return nullptr;
         }
-        used_.push_back(key);
+        if (used_count_ == used_.size()) {
+            throw std::logic_error("describe() names more keys than ObjectReader holds");
+        }
+        used_[used_count_++] = key;
         return &*it;
     }
 };
@@ -632,41 +641,14 @@ void emplace_alternative(V& v, std::size_t index, std::index_sequence<I...>) {
 template <class V> void read_variant(Reader& r, const Json& j, V& out) {
     ObjectReader object(r, j);
     const std::string_view kind = object.read_kind();
-    const auto& kinds = variant_kinds<V>;
-    const auto it = std::find(kinds.begin(), kinds.end(), kind);
-    if (it == kinds.end()) {
+    std::size_t index = 0;
+    {
         const auto scope = r.enter("kind");
-        fail_one_of(r, kinds);
+        index = index_of(r, variant_kinds<V>, kind);
     }
-    emplace_alternative(out, static_cast<std::size_t>(it - kinds.begin()),
-                        std::make_index_sequence<std::variant_size_v<V>>{});
+    emplace_alternative(out, index, std::make_index_sequence<std::variant_size_v<V>>{});
     std::visit([&](auto& alternative) { describe(object, alternative); }, out);
     object.finish();
-}
-
-// Rules between members of one object, checked once the object is read.
-
-template <class T> void check_members(Reader&, const T&) {}
-
-void check_members(Reader& r, const FixtureType& s) {
-    if (s.field_angle_rad < s.beam_angle_rad) {
-        const auto scope = r.enter("fieldAngle_rad");
-        r.fail("must be at least the beam angle, " + number_text(s.beam_angle_rad));
-    }
-}
-
-void check_members(Reader& r, const Room& s) {
-    if (s.ceiling_height_m <= s.floor_height_m) {
-        const auto scope = r.enter("ceilingHeight_m");
-        r.fail("must be greater than floorHeight_m, " + number_text(s.floor_height_m));
-    }
-}
-
-void check_members(Reader& r, const LuxSensor& s) {
-    if (s.normal == Vec3{}) {
-        const auto scope = r.enter("normal");
-        r.fail("must not be zero");
-    }
 }
 
 // A map is an array of objects, each with an "id" and the members of the mapped type.
@@ -684,7 +666,6 @@ template <class Key, class T> void read_map(Reader& r, const Json& j, std::map<K
         T value{};
         describe(object, value);
         object.finish();
-        check_members(r, value);
         if (!out.emplace(id, std::move(value)).second) {
             const auto id_scope = r.enter("id");
             r.fail("another element has the same id");
@@ -703,13 +684,6 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
         if constexpr (std::is_same_v<C, Range>) {
             check_range(r, out, check);
         }
-    } else if constexpr (std::is_same_v<T, int> && std::is_same_v<C, SchemaVersionCheck>) {
-        const std::int64_t version = read_whole_number(r, j);
-        if (version != schema_version) {
-            r.fail("this build reads schema version " + std::to_string(schema_version) + ", not " +
-                   std::to_string(version));
-        }
-        out = schema_version;
     } else if constexpr (std::is_same_v<T, int>) {
         static_assert(std::is_same_v<C, Range>, "every whole number has a range");
         const std::int64_t x = read_whole_number(r, j);
@@ -724,7 +698,7 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
             }
         }
         if constexpr (std::is_same_v<C, Ref>) {
-            r.add_ref(out);
+            r.add_ref(check, out);
         }
         if constexpr (std::is_same_v<C, Sha256Text>) {
             if (!is_sha256(out)) {
@@ -739,10 +713,10 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
     } else if constexpr (std::is_same_v<T, Uuid>) {
         out = read_uuid(r, j);
         if constexpr (std::is_same_v<C, Ref>) {
-            r.add_ref(check.target, out);
+            r.add_ref(check, out);
         }
     } else if constexpr (std::is_enum_v<T>) {
-        out = read_enum<T>(r, j);
+        out = static_cast<T>(index_of(r, enum_names<T>, read_string(r, j)));
     } else if constexpr (std::is_same_v<T, Vec2>) {
         const auto n = read_numbers<2>(r, j);
         out = {n[0], n[1]};
@@ -780,7 +754,6 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
         ObjectReader object(r, j);
         describe(object, out);
         object.finish();
-        check_members(r, out);
     }
 }
 
@@ -790,48 +763,48 @@ std::string entity_path(const Reader& r, const Uuid& id, std::string_view rest) 
 }
 
 void check_references(const Reader& r, const DocumentData& data) {
-    for (const PendingRef& ref : r.refs()) {
-        if (ref.target == Target::fixture_type) {
-            if (!data.fixture_types.contains(ref.library_id)) {
-                r.fail_at(ref.path, "the library has no fixture type \"" + ref.library_id + '"');
+    for (const PendingRef& pending : r.refs()) {
+        const Ref& ref = pending.ref;
+        switch (ref.target) {
+        case Target::fixture_type:
+            if (!data.library.find_fixture_type(pending.library_id)) {
+                r.fail_at(pending.path,
+                          "the library has no fixture type \"" + pending.library_id + '"');
             }
-            continue;
-        }
-        if (ref.target == Target::work) {
-            if (!data.works.contains(ref.id)) {
-                r.fail_at(ref.path, "no work has the id " + ref.id.to_string());
+            break;
+        case Target::work:
+            if (!data.works.contains(pending.id)) {
+                r.fail_at(pending.path, "no work has the id " + pending.id.to_string());
             }
-            continue;
-        }
-        const auto it = data.entities.find(ref.id);
-        if (it == data.entities.end()) {
-            r.fail_at(ref.path, "no entity has the id " + ref.id.to_string());
-        }
-        const auto require = [&](ComponentKind kind) {
-            if (!it->second.has(kind)) {
-                r.fail_at(ref.path, "the entity " + ref.id.to_string() + " has no " +
-                                        std::string(component_key(kind)));
+            break;
+        case Target::entity:
+            const auto it = data.entities.find(pending.id);
+            if (it == data.entities.end()) {
+                r.fail_at(pending.path, "no entity has the id " + pending.id.to_string());
             }
-        };
-        if (ref.target == Target::wall) {
-            require(ComponentKind::wall);
-        } else if (ref.target == Target::room) {
-            require(ComponentKind::room);
-        } else if (ref.target == Target::track) {
-            require(ComponentKind::track);
+            if (ref.component && !it->second.has(*ref.component)) {
+                r.fail_at(pending.path, "the entity " + pending.id.to_string() + " has no " +
+                                            std::string(component_key(*ref.component)));
+            }
+            break;
         }
     }
 }
 
-// Following OnHost placements from any entity must end; each entity is walked once.
+// Following OnHost placements from any entity must end. Only entities placed on a host are
+// walked, each once.
 void check_hosts(const Reader& r, const DocumentData& data) {
+    const auto host_of = [&](const Uuid& id) -> const Uuid* {
+        const Entity& entity = data.entities.at(id); // references are checked already
+        const auto* on_host = entity.placement ? std::get_if<OnHost>(&*entity.placement) : nullptr;
+        return on_host ? &on_host->host : nullptr;
+    };
     enum class State { walking, done };
     std::map<Uuid, State> state;
     std::vector<Uuid> chain;
     for (const Uuid& start : r.entity_order) {
         chain.clear();
-        Uuid id = start;
-        while (true) {
+        for (Uuid id = start; const Uuid* host = host_of(id); id = *host) {
             const auto [it, inserted] = state.try_emplace(id, State::walking);
             if (!inserted) {
                 if (it->second == State::walking) {
@@ -841,13 +814,6 @@ void check_hosts(const Reader& r, const DocumentData& data) {
                 break;
             }
             chain.push_back(id);
-            const Entity& entity = data.entities.at(id); // references are checked already
-            const auto* on_host =
-                entity.placement ? std::get_if<OnHost>(&*entity.placement) : nullptr;
-            if (!on_host) {
-                break;
-            }
-            id = on_host->host;
         }
         for (const Uuid& walked : chain) {
             state[walked] = State::done;
@@ -885,10 +851,14 @@ void check_depth(const std::string& where, std::string_view text) {
     }
 }
 
+ProjectError too_large(const std::string& where) {
+    return ProjectError(where, "",
+                        "larger than " + std::to_string(max_project_json_bytes) + " bytes");
+}
+
 Json parse_json(const std::string& where, std::string_view text) {
     if (text.size() > max_project_json_bytes) {
-        throw ProjectError(where, "",
-                           "larger than " + std::to_string(max_project_json_bytes) + " bytes");
+        throw too_large(where);
     }
     check_depth(where, text);
     try {
@@ -907,8 +877,20 @@ Json parse_json(const std::string& where, std::string_view text) {
 DocumentData read_document(const std::string& where, std::string_view text) {
     const Json root = parse_json(where, text);
     Reader r(where);
+    ObjectReader top(r, root);
+    // The version comes first: nothing else is read from a file of another version. (Migrations
+    // from older versions will run here, on the JSON, before the typed read.)
+    int version = 0;
+    top("schemaVersion", version,
+        Range{std::numeric_limits<int>::min(), std::numeric_limits<int>::max()});
+    if (version != schema_version) {
+        const auto scope = r.enter("schemaVersion");
+        r.fail("this build reads schema version " + std::to_string(schema_version) + ", not " +
+               std::to_string(version));
+    }
     DocumentData data;
-    read_value(r, root, data, NoCheck{});
+    describe(top, data);
+    top.finish();
     check_references(r, data);
     check_hosts(r, data);
     return data;
@@ -934,12 +916,7 @@ class ObjectWriter {
         }
     }
 
-    template <class F> void section(std::string_view key, F&& write_members) {
-        OrderedJson inner = OrderedJson::object();
-        ObjectWriter writer(inner);
-        write_members(writer);
-        out_[std::string(key)] = std::move(inner);
-    }
+    void check(bool, std::string_view, std::string_view) {}
 
     void kind(std::string_view kind) { out_["kind"] = std::string(kind); }
 
@@ -954,6 +931,7 @@ template <class T> OrderedJson write_value(const T& value) {
     } else if constexpr (std::is_same_v<T, Uuid>) {
         return value.to_string();
     } else if constexpr (std::is_enum_v<T>) {
+        static_assert(enum_names<T>.size() > 0, "every enumeration has its names");
         const auto index = static_cast<std::size_t>(value);
         // An out-of-range value writes "", which fails to read back, so save refuses it.
         return std::string(index < enum_names<T>.size() ? enum_names<T>[index]
@@ -981,6 +959,8 @@ template <class T> OrderedJson write_value(const T& value) {
         }
         return array;
     } else if constexpr (is_variant<T>) {
+        static_assert(variant_kinds<T>.size() == std::variant_size_v<T>,
+                      "every alternative has its kind");
         OrderedJson object = OrderedJson::object();
         object["kind"] = std::string(variant_kinds<T>[value.index()]);
         ObjectWriter writer(object);
@@ -1001,8 +981,7 @@ std::string read_file(const std::filesystem::path& path) {
         throw std::runtime_error("cannot read " + path.string() + ": " + error.message());
     }
     if (size > max_project_json_bytes) {
-        throw ProjectError(path.string(), "",
-                           "larger than " + std::to_string(max_project_json_bytes) + " bytes");
+        throw too_large(path.string());
     }
     std::ifstream in(path, std::ios::binary);
     std::string text(static_cast<std::size_t>(size), '\0');
@@ -1029,8 +1008,12 @@ Document parse_project_json(std::string_view text) {
 }
 
 std::string to_project_json(const Document& document) {
+    OrderedJson root = OrderedJson::object();
+    root["schemaVersion"] = schema_version;
+    ObjectWriter writer(root);
+    describe(writer, document.data());
     try {
-        return write_value(document.data()).dump(2) + '\n';
+        return root.dump(2) + '\n';
     } catch (const OrderedJson::type_error&) {
         throw ProjectError("project.json", "", "cannot write: a string is not valid UTF-8");
     }

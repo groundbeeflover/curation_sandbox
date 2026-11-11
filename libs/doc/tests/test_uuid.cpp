@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -60,6 +61,22 @@ constexpr std::int64_t ms_2100 = 4'102'444'800'000;
 
 // A time that fits the 48 bits (0x0190f2a45b6c, in July 2024).
 constexpr std::int64_t fixed_ms = 0x0190f2a45b6c;
+
+// Each id is greater than the one before, both as a Uuid and as text. One check over the whole
+// list, which stays fast for 10^5 ids under the sanitizers.
+void check_strictly_increasing(const std::vector<Uuid>& ids) {
+    std::vector<std::string> texts;
+    texts.reserve(ids.size());
+    for (const Uuid& id : ids) {
+        texts.push_back(id.to_string());
+    }
+    const auto id_step = std::adjacent_find(ids.begin(), ids.end(), std::greater_equal<>{});
+    CHECK(id_step == ids.end());
+    const auto text_step = std::adjacent_find(texts.begin(), texts.end(), std::greater_equal<>{});
+    if (text_step != texts.end()) {
+        FAIL_CHECK("not increasing: " << *text_step << " then " << *(text_step + 1));
+    }
+}
 
 } // namespace
 
@@ -241,32 +258,22 @@ TEST_CASE("10^5 generated ids are unique and sort in creation order", "[doc][uui
 
     std::unordered_set<Uuid> unique(ids.begin(), ids.end());
     CHECK(unique.size() == count);
-
-    std::string previous_text = ids.front().to_string();
-    for (std::size_t i = 1; i < count; ++i) {
-        const std::string text = ids[i].to_string();
-        CAPTURE(i, previous_text, text);
-        REQUIRE(ids[i - 1] < ids[i]);
-        REQUIRE(previous_text < text);
-        previous_text = text;
-    }
+    check_strictly_increasing(ids);
 }
 
 TEST_CASE("ids made within one millisecond still increase", "[doc][uuid]") {
     constexpr std::size_t count = 100'000;
     IdGenerator generator(6, [] { return fixed_ms; });
-    Uuid previous = generator.next();
-    CHECK(unix_ms_of(previous) == fixed_ms);
-    for (std::size_t i = 1; i < count; ++i) {
-        const Uuid id = generator.next();
-        CAPTURE(i, previous.to_string(), id.to_string());
-        REQUIRE(previous < id);
-        REQUIRE(previous.to_string() < id.to_string());
-        // The counter has 74 bits and starts at a random value: 10^5 steps do not overflow it
-        // (except with probability about 10^5 / 2^74), so the time stays the clock's.
-        REQUIRE(unix_ms_of(id) == fixed_ms);
-        previous = id;
+    std::vector<Uuid> ids;
+    ids.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        ids.push_back(generator.next());
     }
+    check_strictly_increasing(ids);
+    // The counter has 74 bits and starts at a random value: 10^5 steps do not overflow it
+    // (except with probability about 10^5 / 2^74), so the time stays the clock's.
+    CHECK(std::all_of(ids.begin(), ids.end(),
+                      [](const Uuid& id) { return unix_ms_of(id) == fixed_ms; }));
 }
 
 TEST_CASE("ids keep increasing when the clock steps backwards", "[doc][uuid]") {
@@ -322,14 +329,11 @@ TEST_CASE("each new millisecond starts the counter at a random value", "[doc][uu
 TEST_CASE("the same seed and clock give the same ids", "[doc][uuid]") {
     // Two generators fed the same scripted clock: 500 ids in one millisecond, then 500 in the
     // next, then a step back.
-    std::int64_t now_a = fixed_ms;
-    std::int64_t now_b = fixed_ms;
-    IdGenerator a(42, [&now_a] { return now_a; });
-    IdGenerator b(42, [&now_b] { return now_b; });
+    std::int64_t now = fixed_ms;
+    IdGenerator a(42, [&now] { return now; });
+    IdGenerator b(42, [&now] { return now; });
     for (int i = 0; i < 1500; ++i) {
-        const std::int64_t t = i < 500 ? fixed_ms : i < 1000 ? fixed_ms + 1 : fixed_ms - 5;
-        now_a = t;
-        now_b = t;
+        now = i < 500 ? fixed_ms : i < 1000 ? fixed_ms + 1 : fixed_ms - 5;
         const Uuid id_a = a.next();
         const Uuid id_b = b.next();
         CAPTURE(i);

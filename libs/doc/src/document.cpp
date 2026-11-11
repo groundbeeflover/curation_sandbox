@@ -5,31 +5,11 @@
 namespace cs::doc {
 
 std::string_view component_key(ComponentKind kind) {
-    switch (kind) {
-    case ComponentKind::wall:
-        return "wall";
-    case ComponentKind::opening:
-        return "opening";
-    case ComponentKind::room:
-        return "room";
-    case ComponentKind::exhibit:
-        return "exhibit";
-    case ComponentKind::framing:
-        return "framing";
-    case ComponentKind::placement:
-        return "placement";
-    case ComponentKind::track:
-        return "track";
-    case ComponentKind::luminaire:
-        return "luminaire";
-    case ComponentKind::lux_sensor:
-        return "luxSensor";
-    case ComponentKind::viewpoint:
-        return "viewpoint";
-    case ComponentKind::dimension:
-        return "dimension";
-    }
-    return {};
+    static constexpr std::array<std::string_view, component_kind_count> keys = {
+        "wall",  "opening",   "room",      "exhibit",   "framing",   "placement",
+        "track", "luminaire", "luxSensor", "viewpoint", "dimension",
+    };
+    return keys[static_cast<std::size_t>(kind)];
 }
 
 bool Entity::has(ComponentKind kind) const {
@@ -60,26 +40,14 @@ bool Entity::has(ComponentKind kind) const {
     return false;
 }
 
-namespace {
-
-template <class Map, class Key>
-const typename Map::mapped_type* find_in(const Map& map, const Key& key) {
-    const auto it = map.find(key);
-    return it == map.end() ? nullptr : &it->second;
-}
-
-} // namespace
-
 const Entity* Document::find_entity(const Uuid& id) const {
-    return find_in(data_.entities, id);
+    const auto it = data_.entities.find(id);
+    return it == data_.entities.end() ? nullptr : &it->second;
 }
 
 const Work* Document::find_work(const Uuid& id) const {
-    return find_in(data_.works, id);
-}
-
-const FixtureType* Document::find_fixture_type(const LibraryId& id) const {
-    return find_in(data_.fixture_types, id);
+    const auto it = data_.works.find(id);
+    return it == data_.works.end() ? nullptr : &it->second;
 }
 
 } // namespace cs::doc
