@@ -32,8 +32,11 @@ a fix would leave the issue's **Touches**, stop and comment on the issue instead
    When `libs/ui` or `apps/curation` changed, also build the `app` preset and run its UI tests:
    `cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui`.
 3. **Release build and tests:** the same with `--preset release`, including `-L golden`.
-4. **GPU tests** when `libs/gpu` changed: on the real GPU, and on lavapipe with
-   `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu`.
+4. **GPU tests** when `libs/gpu` changed, with `CS_REQUIRE_GPU=1` so that a driver that does not
+   load fails the tests instead of skipping them: on the real GPU with
+   `CS_REQUIRE_GPU=1 ctest --preset debug -L gpu`, and on lavapipe with
+   `CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu`.
+   Some distributions name the file lvp_icd.x86_64.json; `ls /usr/share/vulkan/icd.d/` shows which.
 5. **Benchmarks** when rendering, scene loading or memory changed: `/perf-check`. A budget
    exceeded is a failure unless the issue says otherwise.
 6. **Acceptance criteria:** go through them one by one; each needs a test or command whose
