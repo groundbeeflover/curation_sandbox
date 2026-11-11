@@ -56,10 +56,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # aqtinstall 3.3.0 cannot read Qt's per-compiler Windows repositories of 6.11 and later
+      # ("Failed to download checksum for the file 'Updates.xml'"), so Windows uses 6.10.3.
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: ${{ env.QT_VERSION }}
+          version: "6.10.3"
           arch: win64_msvc2022_64
           cache: true
 
