@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cmake *)",
+      "Bash(ctest *)",
+      "Bash(ninja *)",
+      "Bash(VK_DRIVER_FILES=* ctest *)",
+      "Bash(QT_QPA_PLATFORM=offscreen ctest *)",
+      "Bash(./build/*)",
+      "Bash(python3 scripts/*)",
+      "Bash(python3 tools/*)",
+      "Bash(python3 -m unittest *)",
+      "Bash(clang-format *)",
+      "Bash(vulkaninfo *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git fetch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git worktree list *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr create *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/format.py\" --hook",
+            "timeout": 30,
+            "statusMessage": "Formatting C++"
+          }
+        ]
+      }
+    ]
+  }
+}
