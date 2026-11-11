@@ -1,0 +1,177 @@
+# GPU tests and golden images on software Vulkan (Mesa lavapipe), as decided in
+# docs/adr/0010-gpu-tests-in-ci.md. Linux runs `-L gpu` and `-L golden`; Windows runs `-L gpu`.
+name: GPU
+
+on:
+  # SPIKE: on main this is `push: branches: [main]` and `pull_request:` (see ADR 0010).
+  push:
+    branches: [spike/lavapipe]
+
+# A newer push to the same pull request cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Bumping any of these changes the cache keys below and, for Mesa, may change golden images.
+  MESA_VERSION: "26.2.6"
+  MESA_SHA256: b9436b3e1a8be76fbd4823dc884f90596ab7c6ac5e1867a305e66ffccfb31a92
+  MESA_DIST_WIN_SHA256: b2e00615feaba45942343c265cc8c5f576142ca682c1ac6661922d4b72492877
+  VULKAN_SDK_VERSION: "1.4.363.1"
+  VULKAN_SDK_SHA256: b7867d8ca658563813af666f34b93db87f1b1c7d9d69d97e924c210c7ba33eb8
+
+jobs:
+  linux:
+    name: lavapipe (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VK_DRIVER_FILES: /home/runner/mesa/share/vulkan/icd.d/lvp_icd.x86_64.json
+      VK_LAYER_PATH: /home/runner/vulkan-layers/share/vulkan/explicit_layer.d
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Mesa: only lavapipe, built from the pinned release tarball with LLVM linked statically
+      # (LLVM 18.1.3 from the Ubuntu 24.04 release pocket), so the cached build does not depend
+      # on the LLVM versions preinstalled on the runner image. About 5 minutes when the cache misses.
+      - name: Restore lavapipe
+        id: mesa-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/mesa
+          key: lavapipe-${{ env.MESA_VERSION }}-llvm18-static-ubuntu-24.04-v1
+      - name: Build lavapipe
+        if: steps.mesa-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            bison flex glslang-tools libdrm-dev libedit-dev libelf-dev libexpat1-dev libffi-dev \
+            libncurses-dev libpolly-18-dev libxml2-dev libzstd-dev llvm-dev ninja-build \
+            python3-mako python3-packaging python3-yaml zlib1g-dev
+          pip install --break-system-packages meson==1.9.1
+          curl -sSfL --retry 3 -o mesa.tar.xz "https://archive.mesa3d.org/mesa-${MESA_VERSION}.tar.xz"
+          echo "${MESA_SHA256}  mesa.tar.xz" | sha256sum -c -
+          tar xf mesa.tar.xz
+          cd "mesa-${MESA_VERSION}"
+          meson setup build --prefix="$HOME/mesa" --libdir=lib --buildtype=release -Db_ndebug=true \
+            -Dplatforms= -Dgallium-drivers=llvmpipe -Dvulkan-drivers=swrast -Dvulkan-layers= \
+            -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
+            -Dllvm=enabled -Dshared-llvm=disabled -Dvalgrind=disabled \
+            -Dlibunwind=disabled -Dlmsensors=disabled -Dxmlconfig=disabled -Dzstd=enabled \
+            -Dbuild-tests=false -Dvideo-codecs= -Dtools= -Dgallium-va=disabled -Dgallium-rusticl=false \
+            -Dteflon=false -Dperfetto=false
+          meson install -C build
+
+      # Validation layers and vulkaninfo from the pinned LunarG SDK; the loader is the system's
+      # libvulkan1, which volk opens at run time.
+      - name: Restore the validation layers
+        id: layers-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/vulkan-layers
+          key: vulkan-layers-${{ env.VULKAN_SDK_VERSION }}-linux-v1
+      - name: Extract the validation layers from the Vulkan SDK
+        if: steps.layers-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL --retry 3 -o sdk.tar.xz "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.xz"
+          echo "${VULKAN_SDK_SHA256}  sdk.tar.xz" | sha256sum -c -
+          mkdir -p ~/vulkan-layers
+          tar xf sdk.tar.xz -C ~/vulkan-layers --strip-components=2 \
+            "${VULKAN_SDK_VERSION}/x86_64/lib/libVkLayer_khronos_validation.so" \
+            "${VULKAN_SDK_VERSION}/x86_64/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" \
+            "${VULKAN_SDK_VERSION}/x86_64/bin/vulkaninfo"
+          strip --strip-unneeded ~/vulkan-layers/lib/libVkLayer_khronos_validation.so
+          rm sdk.tar.xz
+
+      - name: Device report
+        run: |
+          ~/vulkan-layers/bin/vulkaninfo --summary
+          ~/vulkan-layers/bin/vulkaninfo 2>/dev/null | grep -E 'VK_KHR_ray_query|VK_EXT_headless_surface|VK_LAYER_KHRONOS_validation' | sort -u
+
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ubuntu-24.04-gpu-release
+
+      # The build mirrors ci.yml's Linux job (with M1-30's vcpkg binary cache once it exists).
+      - name: Configure
+        run: |
+          command -v ninja || sudo apt-get install -y -qq --no-install-recommends ninja-build
+          cmake --preset release -DCS_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: cmake --build --preset release
+
+      # lavapipe uses every core, so tests run one at a time. Mesa's shader cache stays on: it is
+      # empty at the start of the job and saves about a second per test process after the first.
+      - name: GPU tests
+        run: ctest --preset release -L gpu --timeout 120
+      - name: Golden images
+        run: ctest --preset release -L golden --timeout 120
+      - name: Upload golden differences
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: golden-out-linux
+          path: build/*/golden-out/
+          if-no-files-found: ignore
+
+      # SPIKE ONLY: the throwaway program, because the repository has no GPU tests yet.
+      - name: Spike smoke test
+        run: |
+          sudo apt-get install -y -qq --no-install-recommends libvulkan-dev
+          cmake -S spike/lvpbench -B build/lvpbench -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DVulkan_LIBRARY=/usr/lib/x86_64-linux-gnu/libvulkan.so.1 -DVulkan_INCLUDE_DIR=/usr/include
+          cmake --build build/lvpbench
+          ls -la ~/vulkan-layers/lib ~/mesa/lib
+          time spike/bench.sh build/lvpbench/lvpbench candidate-linux results.jsonl quick
+
+  windows:
+    name: lavapipe (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Vulkan SDK (loader, validation layers, vulkaninfo)
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          install_runtime: true
+          cache: true
+          stripdown: true
+
+      # lavapipe from mesa-dist-win, the same Mesa version as Linux. The runner is elevated, so
+      # the loader ignores VK_DRIVER_FILES and VK_LAYER_PATH: both are registered in HKLM instead.
+      - name: Install lavapipe
+        shell: bash
+        run: |
+          curl -sSfL --retry 3 -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/mesa3d-${MESA_VERSION}-release-msvc.7z"
+          echo "${MESA_DIST_WIN_SHA256}  mesa.7z" | sha256sum -c -
+          7z x -y -o"$RUNNER_TEMP/mesa" mesa.7z x64/vulkan_lvp.dll x64/lvp_icd.x86_64.json > /dev/null
+          export MSYS2_ARG_CONV_EXCL='*'
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\Drivers' /v "$(cygpath -w "$RUNNER_TEMP/mesa/x64/lvp_icd.x86_64.json")" /t REG_DWORD /d 0 /f
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers' /v "$(cygpath -w "$VULKAN_SDK/Bin/VkLayer_khronos_validation.json")" /t REG_DWORD /d 0 /f
+
+      - name: Device report
+        shell: bash
+        run: |
+          "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" --summary
+          "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" 2>/dev/null | grep -E 'VK_KHR_ray_query|VK_EXT_headless_surface|VK_LAYER_KHRONOS_validation' | sort -u || true
+
+      # The build mirrors ci.yml's Windows job.
+      - name: Configure
+        run: cmake -B build/release -DCMAKE_BUILD_TYPE=Release -DCS_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build/release --config Release --parallel
+      - name: GPU tests
+        run: ctest --test-dir build/release --build-config Release -L gpu --timeout 120 --output-on-failure
+
+      # SPIKE ONLY: the throwaway program, because the repository has no GPU tests yet.
+      - name: Spike smoke test
+        shell: bash
+        run: |
+          cmake -S spike/lvpbench -B build/lvpbench && cmake --build build/lvpbench --config Release
+          time spike/bench.sh build/lvpbench/Release/lvpbench.exe candidate-windows results.jsonl quick
