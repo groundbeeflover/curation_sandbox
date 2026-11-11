@@ -15,6 +15,10 @@ run() {
 export MESA_SHADER_CACHE_DISABLE=true
 run cold-raster --mode raster --size 256 --spp 1 --validation
 run cold-rq --mode rq --size 256 --spp 1 --validation
+# Warm: Mesa's shader cache on, as in the GPU job (filled by the first two runs below).
+unset MESA_SHADER_CACHE_DISABLE
+run warmup-raster --mode raster --size 256 --spp 1 --validation
+run warmup-rq --mode rq --size 256 --spp 1 --validation
 sizes="128 256 512"; spps="1 16 64 256"
 if [ -n "$quick" ]; then sizes="128 256"; spps="1 16 64"; fi
 for size in $sizes; do

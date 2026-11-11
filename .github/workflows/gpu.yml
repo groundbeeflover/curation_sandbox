@@ -179,5 +179,6 @@ jobs:
       - name: Spike smoke test
         shell: bash
         run: |
+          echo "processors: $NUMBER_OF_PROCESSORS"; wmic cpu get name || true
           cmake -S spike/lvpbench -B build/lvpbench && cmake --build build/lvpbench --config Release
           time spike/bench.sh build/lvpbench/Release/lvpbench.exe candidate-windows results.jsonl quick
