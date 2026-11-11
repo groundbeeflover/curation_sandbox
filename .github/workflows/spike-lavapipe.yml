@@ -78,7 +78,7 @@ jobs:
         run: |
           start=$(date +%s.%N)
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends python3-mako python3-yaml python3-packaging ninja-build bison flex glslang-tools llvm-dev libxml2-dev libedit-dev libffi-dev libncurses-dev libzstd-dev zlib1g-dev libexpat1-dev libdrm-dev libelf-dev >/dev/null
+          sudo apt-get install -y -qq --no-install-recommends python3-mako python3-yaml python3-packaging ninja-build bison flex glslang-tools llvm-dev libpolly-18-dev libxml2-dev libedit-dev libffi-dev libncurses-dev libzstd-dev zlib1g-dev libexpat1-dev libdrm-dev libelf-dev >/dev/null
           pip install --break-system-packages -q meson==1.9.1
           echo "deps seconds: $(echo "$(date +%s.%N) - $start" | bc)"
           llvm-config --version
@@ -182,11 +182,16 @@ jobs:
             echo '{"file_format_version":"1.0.0","ICD":{"library_path":"..\\..\\..\\bin\\vulkan_lvp.dll","api_version":"1.4.0"}}' > "$icd"
           fi
           printf '%s\n' "$PWD/mesa-dist-win/x64/lvp_icd.x86_64.json" "$PWD/$icd" "$PWD/swiftshader/vk_swiftshader_icd.json" > icds.txt
+          # The runner is elevated, so the loader ignores VK_DRIVER_FILES and VK_LAYER_PATH: use the registry.
+          export MSYS2_ARG_CONV_EXCL='*'
+          reg query 'HKLM\SOFTWARE\Khronos\Vulkan' /s || true
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers' /v "$(cygpath -w "$VULKAN_SDK/Bin/VkLayer_khronos_validation.json")" /t REG_DWORD /d 0 /f
           while read -r icd; do
             label=$(echo "${icd#$PWD/}" | cut -d/ -f1)
             echo "::group::$label $icd"
             cat "$icd"; echo
-            export VK_DRIVER_FILES=$(cygpath -w "$icd")
+            reg delete 'HKLM\SOFTWARE\Khronos\Vulkan\Drivers' /f >/dev/null 2>&1 || true
+            reg add 'HKLM\SOFTWARE\Khronos\Vulkan\Drivers' /v "$(cygpath -w "$icd")" /t REG_DWORD /d 0 /f
             "$vulkaninfo" --summary || true
             "$vulkaninfo" > "vulkaninfo-$label.txt" 2>&1 || true
             grep -E 'apiVersion|driverInfo|VK_KHR_ray_query|VK_EXT_headless_surface' "vulkaninfo-$label.txt" | sort -u || true
