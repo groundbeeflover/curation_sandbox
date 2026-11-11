@@ -239,11 +239,12 @@ Two Windows details for M1-29:
 
 ## The workflow for M1-29
 
-This is the candidate that ran green in run 7, with two differences. The trigger is the
+This is the candidate that ran green in run 8, with two differences. The trigger is the
 project's usual one instead of the spike branch. The spike-only step, which ran `lvpbench`
 because the repository has no GPU tests yet, is removed. On today's main, `-L gpu` and
 `-L golden` find no tests and pass; M1-19 and M1-18 add them. The build steps mirror
-`ci.yml` and should follow it when M1-30 adds vcpkg's binary cache.
+`ci.yml` as M1-01 left it (presets, vcpkg from the runner image, the MSVC environment on
+Windows), and should follow it when M1-30 adds vcpkg's binary cache.
 
 ```yaml
 # GPU tests and golden images on software Vulkan (Mesa lavapipe), as decided in
@@ -348,11 +349,13 @@ jobs:
         with:
           key: ubuntu-24.04-gpu-release
 
-      # The build mirrors ci.yml's Linux job (with M1-30's vcpkg binary cache once it exists).
-      - name: Configure
+      # The build mirrors ci.yml's Linux release job (and M1-30's vcpkg binary cache once it exists).
+      - name: vcpkg
         run: |
-          command -v ninja || sudo apt-get install -y -qq --no-install-recommends ninja-build
-          cmake --preset release -DCS_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin
+      - name: Configure
+        run: cmake --preset release -DCS_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build --preset release
 
@@ -405,13 +408,20 @@ jobs:
           "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" --summary
           "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" 2>/dev/null | grep -E 'VK_KHR_ray_query|VK_EXT_headless_surface|VK_LAYER_KHRONOS_validation' | sort -u || true
 
-      # The build mirrors ci.yml's Windows job.
+      # The build mirrors ci.yml's Windows release job.
+      - name: vcpkg
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       - name: Configure
-        run: cmake -B build/release -DCMAKE_BUILD_TYPE=Release -DCS_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset release -DCS_WARNINGS_AS_ERRORS=ON
       - name: Build
-        run: cmake --build build/release --config Release --parallel
+        run: cmake --build --preset release
       - name: GPU tests
-        run: ctest --test-dir build/release --build-config Release -L gpu --timeout 120 --output-on-failure
+        run: ctest --preset release -L gpu --timeout 120
 ```
 
 ## Consequences
@@ -425,7 +435,7 @@ jobs:
   goldens, and it cannot test anything that needs a surface.
 - Upgrading Mesa is a deliberate pull request: bump `MESA_VERSION` and both checksums,
   regenerate the lavapipe references, and say in the pull request why the images moved.
-- `docs/dependencies.md` (M1-01) should list Mesa (MIT), the validation layers (Apache-2.0)
+- `docs/dependencies.md` (M1-02) should list Mesa (MIT), the validation layers (Apache-2.0)
   and the SDK action as test-time tools, with these versions. None of them ship with the app.
 
 ## Revisit
