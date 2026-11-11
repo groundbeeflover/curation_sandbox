@@ -39,11 +39,15 @@ jobs:
       - name: Build
         run: cmake --build build/spike
 
+      # lavapipe is the runner's only Vulkan driver; its ICD file name differs between Mesa
+      # packages, so the loader finds it rather than VK_DRIVER_FILES naming it.
       - name: Offscreen UI test on lavapipe
         env:
           QT_QPA_PLATFORM: offscreen
-          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-        run: ctest --test-dir build/spike -L ui --output-on-failure -V
+          SPIKE_REQUIRE_VULKAN: "1"
+        run: |
+          ls /usr/share/vulkan/icd.d/
+          ctest --test-dir build/spike -L ui --output-on-failure -V
 
       - uses: actions/upload-artifact@v4
         if: always()

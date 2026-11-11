@@ -24,6 +24,11 @@ class TestShell : public QObject {
         QVERIFY(QTest::qWaitForWindowExposed(&window));
 
         spike::ViewportState& state = window.viewport_state();
+        // A skip is silent, so CI sets SPIKE_REQUIRE_VULKAN to turn a missing device into a
+        // failure.
+        if (!state.init_error.isEmpty() && qEnvironmentVariableIsSet("SPIKE_REQUIRE_VULKAN")) {
+            QFAIL(qPrintable(QStringLiteral("no Vulkan device: ") + state.init_error));
+        }
         if (!state.init_error.isEmpty()) {
             QSKIP(qPrintable(QStringLiteral("no Vulkan device: ") + state.init_error));
         }
