@@ -167,13 +167,13 @@ Bold IDs are on the critical path.
 | M1-10 | Room, painting and box-frame meshes | geom | feature | M | agent | M1-01 | `libs/geom/include/`, `libs/geom/src/`, `libs/geom/tests/` |
 | M1-11 | Luminaires in candela: a generic spotlight | light | feature | S | agent | M1-01 | `libs/light/include/`, `libs/light/src/`, `libs/light/tests/` |
 | M1-12 | Lambertian paint layer and the reference BRDF interface | material | feature | S | agent | M1-05 | `libs/material/include/`, `libs/material/src/`, `libs/material/tests/` |
-| **M1-13** | Compile a document into a render world | world | feature | M | agent | M1-08, M1-10, M1-11, M1-12, M1-32 | `libs/world/include/`, `libs/world/src/`, `libs/world/tests/` |
+| **M1-13** | Compile a document into a render world | world | feature | M | agent | M1-08, M1-10, M1-11, M1-12, M1-32, M1-35 | `libs/world/include/`, `libs/world/src/`, `libs/world/tests/` |
 | M1-14 | Import an image as a linear texture with mipmaps | assets | feature | S | agent | M1-02 | `libs/assets/include/`, `libs/assets/src/`, `libs/assets/tests/` |
 | **M1-15** | Embree scene and the lux meter, with analytic accuracy tests | engine | feature | M | agent | M1-13, M1-05, M1-02 | `libs/engine/include/cs/engine/scene.hpp`, `libs/engine/src/scene.cpp`, `libs/engine/include/cs/engine/lux.hpp`, `libs/engine/src/lux.cpp`, `libs/engine/tests/test_scene.cpp`, `libs/engine/tests/test_lux.cpp`, `libs/core/include/cs/core/thread_pool.hpp`, `libs/core/src/thread_pool.cpp`, `libs/core/tests/test_thread_pool.cpp` |
 | **M1-16** | Path tracer with next-event estimation and the white furnace test | engine | feature | M | agent | M1-15 | `libs/engine/include/cs/engine/path_tracer.hpp`, `libs/engine/src/path_tracer.cpp`, `libs/engine/tests/test_path_tracer.cpp` |
 | **M1-17** | cs-render: headless renders and lux reports; remove pt | engine | feature | M | agent | M1-16, M1-07, M1-06, M1-14 | `apps/cs-render/`, `apps/pt/`, `libs/engine/include/cs/engine/textures.hpp`, `libs/engine/src/textures.cpp`, `libs/engine/tests/test_textures.cpp`, `README.md`, `libs/engine/include/cs/engine/work_lux.hpp`, `libs/engine/src/work_lux.cpp`, `libs/engine/tests/test_work_lux.cpp` |
 | **M1-18** | Golden-image test runner | build | test | M | agent | M1-17 | `cmake/CsGolden.cmake`, `apps/cs-render/`, `tests/golden/` |
-| M1-19 | Vulkan device bootstrap, headless, with validation as test failure | gpu | feature | M | agent | M1-02 | `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/test_device.cpp`, `libs/gpu/tests/main.cpp`, `.claude/agents/gpu-reviewer.md`, `tools/sanitizers/lsan.supp` |
+| M1-19 | Vulkan device bootstrap, headless, with validation as test failure | gpu | feature | M | agent | M1-02, M1-36 | `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/test_device.cpp`, `libs/gpu/tests/main.cpp`, `.claude/agents/gpu-reviewer.md`, `tools/sanitizers/lsan.supp` |
 | M1-20 | Slang shaders at build time and an offscreen triangle | gpu | feature | M | agent | M1-19 | `cmake/CsShaders.cmake`, `libs/gpu/CMakeLists.txt`, `libs/gpu/shaders/`, `libs/gpu/include/cs/gpu/pipeline.hpp`, `libs/gpu/src/pipeline.cpp`, `libs/gpu/include/cs/gpu/offscreen.hpp`, `libs/gpu/src/offscreen.cpp`, `libs/gpu/tests/test_offscreen.cpp` |
 | M1-21 | Upload the render world: meshes, materials and textures | gpu | feature | M | agent | M1-20, M1-13, M1-14 | `libs/gpu/include/cs/gpu/scene.hpp`, `libs/gpu/src/scene.cpp`, `libs/gpu/src/upload.cpp`, `libs/gpu/tests/test_scene.cpp` |
 | M1-22 | Standard tier: exact direct light from spotlights | gpu | feature | M | agent | M1-21, M1-06, M1-11, M1-15, M1-34 | `libs/gpu/shaders/standard.slang`, `libs/gpu/shaders/common/`, `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/tests/test_standard_tier.cpp`, `tests/integration/test_standard_vs_engine.cpp` |
@@ -189,6 +189,8 @@ Bold IDs are on the critical path.
 | **M1-32** | The skeleton test scene and its test chart | doc | test | S | agent | M1-08 | `tests/scenes/skeleton/`, `tools/test-chart/`, `libs/doc/tests/test_skeleton_scene.cpp` |
 | M1-33 | Budgets as data and the benchmark comparison script | build | test | S | agent | - | `bench/budgets.json`, `scripts/perf-compare.py`, `scripts/tests/test_perf_compare.py` |
 | M1-34 | Generated registries and the integration-test executable | build | chore | S | agent | M1-01 | `cmake/CsRegistry.cmake`, `cmake/CsIntegration.cmake`, `tests/integration/` |
+| M1-35 | Re-exported module dependencies (EXPORTS in cs_add_module) | build | chore | S | agent | M1-01, M1-36 | `cmake/CsModule.cmake`, `cmake/tests/module_glob.cmake`, `cmake/tests/module_glob/`, `libs/world/CMakeLists.txt`, `docs/product/blueprint.md`, `CLAUDE.md` |
+| M1-36 | Fix the lavapipe manifest path in CLAUDE.md and /ship | gpu | chore | S | agent | - | `CLAUDE.md`, `.claude/skills/ship/SKILL.md` |
 
 ### Task graph
 
@@ -203,6 +205,8 @@ graph LR
     M1_30["M1-30 CI: binary caches and the full c..."]
     M1_33["M1-33 Budgets as data and the benchmar..."]
     M1_34["M1-34 Generated registries and the int..."]
+    M1_35["M1-35 Re-exported module dependencies ..."]
+    M1_36["M1-36 Fix the lavapipe manifest path i..."]
   end
   subgraph E1_2["E1.2 Light you can measure"]
     M1_05["M1-05 Counter-based random numbers and..."]
@@ -253,6 +257,7 @@ graph LR
   M1_11 --> M1_13
   M1_12 --> M1_13
   M1_32 --> M1_13
+  M1_35 --> M1_13
   M1_02 --> M1_14
   M1_13 --> M1_15
   M1_05 --> M1_15
@@ -264,6 +269,7 @@ graph LR
   M1_14 --> M1_17
   M1_17 --> M1_18
   M1_02 --> M1_19
+  M1_36 --> M1_19
   M1_19 --> M1_20
   M1_20 --> M1_21
   M1_13 --> M1_21
@@ -297,9 +303,11 @@ graph LR
   M1_30 --> M1_31
   M1_08 --> M1_32
   M1_01 --> M1_34
+  M1_01 --> M1_35
+  M1_36 --> M1_35
   classDef crit stroke:#b60205,stroke-width:3px
   class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_31 crit
-  linkStyle 4,14,16,19,20,24,51,55,57 stroke:#b60205,stroke-width:3px
+  linkStyle 4,14,17,20,21,25,53,57,59 stroke:#b60205,stroke-width:3px
 ```
 
 The critical path is ten tasks: the module layout, the document store, the skeleton scene, the
@@ -315,8 +323,8 @@ A lane is a group of tasks that touch different files, so they can run in parall
 | Stage | Opens when | Lanes open (tasks) |
 | --- | --- | --- |
 | 0 | at once | build (M1-01, M1-33), gpu spike (M1-03), ui spike (M1-04) |
-| 1 | M1-01 merged | build (M1-02, M1-34), core (M1-05, M1-06), doc (M1-08), geom (M1-10), light (M1-11), editor (M2-10, M2-12 from M2, which need only the layout) |
-| 2 | M1-02, M1-05, M1-08 merged | core (M1-07), doc (M1-32 → M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30) |
+| 1 | M1-01 merged | build (M1-02, M1-34, M1-35), core (M1-05, M1-06), doc (M1-08), geom (M1-10), light (M1-11), gpu (M1-36, once M1-03 frees the lane), editor (M2-10, M2-12 from M2, which need only the layout) |
+| 2 | M1-02, M1-05, M1-08, M1-36 merged | core (M1-07), doc (M1-32 → M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30) |
 | 3 | M1-13 merged | engine (M1-15 → M1-17), gpu (M1-21 → M1-22, M1-23), editor (M1-24, M1-25) |
 | 4 | M1-22 merged | ui (M1-26 → M1-27), build (M1-18, M1-28, M1-29 → M1-31) |
 
@@ -681,4 +689,6 @@ optionally `verification_visual` and, for size L, `design_note`.
   touching the same files.
 - `--table M1` and `--graph M1` print the tables and graphs on this page.
 - `--show M1-07` prints the issue body exactly as it will be created.
+- Status lives on the issues, not in this file: the labels `in-progress`, `blocked` and
+  `priority:high` (a ready task that `/dispatch` takes before the others).
 - Without flags the script prints a dry run against GitHub; `--apply` creates what is missing.

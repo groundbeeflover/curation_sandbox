@@ -119,6 +119,10 @@ description = "Waiting on something outside its Blocked by line"
 name = "epic"
 color = "3e4b9e"
 description = "A parent issue grouping the tasks of one feature area"
+[[labels]]
+name = "priority:high"
+color = "d93f0b"
+description = "Start before other ready tasks: /dispatch takes these first"
 
 # ---------------------------------------------------------------------------------------------
 # Milestones. Dates are estimates from docs/roadmap.md; /groom moves them when throughput says so.
@@ -1000,26 +1004,29 @@ area = "gpu"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-02"]
+blocked_by = ["M1-02", "M1-36"]
 touches = ["libs/gpu/include/cs/gpu/device.hpp", "libs/gpu/src/device.cpp", "libs/gpu/tests/test_device.cpp", "libs/gpu/tests/main.cpp", ".claude/agents/gpu-reviewer.md", "tools/sanitizers/lsan.supp"]
 goal = "A Vulkan 1.3 device that runs with or without a window, chooses lavapipe or a real GPU, and turns every validation message into a failing test, so that synchronisation and lifetime bugs are caught where they happen."
 context = [
   "docs/adr/0001-engine.md: Vulkan 1.3, volk, vk-bootstrap, VMA; validation on in debug and CI",
   "vk-bootstrap: https://github.com/charles-lunarg/vk-bootstrap ; VMA: https://gpuopen.com/vulkan-memory-allocator/",
   "CLAUDE.md: the gpu-reviewer subagent is created with this task",
+  "docs/adr/0010-gpu-tests-in-ci.md: CI's GPU job sets CS_REQUIRE_GPU=1 and points VK_DRIVER_FILES at its own lavapipe; a green job must mean the tests ran. The spike saw the driver fail to load twice (a wrong manifest path, a missing library), and each time the tests would have skipped",
 ]
 acceptance = [
   "Creates an instance and device through volk and vk-bootstrap with Vulkan 1.3, dynamic rendering, synchronization2 and buffer device address, plus a VMA allocator; works headless or with a surface supplied later, enabling VK_KHR_swapchain when created for presentation",
   "CS_GPU_DEVICE (a substring of the device name) chooses the device; a device report gives name, driver, API version and whether VK_KHR_ray_query is available",
   "In tests, any validation error or warning fails the running test with the message; a test makes a known-invalid call and asserts that the hook fired",
-  "[gpu] tests pass on lavapipe (VK_DRIVER_FILES set to lavapipe's ICD) and on the Radeon 780M; with no Vulkan device present they skip rather than fail",
+  "[gpu] tests pass on lavapipe (VK_DRIVER_FILES set to lavapipe's ICD) and on the Radeon 780M; with no Vulkan device present they skip rather than fail, unless the environment sets CS_REQUIRE_GPU=1 (CI and /ship do): then each fails with a message saying no Vulkan device was found",
   ".claude/agents/gpu-reviewer.md exists: reads code and runs tests without editing; reviews synchronisation, resource lifetimes, memory use and validation cleanliness; its description says to use it on every pull request touching libs/gpu",
   "Under the debug preset, LeakSanitizer reports from inside the Vulkan loader, Mesa or LLVM are suppressed in tools/sanitizers/lsan.supp, each entry with a comment; nothing in this repository's code is suppressed",
 ]
 out_of_scope = ["Pipelines and shaders (M1-20)", "Swapchains (M1-23)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
-  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
+  "VK_DRIVER_FILES=/nonexistent.json ctest --preset debug -L gpu   # passes: no device, the tests skip",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/nonexistent.json ctest --preset debug -L gpu   # fails: no device",
   "python3 scripts/format.py --check",
 ]
 
@@ -1048,7 +1055,7 @@ acceptance = [
 out_of_scope = ["The render world on the GPU (M1-21)", "Lighting (M1-22)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
-  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
 
@@ -1105,7 +1112,7 @@ acceptance = [
 out_of_scope = ["Shadows (M2-26)", "Indirect light (M3)", "cs-render's standard tier and GPU goldens (M1-29)", "The swapchain (M1-23)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
-  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
 verification_visual = "Attach the 256x144 render of the skeleton from the 780M: the spot's pool of light on the wall around the painting, no shadows yet."
@@ -1132,7 +1139,7 @@ acceptance = [
 ]
 out_of_scope = ["The Qt window (M1-26)"]
 verification = [
-  "cmake --preset debug && cmake --build --preset debug && VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "cmake --preset debug && cmake --build --preset debug && CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
 
@@ -1443,7 +1450,7 @@ area = "build"
 type = "chore"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-01"]
+blocked_by = ["M1-01", "M1-36"]
 touches = ["cmake/CsModule.cmake", "cmake/tests/module_glob.cmake", "cmake/tests/module_glob/", "libs/world/CMakeLists.txt", "docs/product/blueprint.md", "CLAUDE.md"]
 goal = "Let a module re-export a dependency whose types appear in its public headers, as the owner decided on PR #108, so that world can hand geom's meshes to engine and gpu without those modules declaring geom. Module boundaries stay checked: a dependency that is not re-exported stays invisible to the module's users."
 context = [
@@ -1469,6 +1476,38 @@ verification = [
   "cmake --preset release && cmake --build --preset release && ctest --preset release -R cmake_module_glob --output-on-failure",
   "cmake --preset debug && ctest --preset debug",
   "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-36"
+epic = "E1.1"
+title = "Fix the lavapipe manifest path in CLAUDE.md and /ship"
+area = "gpu"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = []
+touches = ["CLAUDE.md", ".claude/skills/ship/SKILL.md"]
+goal = "Make the documented lavapipe command load a driver on Linux, and make it fail instead of passing when it does not. CLAUDE.md and /ship set VK_DRIVER_FILES to lvp_icd.x86_64.json, but Ubuntu 24.04 (mesa-vulkan-drivers) and Arch Linux (vulkan-swrast) install /usr/share/vulkan/icd.d/lvp_icd.json, so the command loads no driver and every [gpu] test skips while ctest reports success. Found by spike M1-03 (#38). It must land before M1-19, the first task whose definition of done runs the command."
+context = [
+  "docs/adr/0010-gpu-tests-in-ci.md, Consequences: the manifest's name on Ubuntu and Arch, and CS_REQUIRE_GPU=1 in CI",
+  "Spike run 1, where the Ubuntu path failed: https://github.com/groundbeeflover/curation_sandbox/actions/runs/42930469113",
+  "The task verifications in docs/roadmap/tasks.toml were fixed when this task was filed; they now read CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json",
+  "M1-19 (#52) makes the GPU test harness honour CS_REQUIRE_GPU",
+]
+acceptance = [
+  "CLAUDE.md (Commands) and .claude/skills/ship/SKILL.md give the lavapipe command as `CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu`, with one line saying that some distributions name the file lvp_icd.x86_64.json (`ls /usr/share/vulkan/icd.d/` shows which)",
+  "CLAUDE.md's testing rule reads: with no device GPU tests skip, unless CS_REQUIRE_GPU=1 is set (CI and /ship set it), when they fail",
+  "`grep -rn 'lvp_icd.x86_64' CLAUDE.md .claude docs/roadmap/tasks.toml` prints nothing except the one line about other distributions",
+]
+out_of_scope = [
+  "The CI workflow (M1-29 points VK_DRIVER_FILES at its own Mesa build)",
+  "Implementing CS_REQUIRE_GPU in the test harness (M1-19)",
+  "docs/roadmap/tasks.toml and the issue bodies (already fixed)",
+]
+verification = [
+  "grep -rn 'lvp_icd' CLAUDE.md .claude docs/roadmap/tasks.toml",
+  "ls /usr/share/vulkan/icd.d/lvp_icd.json",
 ]
 
 # =============================================================================================
@@ -1992,7 +2031,7 @@ acceptance = [
 out_of_scope = ["Mapping editor guides to primitives (M2-20)", "Gizmos for lights (M3)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
-  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
 
@@ -2454,7 +2493,7 @@ acceptance = [
 out_of_scope = ["Acceleration structures (M5)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
-  "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
 

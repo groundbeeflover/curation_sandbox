@@ -15,8 +15,12 @@ the issue: `gh issue list --state all --search "[M1-07] in:title" --json number,
 ## 1. Read the issue and check it can start
 
 ```sh
-gh issue view <n> --json number,title,body,state,labels,milestone,blockedBy,parent,closedByPullRequestsReferences
+gh issue view <n> --json number,title,body,state,labels,milestone,blockedBy,parent,closedByPullRequestsReferences,comments
 ```
+
+The body is the specification; the owner's comments amend it (answers to questions, results of
+a run on another machine, a requirement found later). Where a comment by the owner and the body
+disagree, follow the comment and say so in the pull request.
 
 Stop and report, without changing anything, if any of these hold. Each one means another
 session or the owner is already handling it, or the work cannot succeed yet:

@@ -121,6 +121,17 @@ class RenderTests(unittest.TestCase):
         self.assertIsNone(bootstrap.TITLE_ID.match("M2-07 no brackets"))
 
 
+class KeepTicksTests(unittest.TestCase):
+    def test_ticked_criteria_stay_ticked(self):
+        live = "## Acceptance criteria\n- [x] first\n- [ ] second\n- [X] removed\n"
+        rendered = "## Acceptance criteria\n- [ ] first\n- [ ] second\n- [ ] new\n"
+        self.assertEqual(bootstrap.keep_ticks(live, rendered),
+                         "## Acceptance criteria\n- [x] first\n- [ ] second\n- [ ] new\n")
+
+    def test_a_changed_criterion_is_unticked(self):
+        self.assertEqual(bootstrap.keep_ticks("- [x] old text", "- [ ] new text"), "- [ ] new text")
+
+
 class MilestoneTests(unittest.TestCase):
     def test_due_dates_compare_by_date_only(self):
         self.assertTrue(bootstrap.due_matches("2026-12-04T00:00:00Z", "2026-12-04"))
