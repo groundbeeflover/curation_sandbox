@@ -70,6 +70,8 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}-${{ matrix.preset }}
+          # The runner image's apt index goes stale; installing ccache from it then fails.
+          update-package-index: true
 
       - name: Configure
         shell: bash
