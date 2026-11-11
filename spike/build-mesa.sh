@@ -12,7 +12,7 @@ cd "mesa-${version}"
 meson setup build --prefix="$prefix" --libdir=lib --buildtype=release -Db_ndebug=true \
   -Dplatforms= -Dgallium-drivers=llvmpipe -Dvulkan-drivers=swrast -Dvulkan-layers= \
   -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
-  -Dllvm=enabled -Dshared-llvm=enabled -Dvalgrind=disabled -Dlibunwind=disabled -Dlmsensors=disabled \
+  -Dllvm=enabled -Dshared-llvm=disabled -Dvalgrind=disabled -Dlibunwind=disabled -Dlmsensors=disabled \
   -Dxmlconfig=disabled -Dzstd=enabled -Dbuild-tests=false -Dvideo-codecs= -Dtools= \
   -Dgallium-va=disabled -Dgallium-rusticl=false -Dteflon=false -Dmesa-clc=auto -Dperfetto=false
 meson install -C build
