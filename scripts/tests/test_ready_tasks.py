@@ -80,6 +80,13 @@ class ClassifyTests(unittest.TestCase):
         r, _ = ready.classify(tasks, closed=set(), with_pr=set())
         self.assertEqual([t.task_id for t in r], ["M1-09", "M1-02", "M2-01"])
 
+    def test_high_priority_goes_first(self):
+        tasks = [task(1, "M1-02", "build"), task(2, "M1-36", "gpu", labels=["priority:high"]),
+                 task(3, "M1-19", "gpu", blocked_by=[9]), task(4, "M1-08", "doc"),
+                 task(5, "M1-10", "geom", blocked_by=[1])]
+        r, _ = ready.classify(tasks, closed={9}, with_pr=set())
+        self.assertEqual([t.task_id for t in r], ["M1-36", "M1-02", "M1-08", "M1-19"])
+
 
 class ChooseTests(unittest.TestCase):
     def test_one_per_area_and_no_overlap(self):

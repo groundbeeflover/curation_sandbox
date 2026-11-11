@@ -22,7 +22,8 @@ The script reads GitHub (it never writes) and returns:
 
 - `in_progress`: tasks labelled `in-progress` (their areas and files are taken);
 - `ready`: open, `owner:agent`, not `blocked` or `epic`, no open pull request, every issue on
-  the `Blocked by` line closed; sorted by milestone, then by how many tasks each unblocks;
+  the `Blocked by` line closed; sorted with `priority:high` first, then by milestone, then by
+  how many tasks each unblocks;
 - `suggested`: a greedy set of up to n ready tasks, one per area, whose Touches overlap neither
   each other nor anything in progress;
 - `not_ready`: everything else, with the reasons.

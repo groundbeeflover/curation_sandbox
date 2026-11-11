@@ -64,6 +64,11 @@ overlapping Touches. If not, find why: a chain waiting on one pull request (ask 
 review it first), a task that could be split so part of it starts now, or a later task that
 could move forward. Propose the smallest change that restores three lanes.
 
+Label `priority:high` a ready task that must land before others start, such as a fix to a
+command every session runs; `/dispatch` takes it first. Give it an area whose lane is free, so
+it does not push a critical-path task out of its lane, and remove the label once it no longer
+needs to jump the queue.
+
 ## 6. Update the roadmap
 
 In `docs/roadmap.md`:

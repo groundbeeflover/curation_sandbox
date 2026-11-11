@@ -375,6 +375,18 @@ def render_epic(e: dict, tasks: list[dict], numbers: dict[str, int]) -> str:
     return "\n".join(parts) + "\n"
 
 
+TICKED = re.compile(r"^(\s*- )\[[xX]\]( .*)$")
+
+
+def keep_ticks(live: str, rendered: str) -> str:
+    """The rendered body with every checkbox ticked that is ticked in the live body with the same
+    text, so regenerating a body never unticks a criterion a session or the owner checked."""
+    ticked = {m.group(1) + "[ ]" + m.group(2) for line in live.splitlines()
+              if (m := TICKED.match(line))}
+    return "\n".join(line.replace("[ ]", "[x]", 1) if line in ticked else line
+                     for line in rendered.split("\n"))
+
+
 def due_matches(have: str | None, want: str | None) -> bool:
     """GitHub stores a milestone's due date as a timestamp (midnight UTC); compare dates only."""
     return (have or "")[:10] == (want or "")
@@ -604,6 +616,8 @@ def run(data: dict, gh: GitHub, only_milestone: str | None, update_bodies: bool,
         epic_no = numbers.get(t["epic"])
         blockers = [numbers[b] for b in t["blocked_by"] if b in numbers]
         body = render_task(t, numbers, epic_no)
+        if t["id"] in existing:
+            body = keep_ticks(existing[t["id"]]["body"] or "", body)
         if t["id"] not in existing:
             create_issue(t["id"], title, body, task_labels(t),
                          ms_title[epic_of[t["epic"]]["milestone"]], epic_no, blockers)
@@ -642,11 +656,17 @@ def run(data: dict, gh: GitHub, only_milestone: str | None, update_bodies: bool,
     for e in epics:
         if e["id"] in existing and not update_bodies:
             continue
+        body = render_epic(e, tasks_of_epic[e["id"]], numbers)
+        if e["id"] in existing:
+            live = existing[e["id"]]["body"] or ""
+            body = keep_ticks(live, body)
+            if live.strip() == body.strip():
+                continue
         say(f"   {'write' if gh.apply else 'would write'} task list of {e['id']} "
             f"({len(tasks_of_epic[e['id']])} tasks)")
         if gh.apply:
             gh.gh("issue", "edit", str(numbers[e["id"]]), "-R", gh.repo, "--body-file", "-",
-                  stdin=render_epic(e, tasks_of_epic[e["id"]], numbers), write=True)
+                  stdin=body, write=True)
 
     if board:
         setup_board(data, gh, [urls[i] for i in list(urls)] if gh.apply else [], say)

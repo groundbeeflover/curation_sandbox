@@ -2,8 +2,10 @@
 """List the task issues that are ready to start, and choose a set that can run in parallel.
 
 A task is ready when it is open, labelled owner:agent, not labelled in-progress, blocked or
-epic, has no open pull request, and every issue on its "Blocked by" line is closed. A parallel
-set has one task per area and no overlapping "Touches", also against tasks already in progress.
+epic, has no open pull request, and every issue on its "Blocked by" line is closed. Ready tasks
+are ordered: labelled priority:high first, then by milestone, then by how many tasks each
+unblocks. A parallel set has one task per area and no overlapping "Touches", also against tasks
+already in progress.
 
     python3 scripts/ready-tasks.py            ready tasks and a suggested set of 3
     python3 scripts/ready-tasks.py --n 2      suggest 2
@@ -21,6 +23,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
+PRIORITY = "priority:high"
 TITLE_ID = re.compile(r"^\[(M(?P<ms>\d+)-(?P<num>\d{2}))\]\s")
 ISSUE_REF = re.compile(r"#(\d+)")
 CLOSES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.I)
@@ -44,6 +47,10 @@ class Task:
     @property
     def size(self) -> str:
         return next((lab.split(":", 1)[1] for lab in self.labels if lab.startswith("size:")), "?")
+
+    @property
+    def high_priority(self) -> bool:
+        return PRIORITY in self.labels
 
     @property
     def milestone(self) -> int:
@@ -131,7 +138,7 @@ def classify(tasks: list[Task], closed: set[int], with_pr: set[int]) -> tuple[li
             t.reasons.append("blocked by " + ", ".join(f"#{b}" for b in open_blockers))
         if not t.reasons:
             ready.append(t)
-    ready.sort(key=lambda t: (t.milestone, -t.unblocks, t.task_id))
+    ready.sort(key=lambda t: (not t.high_priority, t.milestone, -t.unblocks, t.task_id))
     return ready, running
 
 
@@ -162,7 +169,8 @@ def main() -> int:
     if args.json:
         def row(t: Task) -> dict:
             return {"number": t.number, "id": t.task_id, "title": t.title, "area": t.area,
-                    "size": t.size, "unblocks": t.unblocks, "touches": t.touches}
+                    "size": t.size, "priority": "high" if t.high_priority else "normal",
+                    "unblocks": t.unblocks, "touches": t.touches}
         print(json.dumps({"in_progress": [row(t) for t in running], "ready": [row(t) for t in ready],
                           "suggested": [row(t) for t in chosen],
                           "not_ready": [{**row(t), "reasons": t.reasons} for t in tasks
@@ -173,9 +181,11 @@ def main() -> int:
     print(f"\nReady ({len(ready)}):")
     for t in ready:
         mark = "*" if t in chosen else " "
-        print(f" {mark} #{t.number:<4} {t.task_id}  {t.area:<9} {t.size}  unblocks {t.unblocks}  "
-              f"{t.title}")
-    print("\n* = suggested parallel set: one per area, no overlapping Touches, none clashing with "
+        prio = "high" if t.high_priority else "    "
+        print(f" {mark} #{t.number:<4} {t.task_id}  {t.area:<9} {t.size}  {prio}  "
+              f"unblocks {t.unblocks}  {t.title}")
+    print("\nhigh = labelled priority:high, so it goes first")
+    print("* = suggested parallel set: one per area, no overlapping Touches, none clashing with "
           "work in progress")
     return 0
 
