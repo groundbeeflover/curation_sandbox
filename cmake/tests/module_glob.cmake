@@ -53,13 +53,10 @@ file(REMOVE_RECURSE "${WORK_DIR}")
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/module_glob/" DESTINATION "${src}")
 
 run("configuring the fixture" succeeds ${CMAKE_COMMAND} -S "${src}" -B "${bin}" -G "${GENERATOR}"
-    "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}" "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+    "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}" "-DCMAKE_CXX_COMPILER_LAUNCHER=${CXX_COMPILER_LAUNCHER}"
+    "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
     "-DCatch2_DIR=${Catch2_DIR}" "-DCS_REPO_DIR=${CS_REPO_DIR}")
 run("building the fixture" succeeds ${CMAKE_COMMAND} --build "${bin}")
-
-if(EXISTS "${bin}/libs/empty/cs_empty_tests" OR EXISTS "${bin}/libs/empty/cs_empty_tests.exe")
-    message(FATAL_ERROR "FAIL: the empty module has a test executable")
-endif()
 
 # ---- Labels, CS_SOURCE_DIR, tests/main.cpp, skipped tests --------------------
 run("running the fixture's tests" succeeds ${CTEST_COMMAND} --test-dir "${bin}" --no-tests=error

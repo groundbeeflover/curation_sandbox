@@ -24,6 +24,16 @@
 # A module with no sources yet becomes a header-only INTERFACE target, so the modules that
 # declare it still configure and link; it compiles nothing.
 
+# cs_add_subdirectories(<dir>): add every <dir>/*/ that has a CMakeLists.txt, in name order, so
+# a new module or app needs no edit to the file that adds it.
+function(cs_add_subdirectories parent)
+    file(GLOB lists CONFIGURE_DEPENDS "${parent}/*/CMakeLists.txt")
+    foreach(list IN LISTS lists)
+        get_filename_component(dir "${list}" DIRECTORY)
+        add_subdirectory("${dir}")
+    endforeach()
+endfunction()
+
 function(cs_add_module)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME" "DEPS;EXTERNAL")
     if(NOT arg_NAME)

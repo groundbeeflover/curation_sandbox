@@ -26,8 +26,11 @@ project(CurationSandbox
     LANGUAGES CXX)
 
 # ---- Helpers -----------------------------------------------------------------
-# Every cmake/Cs*.cmake is included, so a task adds a helper without editing this file.
+# Every cmake/Cs*.cmake is included, so a task adds a helper without editing this file. The
+# options come first, so every other helper can read them.
+include("${PROJECT_SOURCE_DIR}/cmake/CsOptions.cmake")
 file(GLOB cs_helpers CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/cmake/Cs*.cmake")
+list(REMOVE_ITEM cs_helpers "${PROJECT_SOURCE_DIR}/cmake/CsOptions.cmake")
 foreach(helper IN LISTS cs_helpers)
     include("${helper}")
 endforeach()
@@ -41,12 +44,7 @@ endif()
 # ---- Project parts -----------------------------------------------------------
 # Every module under libs/ (blueprint section 7). Modules may name each other in any order;
 # links are resolved once all of them are configured.
-file(GLOB cs_modules CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/libs/*/CMakeLists.txt")
-foreach(module IN LISTS cs_modules)
-    get_filename_component(module_dir "${module}" DIRECTORY)
-    add_subdirectory("${module_dir}")
-endforeach()
-
+cs_add_subdirectories("${PROJECT_SOURCE_DIR}/libs")
 add_subdirectory(apps)
 
 if(CS_BUILD_TESTS)

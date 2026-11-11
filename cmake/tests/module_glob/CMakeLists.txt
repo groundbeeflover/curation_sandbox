@@ -11,6 +11,4 @@ enable_testing()
 find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
-foreach(module alpha beta gamma empty)
-    add_subdirectory(libs/${module})
-endforeach()
+cs_add_subdirectories("${PROJECT_SOURCE_DIR}/libs")

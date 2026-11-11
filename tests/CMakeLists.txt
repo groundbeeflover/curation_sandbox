@@ -9,6 +9,7 @@ add_test(NAME cmake_module_glob
         -D "WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cmake_module_glob"
         -D "GENERATOR=${CMAKE_GENERATOR}"
         -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -D "CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
         -D "BUILD_TYPE=${CMAKE_BUILD_TYPE}"
         -D "Catch2_DIR=${Catch2_DIR}"
         -D "CTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
