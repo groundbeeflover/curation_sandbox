@@ -818,7 +818,7 @@ area = "world"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-08", "M1-10", "M1-11", "M1-12", "M1-32"]
+blocked_by = ["M1-08", "M1-10", "M1-11", "M1-12", "M1-32", "M1-35"]
 touches = ["libs/world/include/", "libs/world/src/", "libs/world/tests/"]
 goal = "The render world: a renderer-neutral scene of meshes, instances, materials, lights in SI units and cameras, compiled from the document, which the engine and every GPU tier read so that they see identical input."
 context = [
@@ -1433,6 +1433,42 @@ acceptance = [
 out_of_scope = ["Any real registry or integration test (the tasks that need them)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L integration && ctest --preset debug -R cmake_registry",
+]
+
+[[tasks]]
+id = "M1-35"
+epic = "E1.1"
+title = "Re-exported module dependencies (EXPORTS in cs_add_module)"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-01"]
+touches = ["cmake/CsModule.cmake", "cmake/tests/module_glob.cmake", "cmake/tests/module_glob/", "libs/world/CMakeLists.txt", "docs/product/blueprint.md", "CLAUDE.md"]
+goal = "Let a module re-export a dependency whose types appear in its public headers, as the owner decided on PR #108, so that world can hand geom's meshes to engine and gpu without those modules declaring geom. Module boundaries stay checked: a dependency that is not re-exported stays invisible to the module's users."
+context = [
+  "The owner's decision: review on https://github.com/groundbeeflover/curation_sandbox/pull/108 (\"cs_add_module should support re-exported dependencies\"), answering the follow-up in that pull request's description",
+  "cmake/CsModule.cmake (M1-01): DEPS are linked PRIVATE, EXTERNAL PUBLIC; header-only modules become INTERFACE targets",
+  "cmake/tests/module_glob.cmake and its fixture: the cmake_module_glob test already proves that a dependency's dependency is not visible",
+  "docs/product/blueprint.md, section 7: the module table and the rule that a module links only what it declares; CLAUDE.md, Architecture rules",
+  "CMake target_link_libraries, PUBLIC against PRIVATE: https://cmake.org/cmake/help/latest/command/target_link_libraries.html",
+]
+acceptance = [
+  "cs_add_module accepts EXPORTS <modules>: each must also be listed in DEPS (otherwise configuring stops with a message naming the module), and is linked PUBLIC, so the module's users see its headers; DEPS that are not exported stay PRIVATE as before; header-only modules behave the same",
+  "The cmake_module_glob fixture gains: a module c with DEPS b and EXPORTS b, whose user d includes b's header and builds; and a module that exports something outside its DEPS, which fails to configure. The existing case, where a dependency's dependency without EXPORTS is not visible, still fails to compile as before",
+  "libs/world/CMakeLists.txt declares EXPORTS geom, because World's public headers carry geom meshes (M1-13)",
+  "Blueprint section 7 and CLAUDE.md state the rule (a module may re-export a declared dependency whose types appear in its public headers; everything else stays private), and the module table notes that world re-exports geom",
+  "`ctest --preset debug -R cmake_module_glob` and `ctest --preset release -R cmake_module_glob` pass, and so does the full `ctest --preset debug`",
+]
+out_of_scope = [
+  "Re-exporting anything other than geom from world",
+  "The World type itself (M1-13)",
+]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -R cmake_module_glob --output-on-failure",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -R cmake_module_glob --output-on-failure",
+  "cmake --preset debug && ctest --preset debug",
+  "python3 scripts/format.py --check",
 ]
 
 # =============================================================================================
