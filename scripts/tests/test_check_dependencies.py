@@ -165,6 +165,12 @@ class CheckTests(unittest.TestCase):
                 doc = DOC.replace(heading, "## Something else")
                 self.assertTrue(problems(doc=doc))
 
+    def test_comment_in_a_code_block_is_not_a_heading(self):
+        # Between a heading and its table: read as a heading, it would take the table.
+        doc = DOC.replace("## Libraries from vcpkg\n",
+                          "## Libraries from vcpkg\n\n```sh\n# install them\n```\n")
+        self.assertEqual(problems(doc=doc), [])
+
     def test_section_without_a_table(self):
         start = DOC.index("| Port | Version | Licence | Purpose | Module |")
         end = DOC.index("### Pulled in")

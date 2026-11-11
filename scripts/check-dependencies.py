@@ -103,11 +103,16 @@ def section_tables(doc: str) -> dict[str, list[dict[str, str]]]:
     """The first table under each heading, as rows keyed by column name."""
     tables: dict[str, list[dict[str, str]]] = {}
     heading = None
+    in_code = False  # a "# comment" in a fenced code block is not a heading
     lines = doc.splitlines()
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        if line.startswith("#"):
+        if line.startswith("```"):
+            in_code = not in_code
+        elif in_code:
+            pass
+        elif line.startswith("#"):
             heading = line.lstrip("#").strip()
         elif line.startswith("|") and heading is not None and heading not in tables:
             header = [c.strip() for c in line.strip("|").split("|")]
