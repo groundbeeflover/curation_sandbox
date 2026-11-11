@@ -1,0 +1,115 @@
+# 0007. Project files, undo and exports
+
+- Status: proposed
+- Date: 2026-11-10
+- Decides: question 6 of the planning brief, the project file, undo and redo, and exports (the
+  toolkit and placement are in [0006](0006-ui-and-interaction.md))
+
+## Context
+
+Curators email projects to colleagues, so a project should be one file. Agents and reviewers
+need to read and diff it, so its content should be text. Undo must be unlimited and reliable;
+code written by agents is most reliable when there is no hand-written undo logic per command.
+Crashes must not lose work.
+
+## Options
+
+| Option | For | Against | Verdict |
+| --- | --- | --- | --- |
+| **Zip container with a JSON document and content-addressed assets** | One file to email; the JSON diffs when unpacked; our own schema; trivial tooling | We write the schema and migrations | **Chosen** |
+| glTF 2.0 with extensions | A standard for geometry and lights (candela, lux) | No meaning for walls, placements, checklists; IES only in a little-supported extension | For import and export later |
+| OpenUSD | Composition and layering | Heavy C++ build; far more than the MVP needs | Export option after 1.0 |
+
+For undo: a **command pattern** with an `undo()` per command (every new command is a new chance
+of an undo bug), **whole-document snapshots** (simple; in C++ without persistent data
+structures, costly for large documents), or **transactions of recorded patches** (every change
+goes through one mutation API that records before and after). **Patches chosen.**
+
+## Decision
+
+### The file
+
+`Name.curation` is a zip:
+
+```text
+manifest.json          {"format": "curation-sandbox", "schemaVersion": 1, "appVersion": "...", "saved": "..."}
+project.json           the document (ADR 0008): UTF-8, stable key order, pretty-printed
+assets/<sha256>.<ext>  imported images, IES files, later meshes; deduplicated by content
+thumbnails/project.png
+```
+
+- The same layout as an unpacked folder (`Name.curation/`) opens too; tests and benchmark scenes
+  use folders, so their JSON diffs in pull requests.
+- Catalogue works are referenced by catalogue id and image hash, not copied into the file.
+- Units in the file are SI (metres, radians, lumens, candela, lux, kelvin); display units are a
+  preference.
+- Every entity has a UUID (version 7), never reused; references are by id; labels such as
+  wall "A" are separate, editable fields.
+- **Saving is atomic:** write `Name.curation.tmp`, flush, rename over the original, keep the
+  previous save as `Name.curation.bak`.
+- **Versioning:** an integer `schemaVersion`. Loading runs migrations v1→v2→…→current, each a
+  pure JSON-to-JSON function with golden-file tests. Old versions are never written. A file
+  newer than the app opens read-only, with a message. Unknown fields are kept.
+- The loader treats every file as untrusted: sizes, counts and string lengths are bounded,
+  paths inside the zip cannot escape it, and every parser has a fuzz test and a
+  `/security-review` (CLAUDE.md).
+
+### Undo and redo
+
+- The document is a normalised store of entities and components (ADR 0008). It changes only
+  through one mutation API: `set(entity, component, value)`, `add`, `remove`.
+- Each user action opens a **transaction**; the API records each change's before and after
+  values. A whole drag is one transaction (changes to the same component coalesce).
+- **Undo** applies a transaction's changes in reverse with the before values; **redo** applies
+  the after values. No command has its own undo code.
+- Each transaction also reports what changed, which drives incremental updates of the render
+  world, the bake and the lux readings.
+- Selection, camera and view state are not part of the document and not undone.
+- A property test applies random transactions, undoes them all and checks that the document
+  serialises byte-for-byte as before.
+
+### Autosave and recovery
+
+While a project is open, the app holds a lock file and appends every committed transaction to a
+**journal** (JSON lines) in its data folder, with a full snapshot every five minutes. After a
+crash, the next launch offers to recover: snapshot plus journal. Autosave never writes to the
+user's file; only Save does.
+
+### Exports
+
+| Export | Format | When |
+| --- | --- | --- |
+| Still image of a viewpoint | PNG (display), EXR (linear radiance) | MVP |
+| Hanging list: number, title, artist, size, wall, distance from wall end, centre height, hook height, lux mean and maximum, target, yearly dose | CSV and PDF | MVP |
+| Wall elevations with dimensions, centre line, gaps | PDF and SVG | MVP |
+| Floor plan with walls, openings, works, tracks and fixtures | PDF and SVG | MVP |
+| Lighting schedule: fixture, type, IES file, lumens, CCT, position, aim, tilt, dimming, resulting lux | CSV | MVP |
+| Walkthrough video | MP4 | 1.0 |
+| glTF of the scene | glTF 2.0 | 1.0 |
+| DXF of plan and elevations | DXF | after 1.0 |
+| OpenUSD, IFC | | after 1.0 |
+
+Drawings are generated by the toolkit-free `editor` library as a **display list** (lines,
+text, dimension marks, images, in millimetres on the page), which is unit-tested; the Qt layer
+only renders a display list to PDF or SVG.
+
+## Consequences
+
+- One file per project for curators, readable JSON for agents and reviewers.
+- The mutation API is the one place where document changes happen, which makes undo,
+  recovery, change notification and testing uniform; it also means no code may change the
+  document any other way (a rule in CLAUDE.md).
+- Schema migrations are a permanent duty from the first public build.
+
+## Revisit
+
+When the first schema change after the curator alpha is needed; when collaboration or
+sharing is planned.
+
+## Sources
+
+- Research notes for this record, with: OpenUSD licence update
+  https://forum.aousd.org/t/upcoming-openusd-license-update/1561 ; glTF punctual lights
+  https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md ;
+  UUIDv7 (RFC 9562) https://www.rfc-editor.org/rfc/rfc9562 ; sparse-delta undo
+  https://docs.rs/crate/undoredo/0.13.5
