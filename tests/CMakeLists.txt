@@ -1,26 +1,17 @@
-include(FetchContent)
+# SPDX-License-Identifier: Apache-2.0
+# Tests that belong to no single module. Each module's own tests live in libs/<m>/tests/ and are
+# added by cs_add_module; the integration-test executable arrives with M1-34.
 
-# Catch2 is the unit-test framework. CMake uses an installed copy if it finds
-# one, and otherwise downloads this exact version.
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v3.16.1
-    GIT_SHALLOW    TRUE
-    FIND_PACKAGE_ARGS 3
-)
-FetchContent_MakeAvailable(Catch2)
-
-# Add each new test file to this list.
-add_executable(cs_tests
-    test_image.cpp
-    test_photometry.cpp
-)
-target_link_libraries(cs_tests PRIVATE cs::core cs_options Catch2::Catch2WithMain)
-
-# Registers every TEST_CASE with CTest, so `ctest` lists and runs them one by one.
-if(catch2_SOURCE_DIR)
-    list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
-endif()
-include(Catch)
-catch_discover_tests(cs_tests)
+# cs_add_module itself: a fixture project built in the build tree (cmake/tests/module_glob.cmake).
+add_test(NAME cmake_module_glob
+    COMMAND ${CMAKE_COMMAND}
+        -D "CS_REPO_DIR=${PROJECT_SOURCE_DIR}"
+        -D "WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cmake_module_glob"
+        -D "GENERATOR=${CMAKE_GENERATOR}"
+        -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -D "CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
+        -D "BUILD_TYPE=$<CONFIG>"
+        -D "Catch2_DIR=${Catch2_DIR}"
+        -D "CTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
+        -P "${PROJECT_SOURCE_DIR}/cmake/tests/module_glob.cmake")
+set_tests_properties(cmake_module_glob PROPERTIES LABELS cmake TIMEOUT 600)

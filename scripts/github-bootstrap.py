@@ -375,6 +375,11 @@ def render_epic(e: dict, tasks: list[dict], numbers: dict[str, int]) -> str:
     return "\n".join(parts) + "\n"
 
 
+def due_matches(have: str | None, want: str | None) -> bool:
+    """GitHub stores a milestone's due date as a timestamp (midnight UTC); compare dates only."""
+    return (have or "")[:10] == (want or "")
+
+
 def task_labels(t: dict) -> list[str]:
     return [f"area:{t['area']}", f"type:{t['type']}", f"size:{t['size']}", f"owner:{t['owner']}"]
 
@@ -519,7 +524,7 @@ def run(data: dict, gh: GitHub, only_milestone: str | None, update_bodies: bool,
         have = existing_ms.get(m["title"])
         due = f"{m['due_on']}T23:59:59Z" if m.get("due_on") else None
         if have:
-            same_due = (have.get("due_on") or None) == due
+            same_due = due_matches(have.get("due_on"), m.get("due_on"))
             if same_due and (have.get("description") or "") == m["description"]:
                 say(f"   ok      {m['title']}")
                 continue
