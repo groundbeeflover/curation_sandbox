@@ -24,6 +24,13 @@
 # A module with no sources yet becomes a header-only INTERFACE target, so the modules that
 # declare it still configure and link; it compiles nothing.
 
+# Module tests use Catch2 (from vcpkg.json) and register with CTest at the top level.
+if(CS_BUILD_TESTS)
+    enable_testing()
+    find_package(Catch2 3 CONFIG REQUIRED)
+    include(Catch)
+endif()
+
 # cs_add_subdirectories(<dir>): add every <dir>/*/ that has a CMakeLists.txt, in name order, so
 # a new module or app needs no edit to the file that adds it.
 function(cs_add_subdirectories parent)
@@ -58,9 +65,12 @@ function(cs_add_module)
         target_include_directories(${target} PUBLIC "${dir}/include" PRIVATE "${dir}/src")
         target_link_libraries(${target} PUBLIC ${arg_EXTERNAL} PRIVATE cs_options ${deps})
     else()
+        # Link-only, as a static library passes on its PRIVATE dependencies: consumers link them
+        # but do not see their headers.
+        list(TRANSFORM deps REPLACE "^(.+)$" "$<LINK_ONLY:\\1>" OUTPUT_VARIABLE link_only_deps)
         add_library(${target} INTERFACE)
         target_include_directories(${target} INTERFACE "${dir}/include")
-        target_link_libraries(${target} INTERFACE ${arg_EXTERNAL})
+        target_link_libraries(${target} INTERFACE ${arg_EXTERNAL} ${link_only_deps})
     endif()
     add_library(cs::${name} ALIAS ${target})
 
@@ -93,7 +103,7 @@ function(cs_add_module)
     if(CS_FUZZ)
         file(GLOB fuzzers CONFIGURE_DEPENDS "${dir}/fuzz/*.cpp")
         foreach(fuzzer IN LISTS fuzzers)
-            get_filename_component(stem "${fuzzer}" NAME_WE)
+            get_filename_component(stem "${fuzzer}" NAME_WLE)
             set(fuzz_target cs_${name}_fuzz_${stem})
             add_executable(${fuzz_target} "${fuzzer}")
             target_link_libraries(${fuzz_target} PRIVATE ${links})

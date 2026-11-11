@@ -35,12 +35,6 @@ foreach(helper IN LISTS cs_helpers)
     include("${helper}")
 endforeach()
 
-if(CS_BUILD_TESTS)
-    enable_testing()
-    find_package(Catch2 3 CONFIG REQUIRED)
-    include(Catch)
-endif()
-
 # ---- Project parts -----------------------------------------------------------
 # Every module under libs/ (blueprint section 7). Modules may name each other in any order;
 # links are resolved once all of them are configured.

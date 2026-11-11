@@ -49,11 +49,12 @@
     {
       "name": "fuzz",
       "displayName": "libFuzzer targets",
-      "description": "Clang with ASan, UBSan and libFuzzer: every libs/<module>/fuzz/*.cpp is a fuzz target",
+      "description": "Clang with ASan, UBSan and libFuzzer: every libs/<module>/fuzz/*.cpp is a fuzz target; optimised, but asserts stay on",
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_C_COMPILER": "clang",
         "CS_SANITIZERS": "ON",

@@ -7,8 +7,4 @@ project(CsModuleGlobFixture LANGUAGES CXX)
 include("${CS_REPO_DIR}/cmake/CsOptions.cmake")
 include("${CS_REPO_DIR}/cmake/CsModule.cmake")
 
-enable_testing()
-find_package(Catch2 3 CONFIG REQUIRED)
-include(Catch)
-
 cs_add_subdirectories("${PROJECT_SOURCE_DIR}/libs")
