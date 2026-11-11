@@ -1,0 +1,13 @@
+Curation Sandbox
+Copyright 2026 The Curation Sandbox Authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository includes third-party code under its own licence:
+
+  third_party/flip/   NVIDIA FLIP, BSD-3-Clause, Copyright (c) 2020-2025 NVIDIA CORPORATION &
+                      AFFILIATES (third_party/flip/LICENSE)
+
+The libraries, tools and data the project uses, with their versions and licences, are listed in
+docs/dependencies.md. Binary distributions include the licence text of every library they
+contain.
