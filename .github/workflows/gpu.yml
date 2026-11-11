@@ -42,7 +42,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/mesa
-          key: lavapipe-${{ env.MESA_VERSION }}-llvm18-static-ubuntu-24.04-v1
+          key: lavapipe-${{ env.MESA_VERSION }}-llvm18-static-x11-ubuntu-24.04-v2
+      # The X11 platform is what makes lavapipe expose VK_EXT_headless_surface and VK_KHR_swapchain.
       - name: Build lavapipe
         if: steps.mesa-cache.outputs.cache-hit != 'true'
         run: |
@@ -50,14 +51,16 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             bison flex glslang-tools libdrm-dev libedit-dev libelf-dev libexpat1-dev libffi-dev \
             libncurses-dev libpolly-18-dev libxml2-dev libzstd-dev llvm-dev ninja-build \
-            python3-mako python3-packaging python3-yaml zlib1g-dev
+            python3-mako python3-packaging python3-yaml zlib1g-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-keysyms1-dev libxcb-present-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxrandr-dev libxshmfence-dev
           pip install --break-system-packages meson==1.9.1
           curl -sSfL --retry 3 -o mesa.tar.xz "https://archive.mesa3d.org/mesa-${MESA_VERSION}.tar.xz"
           echo "${MESA_SHA256}  mesa.tar.xz" | sha256sum -c -
           tar xf mesa.tar.xz
           cd "mesa-${MESA_VERSION}"
           meson setup build --prefix="$HOME/mesa" --libdir=lib --buildtype=release -Db_ndebug=true \
-            -Dplatforms= -Dgallium-drivers=llvmpipe -Dvulkan-drivers=swrast -Dvulkan-layers= \
+            -Dplatforms=x11 -Dgallium-drivers=llvmpipe -Dvulkan-drivers=swrast -Dvulkan-layers= \
             -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
             -Dllvm=enabled -Dshared-llvm=disabled -Dvalgrind=disabled \
             -Dlibunwind=disabled -Dlmsensors=disabled -Dxmlconfig=disabled -Dzstd=enabled \
@@ -88,6 +91,7 @@ jobs:
 
       - name: Device report
         run: |
+          ! ldd ~/mesa/lib/libvulkan_lvp.so | grep 'not found'
           ~/vulkan-layers/bin/vulkaninfo --summary
           ~/vulkan-layers/bin/vulkaninfo 2>/dev/null | grep -E 'VK_KHR_ray_query|VK_EXT_headless_surface|VK_LAYER_KHRONOS_validation' | sort -u
 
@@ -145,9 +149,11 @@ jobs:
 
       # lavapipe from mesa-dist-win, the same Mesa version as Linux. The runner is elevated, so
       # the loader ignores VK_DRIVER_FILES and VK_LAYER_PATH: both are registered in HKLM instead.
+      # On a cache hit the SDK action does not install the loader system-wide: put it on PATH.
       - name: Install lavapipe
         shell: bash
         run: |
+          echo "$VULKAN_SDK\\runtime\\x64" >> "$GITHUB_PATH"
           curl -sSfL --retry 3 -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/mesa3d-${MESA_VERSION}-release-msvc.7z"
           echo "${MESA_DIST_WIN_SHA256}  mesa.7z" | sha256sum -c -
           7z x -y -o"$RUNNER_TEMP/mesa" mesa.7z x64/vulkan_lvp.dll x64/lvp_icd.x86_64.json > /dev/null
