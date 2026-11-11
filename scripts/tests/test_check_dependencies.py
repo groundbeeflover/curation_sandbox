@@ -62,6 +62,17 @@ def problems(manifest=None, doc=DOC, installed=None):
     return deps.check(manifest if manifest is not None else MANIFEST, doc, installed)
 
 
+def make_installed_dir(test, list_files):
+    """A temporary vcpkg_installed directory whose vcpkg/info/ holds these (empty) files."""
+    tmp = tempfile.TemporaryDirectory()
+    test.addCleanup(tmp.cleanup)
+    info = Path(tmp.name) / "vcpkg" / "info"
+    info.mkdir(parents=True)
+    for name in list_files:
+        (info / name).write_text("")
+    return Path(tmp.name)
+
+
 class LicenceExpressionTests(unittest.TestCase):
     ALLOWED = {"MIT", "Apache-2.0", "BSD-3-Clause"}
 
@@ -93,15 +104,11 @@ class LicenceExpressionTests(unittest.TestCase):
         self.assertFalse(self.allowed("GPL-2.0-only WITH Classpath-exception-2.0"))
 
     def test_unknown_or_malformed_is_refused(self):
+        # SPDX operators are upper case, and "mit" is not the identifier "MIT".
         for expr in ["", "LicenseRef-proprietary", "MIT OR", "(MIT", "MIT)", "MIT AND AND MIT",
-                     "WITH MIT", "MIT WITH", "MIT MIT"]:
+                     "WITH MIT", "MIT WITH", "MIT MIT", "mit", "MIT or Apache-2.0"]:
             with self.subTest(expr=expr):
                 self.assertFalse(self.allowed(expr))
-
-    def test_case_matters(self):
-        # SPDX operators are upper case; "mit" is not the identifier "MIT".
-        self.assertFalse(self.allowed("mit"))
-        self.assertFalse(self.allowed("MIT or Apache-2.0"))
 
 
 class CheckTests(unittest.TestCase):
@@ -135,14 +142,6 @@ class CheckTests(unittest.TestCase):
         doc = DOC.replace("| `glm` | 1.0.3 | `MIT` |", "| `glm` | 1.0.3 | MIT |")
         self.assertEqual(problems(doc=doc), [])
 
-    def test_disallowed_licence_of_pulled_in_port(self):
-        doc = DOC.replace("| `zlib` | 1.3.1 | `BSD-3-Clause` |", "| `zlib` | 1.3.1 | `GPL-2.0-only` |")
-        self.assertTrue(any("zlib" in p for p in problems(doc=doc)))
-
-    def test_disallowed_licence_of_vendored_library(self):
-        doc = DOC.replace("| NVIDIA FLIP | 1.7 | `BSD-3-Clause` |", "| NVIDIA FLIP | 1.7 | `CC-BY-NC-4.0` |")
-        self.assertTrue(any("FLIP" in p for p in problems(doc=doc)))
-
     def test_row_for_a_port_not_in_the_manifest(self):
         manifest = dict(MANIFEST, dependencies=["glm", "embree"])
         found = problems(manifest)
@@ -154,15 +153,21 @@ class CheckTests(unittest.TestCase):
                           "| `glm` | 1.0.3 | `MIT` | maths | core |\n| `glm` | 1.0.3 | `MIT` | x | y |")
         self.assertTrue(any("glm" in p for p in problems(doc=doc)))
 
-    def test_a_licence_the_policy_does_not_list(self):
+    def test_licences_of_pulled_in_and_vendored_rows_are_checked(self):
         doc = DOC.replace("| `BSD-3-Clause` | BSD 3-Clause |\n", "")
         found = problems(doc=doc)
-        self.assertEqual(len(found), 2)  # the pulled-in zlib row and the vendored FLIP row
+        self.assertEqual(len(found), 2)
+        self.assertIn("zlib", found[0])
+        self.assertIn("NVIDIA FLIP", found[1])
 
     def test_missing_sections(self):
-        for heading in ["## Allowed licences", "## Libraries from vcpkg"]:
-            with self.subTest(heading=heading):
-                doc = DOC.replace(heading, "## Something else")
+        start = DOC.index("| Port | Version | Licence | Purpose | Module |")
+        without_table = DOC[:start] + DOC[DOC.index("### Pulled in"):]
+        cases = {heading: DOC.replace(heading, "## Something else")
+                 for heading in ["## Allowed licences", "## Libraries from vcpkg"]}
+        cases["vcpkg heading without a table"] = without_table
+        for name, doc in cases.items():
+            with self.subTest(name):
                 self.assertTrue(problems(doc=doc))
 
     def test_comment_in_a_code_block_is_not_a_heading(self):
@@ -171,25 +176,12 @@ class CheckTests(unittest.TestCase):
                           "## Libraries from vcpkg\n\n```sh\n# install them\n```\n")
         self.assertEqual(problems(doc=doc), [])
 
-    def test_section_without_a_table(self):
-        start = DOC.index("| Port | Version | Licence | Purpose | Module |")
-        end = DOC.index("### Pulled in")
-        self.assertTrue(problems(doc=DOC[:start] + DOC[end:]))
-
 
 class InstalledTests(unittest.TestCase):
-    def installed(self, names):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        info = Path(tmp.name) / "vcpkg" / "info"
-        info.mkdir(parents=True)
-        for name in names:
-            (info / name).write_text("include/x.h\n")
-        return deps.read_installed(Path(tmp.name))
-
     def test_read_installed(self):
-        found = self.installed(["glm_1.0.3_x64-linux.list", "vulkan-headers_1.4.363.0_x64-linux.list",
-                                "shader-slang_2026.21_x64-windows.list", "status"])
+        found = deps.read_installed(make_installed_dir(self, [
+            "glm_1.0.3_x64-linux.list", "vulkan-headers_1.4.363.0_x64-linux.list",
+            "shader-slang_2026.21_x64-windows.list", "status"]))
         self.assertEqual(found, {"glm": "1.0.3", "vulkan-headers": "1.4.363.0",
                                  "shader-slang": "2026.21"})
 
@@ -256,13 +248,9 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("embree", result.stdout + result.stderr)
 
     def test_exit_1_when_an_installed_version_differs(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        info = Path(tmp.name) / "vcpkg" / "info"
-        info.mkdir(parents=True)
-        for name in ["glm_1.0.3", "embree_4.4.2", "vulkan-headers_1.4.363.0", "zlib_1.3.1"]:
-            (info / f"{name}_x64-linux.list").write_text("")
-        result = self.run_script(*self.write(MANIFEST, DOC), "--installed", tmp.name)
+        installed = make_installed_dir(self, [f"{name}_x64-linux.list" for name in [
+            "glm_1.0.3", "embree_4.4.2", "vulkan-headers_1.4.363.0", "zlib_1.3.1"]])
+        result = self.run_script(*self.write(MANIFEST, DOC), "--installed", str(installed))
         self.assertEqual(result.returncode, 1)
         self.assertIn("embree", result.stdout + result.stderr)
 

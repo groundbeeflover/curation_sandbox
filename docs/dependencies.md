@@ -12,7 +12,8 @@ licence in the vcpkg, pulled-in and vendored tables is allowed by
 [Allowed licences](#allowed-licences). Given a configured build
 (`--installed build/debug/vcpkg_installed`), it also compares the versions with what vcpkg
 installed and finds installed ports missing here. The script tests run it on the repository, so
-CI fails when this file and `vcpkg.json` disagree.
+CI fails when the names or licences here and `vcpkg.json` disagree; versions are compared only
+when the script is given `--installed`, which CI does not do yet.
 
 ## Adding or changing a dependency
 
@@ -67,7 +68,7 @@ libraries are visible to the modules that declare it.
 | `miniz` | 3.1.2 | `MIT` | The zip container of `.curation` files; also tinyexr's compression | doc |
 | `nlohmann-json` | 3.12.0 | `MIT` | JSON of project files and manifests | doc |
 | `shader-slang` | 2026.21 | `Apache-2.0 WITH LLVM-exception` | `slangc`, which compiles the shaders to SPIR-V at build time. A build tool: its library is never linked or shipped, so the licences of what its binaries bundle (LLVM, glslang, SPIRV-Tools) do not reach our packages | gpu (build only) |
-| `stb` | 2026-08-02 | `MIT OR Unlicense` | `stb_image` (PNG and JPEG import), `stb_image_write` (PNG output), later `stb_truetype` (the overlay's font atlas) | core, assets; gpu through core |
+| `stb` | 2026-08-02 | `MIT OR Unlicense` | `stb_image` (PNG and JPEG import), `stb_image_write` (PNG output), later `stb_truetype` (the overlay's font atlas) | core; assets and gpu through core |
 | `tiff` | 4.7.2 | `libtiff` | TIFF import. Only the `zip` feature (Deflate; LZW is built in): JPEG, LZMA and other codecs are left out, which keeps the code that reads hostile files small | assets |
 | `tinyexr` | 3.2.0 | `BSD-3-Clause` | EXR read and write (it includes parts of OpenEXR, also BSD-3-Clause) | core |
 | `vk-bootstrap` | 1.4.363 | `MIT` | Vulkan instance and device selection, including headless | gpu |
@@ -94,7 +95,7 @@ README in each directory gives the commit, the SHA-256 of each file and how to u
 
 | Library | Version | Licence | Purpose | Module |
 | --- | --- | --- | --- | --- |
-| NVIDIA FLIP (`third_party/flip/`) | 1.7, commit d3ab02a | `BSD-3-Clause` | Image comparison for golden images and benchmarks; a single C++ header, no vcpkg port | core |
+| NVIDIA FLIP | 1.7, commit d3ab02a | `BSD-3-Clause` | Image comparison for golden images and benchmarks; a single C++ header with no vcpkg port, in `third_party/flip/` | core |
 
 ## Outside vcpkg
 

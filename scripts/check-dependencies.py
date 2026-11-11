@@ -92,11 +92,9 @@ def licence_allowed(expr: str, allowed: set[str]) -> bool:
 # ---- Markdown tables ----------------------------------------------------------
 
 def cell_text(cell: str) -> str:
-    """The text in backticks if there is any, else the cell without link markup."""
-    code = re.findall(r"`([^`]*)`", cell)
-    if code:
-        return " ".join(code).strip()
-    return re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", cell).strip()
+    """The text in the cell's first backticks, or the whole cell if it has none."""
+    code = re.search(r"`([^`]*)`", cell)
+    return (code.group(1) if code else cell).strip()
 
 
 def section_tables(doc: str) -> dict[str, list[dict[str, str]]]:
@@ -156,22 +154,23 @@ def check(manifest: dict, doc: str, installed: dict[str, str] | None = None) -> 
     allowed = {cell_text(row.get("SPDX", "")) for row in tables[ALLOWED]}
     problems = []
 
-    documented: dict[str, dict[str, str]] = {}  # port name to its row, both port tables
     for heading, key in ((VCPKG, "Port"), (PULLED_IN, "Port"), (VENDORED, "Library")):
         for row in tables.get(heading, []):
-            name = cell_text(row.get(key, ""))
             licence = cell_text(row.get("Licence", ""))
             if not licence_allowed(licence, allowed):
-                problems.append(f'{name} ("{heading}"): licence "{licence}" is not allowed by '
-                                f'the "{ALLOWED}" table')
-            if heading == VENDORED:
-                continue
-            if name in documented:
+                problems.append(f'{cell_text(row.get(key, ""))} ("{heading}"): licence '
+                                f'"{licence}" is not allowed by the "{ALLOWED}" table')
+
+    versions: dict[str, str] = {}  # every documented port, direct or pulled in
+    for heading in (VCPKG, PULLED_IN):
+        for row in tables.get(heading, []):
+            name = cell_text(row.get("Port", ""))
+            if name in versions:
                 problems.append(f"{name} is listed twice")
-            documented[name] = dict(row, section=heading)
+            versions[name] = cell_text(row.get("Version", ""))
+    direct = {cell_text(row.get("Port", "")) for row in tables[VCPKG]}
 
     declared = manifest_dependencies(manifest)
-    direct = {n for n, row in documented.items() if row["section"] == VCPKG}
     for name in declared:
         if name not in direct:
             problems.append(f'{name} is in vcpkg.json but has no row in "{VCPKG}"')
@@ -181,16 +180,13 @@ def check(manifest: dict, doc: str, installed: dict[str, str] | None = None) -> 
     if installed is not None:
         ports = {n: v for n, v in installed.items() if not n.startswith("vcpkg-")}
         for name, version in sorted(ports.items()):
-            row = documented.get(name)
-            if row is None:
+            if name not in versions:
                 problems.append(f'{name} {version} is installed but has no row in "{VCPKG}" '
                                 f'or "{PULLED_IN}"')
-            elif cell_text(row.get("Version", "")) != version:
-                problems.append(f'{name}: {version} is installed, the table says '
-                                f'{cell_text(row.get("Version", ""))}')
-        for name, row in sorted(documented.items()):
-            if row["section"] == PULLED_IN and name not in ports:
-                problems.append(f'{name} is listed in "{PULLED_IN}" but is not installed')
+            elif versions[name] != version:
+                problems.append(f"{name}: {version} is installed, the table says {versions[name]}")
+        for name in sorted(versions.keys() - direct - ports.keys()):
+            problems.append(f'{name} is listed in "{PULLED_IN}" but is not installed')
     return problems
 
 

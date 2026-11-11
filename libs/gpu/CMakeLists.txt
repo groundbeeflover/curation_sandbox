@@ -5,8 +5,8 @@ find_package(vk-bootstrap CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 # Shaders are compiled at build time, never at run time (ADR 0001), so only Slang's compiler is
-# needed: the package sets SLANGC_EXECUTABLE for the shader build (M1-20). Its library is not
-# linked.
+# needed: the package defines the imported executable slang::slangc for the shader build (M1-20).
+# Its library is not linked.
 find_package(slang CONFIG REQUIRED)
 
 # Vulkan through volk, which loads every function at run time, so no loader is linked and no
