@@ -33,16 +33,38 @@ reviewed by the owner; see the roadmap.
 ## Build and test
 
 You need a C++20 compiler (GCC 13+, Clang 16+ or Visual Studio 2022), CMake 3.25+, Ninja,
-Python 3.11+ and Git. Milestone 1 moves dependencies to vcpkg and changes these commands; the
-README is updated with it.
+Python 3.11+, Git and [vcpkg](https://learn.microsoft.com/vcpkg/), which builds the libraries
+listed in `vcpkg.json` on the first configure and caches them. Install vcpkg once and point
+`VCPKG_ROOT` at it:
 
 ```sh
-cmake --preset debug           # configure a debug build with sanitizers
+git clone https://github.com/microsoft/vcpkg ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh -disableMetrics      # Windows: bootstrap-vcpkg.bat
+export VCPKG_ROOT=~/vcpkg                       # also in your shell profile
+```
+
+On Windows, run the commands below from a Visual Studio developer prompt, so Ninja finds the
+compiler. Each preset configures, builds and tests in `build/<preset>/`:
+
+```sh
+cmake --preset debug           # configure: debug, with AddressSanitizer and UBSan
 cmake --build --preset debug   # compile
-ctest --preset debug           # run the unit tests
+ctest --preset debug           # run every test; `-L core` runs one module's
 python3 scripts/format.py --check                  # formatting (clang-format 23)
 python3 -m unittest discover -s scripts/tests      # tests of the planning scripts
 ```
+
+| Preset | For |
+| --- | --- |
+| `debug` | writing code: sanitizers catch memory errors and undefined behaviour |
+| `release` | rendering and the accuracy and golden-image tests |
+| `profile` | profiling: optimised, with debug information |
+| `app` | the desktop app: `debug` plus the Qt user interface (needs Qt 6, installed outside vcpkg) |
+| `fuzz` | Linux and Clang: every `libs/<module>/fuzz/*.cpp` as a libFuzzer target |
+
+The code is a set of modules under `libs/`, one `cs_add_module(...)` call each
+(`cmake/CsModule.cmake`): sources, tests and fuzz targets are found by glob, so adding a file
+never edits a CMake list, and a module sees only the modules it declares.
 
 ## Licence
 
