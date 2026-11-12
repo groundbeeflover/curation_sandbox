@@ -15,6 +15,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -62,11 +64,79 @@ std::string first_difference(std::string_view actual, std::string_view expected)
            std::string(expected.substr(at, 40)) + "\"";
 }
 
-// A folder of its own under the system's temporary folder; removed before and after.
+// The SHA-256 of `data` in lowercase hexadecimal (FIPS 180-4), the name ADR 0007 gives an asset.
+// The test's own, since no module offers one yet; one small file a test is all it hashes.
+std::string sha256_hex(std::string_view data) {
+    static constexpr std::array<std::uint32_t, 64> k = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    };
+    std::array<std::uint32_t, 8> hash = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                                         0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+
+    // Padding: a 1 bit, zeros to 56 bytes modulo 64, then the length in bits, big-endian.
+    std::string message(data);
+    const std::uint64_t bits = static_cast<std::uint64_t>(data.size()) * 8;
+    message.push_back(static_cast<char>(0x80));
+    while (message.size() % 64 != 56) {
+        message.push_back('\0');
+    }
+    for (int shift = 56; shift >= 0; shift -= 8) {
+        message.push_back(static_cast<char>((bits >> shift) & 0xff));
+    }
+
+    for (std::size_t block = 0; block < message.size(); block += 64) {
+        std::array<std::uint32_t, 64> w{};
+        for (std::size_t t = 0; t < 16; ++t) {
+            for (std::size_t byte = 0; byte < 4; ++byte) {
+                w[t] = (w[t] << 8) | static_cast<unsigned char>(message[block + 4 * t + byte]);
+            }
+        }
+        for (std::size_t t = 16; t < 64; ++t) {
+            const std::uint32_t s0 =
+                std::rotr(w[t - 15], 7) ^ std::rotr(w[t - 15], 18) ^ (w[t - 15] >> 3);
+            const std::uint32_t s1 =
+                std::rotr(w[t - 2], 17) ^ std::rotr(w[t - 2], 19) ^ (w[t - 2] >> 10);
+            w[t] = w[t - 16] + s0 + w[t - 7] + s1;
+        }
+        std::array<std::uint32_t, 8> v = hash; // a, b, c, d, e, f, g, h
+        for (std::size_t t = 0; t < 64; ++t) {
+            const std::uint32_t s1 = std::rotr(v[4], 6) ^ std::rotr(v[4], 11) ^ std::rotr(v[4], 25);
+            const std::uint32_t choice = (v[4] & v[5]) ^ (~v[4] & v[6]);
+            const std::uint32_t t1 = v[7] + s1 + choice + k[t] + w[t];
+            const std::uint32_t s0 = std::rotr(v[0], 2) ^ std::rotr(v[0], 13) ^ std::rotr(v[0], 22);
+            const std::uint32_t majority = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+            v = {t1 + s0 + majority, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]};
+        }
+        for (std::size_t i = 0; i < 8; ++i) {
+            hash[i] += v[i];
+        }
+    }
+
+    static constexpr std::string_view digits = "0123456789abcdef";
+    std::string hex;
+    for (const std::uint32_t word : hash) {
+        for (int shift = 28; shift >= 0; shift -= 4) {
+            hex.push_back(digits[(word >> shift) & 0xf]);
+        }
+    }
+    return hex;
+}
+
+// A folder of its own in the working directory, which CTest sets to the test's build folder, so
+// that two presets or two worktrees testing at once do not share it. Removed before and after.
 class TempFolder {
   public:
     explicit TempFolder(std::string_view name)
-        : path_(std::filesystem::temp_directory_path() / "cs_doc_tests" / name) {
+        : path_(std::filesystem::current_path() / "skeleton_scene_scratch" / name) {
         std::filesystem::remove_all(path_);
         std::filesystem::create_directories(path_.parent_path());
     }
@@ -175,6 +245,30 @@ std::pair<std::uint32_t, std::uint32_t> png_size(const std::string& png) {
 
 } // namespace
 
+TEST_CASE("sha256_hex gives the FIPS 180-4 example digests", "[doc][skeleton]") {
+    CHECK(sha256_hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    CHECK(sha256_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    // Two blocks once padded.
+    CHECK(sha256_hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") ==
+          "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+}
+
+TEST_CASE("the skeleton scene's assets folder holds only the files the document names",
+          "[doc][skeleton]") {
+    // So that an old chart left behind after a change cannot linger beside the new one.
+    std::set<std::string> named;
+    for (const auto& [id, work] : skeleton().works()) {
+        if (work.image) {
+            named.insert(work.image->sha256 + "." + work.image->extension);
+        }
+    }
+    std::set<std::string> present;
+    for (const auto& file : std::filesystem::directory_iterator(scene_folder() / "assets")) {
+        present.insert(file.path().filename().string());
+    }
+    CHECK(present == named);
+}
+
 TEST_CASE("the skeleton scene loads with load_project_folder and saves back byte-identical",
           "[doc][skeleton]") {
     const Document document = load_project_folder(scene_folder());
@@ -252,15 +346,18 @@ TEST_CASE("the skeleton scene hangs one 0.73 x 0.92 m work showing the test char
     CHECK(work.form.width_m == 0.73);
     CHECK(work.form.height_m == 0.92);
 
-    // The chart is in the scene's assets, named by its hash (make_test_chart.py --check verifies
-    // the hash), at most 50 KB, with the work's proportions so that it is not stretched.
+    // The chart is in the scene's assets, named by its hash, at most 50 KB, with the work's
+    // proportions so that it is not stretched. (make_test_chart.py --check verifies that it is
+    // the chart the script writes, pixel values included.)
     REQUIRE(work.image.has_value());
     CHECK(work.image->extension == "png");
     const std::filesystem::path chart =
         scene_folder() / "assets" / (work.image->sha256 + "." + work.image->extension);
     REQUIRE(std::filesystem::is_regular_file(chart));
-    CHECK(std::filesystem::file_size(chart) <= 50'000);
-    const auto [width_px, height_px] = png_size(read_file(chart));
+    const std::string png = read_file(chart);
+    CHECK(sha256_hex(png) == work.image->sha256);
+    CHECK(png.size() <= 50'000);
+    const auto [width_px, height_px] = png_size(png);
     CHECK_THAT(static_cast<double>(width_px) / height_px,
                WithinAbs(work.form.width_m / work.form.height_m, 1.0 / height_px));
 
@@ -268,6 +365,8 @@ TEST_CASE("the skeleton scene hangs one 0.73 x 0.92 m work showing the test char
     CHECK(exhibit.exhibit->work == work_id);
     REQUIRE(exhibit.framing.has_value());
     CHECK(exhibit.framing->style == "box");
+    // Bare, whatever the preset's default: the lux tests of milestone 1 expect no glazing.
+    CHECK(exhibit.framing->glazing == Glazing::none);
 
     REQUIRE(exhibit.placement.has_value());
     REQUIRE(std::holds_alternative<OnWall>(*exhibit.placement));
@@ -296,6 +395,7 @@ TEST_CASE("the skeleton scene's spot is a generic 800 lm spot on a ceiling track
     CHECK_THAT(type->beam_angle_rad, WithinAbs(15.0 * degrees, 1e-12));
     CHECK_THAT(type->field_angle_rad, WithinAbs(25.0 * degrees, 1e-12));
     CHECK(luminaire.dimming == 1.0);
+    CHECK(type->colour_temperature_k == 3000.0);
     CHECK_FALSE(luminaire.colour_temperature_k.has_value());
 
     // On the ceiling, along wall A, at the Canadian Conservation Institute's distance from its

@@ -3,8 +3,9 @@
 The small scene most of milestone 1 is tested on: one room, one framed work showing the test
 chart (`tools/test-chart/`), one spotlight and one viewpoint. It is a project folder:
 `project.json` holds the document, and `assets/` holds the chart, named by its SHA-256.
-`libs/doc/tests/test_skeleton_scene.cpp` checks that it loads, saves back byte-identical, and
-holds the numbers below.
+`libs/doc/tests/test_skeleton_scene.cpp` checks that it loads and saves back byte-identical,
+and that it holds the numbers below. It also checks that the chart's SHA-256 matches its name,
+and that `assets/` holds nothing the document does not name.
 
 Units are SI. Plan positions are (x, y) in metres, and z is up, with the floor at z = 0.
 
