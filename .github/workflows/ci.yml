@@ -116,6 +116,9 @@ jobs:
           max-size: 1G
 
       # The project is C++ only, so CMAKE_CXX_COMPILER chooses the whole compiler.
+      # --clean-after-build deletes each port's build tree, staging copy and downloads once it is
+      # installed: without it, a cold build fills the Linux runner's disk (Embree's build tree
+      # alone is about 4 GB) and the cache cannot be written.
       - name: Configure
         id: configure
         shell: bash
@@ -123,7 +126,8 @@ jobs:
           launcher=""
           if command -v ccache >/dev/null; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
           cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
-            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCS_WARNINGS_AS_ERRORS=ON $launcher
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_INSTALL_OPTIONS=--clean-after-build \
+            -DCS_WARNINGS_AS_ERRORS=ON $launcher
 
       # Only the packages this build installed are kept (vcpkg's status file lists their ABI
       # hashes), so zips of old ABIs are not carried from one entry to the next.
@@ -136,7 +140,9 @@ jobs:
           find "$RUNNER_TEMP/vcpkg-archives" -name '*.zip' | while read -r zip; do
             grep -qxF "$(basename "$zip" .zip)" <<< "$keep" || rm -f "$zip"
           done
-          echo "kept $(find "$RUNNER_TEMP/vcpkg-archives" -name '*.zip' | wc -l) packages"
+          echo "kept $(find "$RUNNER_TEMP/vcpkg-archives" -name '*.zip' | wc -l) packages," \
+            "$(du -sh "$RUNNER_TEMP/vcpkg-archives" | cut -f1)"
+          df -h "$RUNNER_TEMP" | tail -1
 
       # Saved as soon as every package is installed, so a later build or test failure keeps it.
       # A failed configure saves nothing, so an incomplete set never takes the key.
