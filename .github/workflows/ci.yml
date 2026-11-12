@@ -1,6 +1,7 @@
-# Builds and tests every pull request and every push to main on Linux and Windows through the
-# CMake presets, plus a fast job for formatting, the planning scripts and the task file. GPU
-# tests live in gpu.yml (M1-29); vcpkg caching and the full compiler matrix arrive with M1-30.
+# Builds and tests every pull request and every push to main through the CMake presets, with
+# three compilers (GCC, Clang with sanitizers, MSVC), plus a fast job for formatting, the
+# planning scripts, the task file and the dependency list. vcpkg's built packages and the
+# compiler output are cached between runs. GPU tests live in gpu.yml (M1-29).
 name: CI
 
 on:
@@ -18,7 +19,7 @@ permissions:
 
 jobs:
   checks:
-    name: checks (format, scripts, task file)
+    name: checks (format, scripts, task file, dependencies)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -39,24 +40,28 @@ jobs:
       - name: Task file
         run: python3 scripts/github-bootstrap.py --check
 
-  # The release preset on Linux and Windows, the debug preset (ASan and UBSan) on Linux. The
-  # libraries come from the runner's vcpkg in manifest mode (vcpkg.json). Its clone is moved to
-  # the manifest's builtin-baseline first: vcpkg reads each port's list of versions from the
-  # checked-out files, so the runner image's older checkout cannot find newer ports even when
-  # the baseline commit has been fetched.
+      - name: Dependencies
+        run: python3 scripts/check-dependencies.py
+
+  # GCC with the release preset and Clang with the debug preset (ASan and UBSan) on Linux, MSVC
+  # with the release preset on Windows; warnings are errors everywhere. The libraries come from
+  # the runner's vcpkg in manifest mode (vcpkg.json).
   build-and-test:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, preset: release }
-          - { os: windows-2022, preset: release }
-          - { os: ubuntu-24.04, preset: debug }
-    name: build-and-test (${{ matrix.os }}, ${{ matrix.preset }})
+          - { os: ubuntu-24.04, compiler: gcc, cxx: g++, preset: release, triplet: x64-linux }
+          - { os: ubuntu-24.04, compiler: clang, cxx: clang++, preset: debug, triplet: x64-linux }
+          - { os: windows-2022, compiler: msvc, cxx: cl, preset: release, triplet: x64-windows }
+    name: build-and-test (${{ matrix.os }}, ${{ matrix.compiler }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
+      # The runner's vcpkg clone is moved to the manifest's builtin-baseline: vcpkg reads each
+      # port's list of versions from the checked-out files, so the runner image's older checkout
+      # cannot find newer ports even when the baseline commit has been fetched.
       - name: vcpkg
         shell: bash
         run: |
@@ -73,27 +78,51 @@ jobs:
           else
             "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           fi
+          # vcpkg's binary cache: a zip per built package, read and written in this directory,
+          # which the next two steps restore and save.
+          mkdir -p "$RUNNER_TEMP/vcpkg-archives"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$RUNNER_TEMP/vcpkg-archives,readwrite" >> "$GITHUB_ENV"
+
+      # Keyed on the triplet and vcpkg.json, which holds the baseline. When either changes, the
+      # newest older entry is restored and vcpkg rebuilds only the packages whose inputs changed.
+      # Both Linux jobs share an entry: ports are built with the triplet's default compiler,
+      # whichever compiler builds the project.
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-${{ matrix.triplet }}-
 
       - name: MSVC environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # Only a speed-up, installed with apt. When the runner cannot reach Ubuntu's mirrors, the
-      # build goes on without it instead of failing.
-      - name: Compiler cache (Linux)
-        if: runner.os == 'Linux'
+      # Only a speed-up: if it cannot be installed, the build goes on without it.
+      - name: Compiler cache
         continue-on-error: true
         timeout-minutes: 5
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-${{ matrix.preset }}
+          key: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.preset }}
 
       - name: Configure
         shell: bash
         run: |
           launcher=""
           if command -v ccache >/dev/null; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
-          cmake --preset ${{ matrix.preset }} -DCS_WARNINGS_AS_ERRORS=ON $launcher
+          cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCS_WARNINGS_AS_ERRORS=ON $launcher
+
+      # Saved as soon as every package is installed, so a later build or test failure keeps it.
+      # A failed configure saves nothing, so an incomplete set never takes the key.
+      - name: Save vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
