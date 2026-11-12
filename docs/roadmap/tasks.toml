@@ -708,16 +708,19 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-08", "M1-32"]
-touches = ["libs/doc/include/cs/doc/document.hpp", "libs/doc/src/document.cpp", "libs/doc/include/cs/doc/transaction.hpp", "libs/doc/src/transaction.cpp", "libs/doc/include/cs/doc/history.hpp", "libs/doc/src/history.cpp", "libs/doc/tests/test_transaction.cpp", "libs/doc/tests/test_history.cpp"]
+touches = ["libs/doc/include/cs/doc/document.hpp", "libs/doc/src/document.cpp", "libs/doc/include/cs/doc/transaction.hpp", "libs/doc/src/transaction.cpp", "libs/doc/include/cs/doc/history.hpp", "libs/doc/src/history.cpp", "libs/doc/tests/test_transaction.cpp", "libs/doc/tests/test_history.cpp", "libs/doc/include/cs/doc/project_io.hpp", "libs/doc/src/project_io.cpp"]
 goal = "The one way to change a document: transactions that record each change's before and after values, giving undo, redo and change lists without any per-command undo code."
 context = [
   "docs/adr/0007-project-files-undo-exports.md, Undo and redo",
   "docs/adr/0008-exhibit-data-model.md, Code shape",
+  "M1-08 (#117) and the owner's notes on this issue: Document is built from DocumentData and exposes it through data(); reference checks run only when JSON is read, in project_io.cpp, and save_project_folder reads its output back, so a dangling reference makes a document unsaveable",
 ]
 acceptance = [
   "Document's public interface is read-only; all writes go through Transaction (add entity, remove entity, set or remove a component, set a work), and a committed transaction is applied atomically",
   "Each committed transaction yields a change list (entity id, component kind, added, changed or removed); setting the same component twice in one transaction yields one change",
   "Property test with a fixed seed: from tests/scenes/skeleton, 1000 random transactions, then undo of all of them, serialises byte-identical to the original; redo of all serialises byte-identical to the state after the 1000",
+  "A commit that would leave a dangling reference (for example removing a wall that still hosts a placement) is refused with an error naming the entity and the reference, and the document is unchanged; removing the wall and its works in one transaction succeeds. The rules come from project_io as one function (for example check_references(const DocumentData&)), not a second copy; project_io changes only for that function",
+  "In the property test, refused random transactions are counted, and the document after the 1000 saves with save_project_folder",
   "Committing a new transaction after an undo clears the redo stack",
   "Each transaction carries a name for the interface, for example 'Move Water Lilies'; the history exposes the names of the next undo and redo",
   "`ctest --preset debug -L doc` passes",
@@ -1661,7 +1664,7 @@ area = "doc"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-08", "M1-32"]
+blocked_by = ["M1-08", "M1-32", "M1-09"]
 touches = ["libs/doc/include/cs/doc/library.hpp", "libs/doc/src/library.cpp", "libs/doc/tests/test_library.cpp", "data/frames/", "data/finishes/frame-", "libs/doc/src/project_io.cpp", "tests/scenes/skeleton/project.json"]
 goal = "Library definitions as one data file per item, discovered at run time, so that adding a frame style or finish is a new file rather than a code change; and the six MVP frame styles."
 context = [
@@ -2079,18 +2082,22 @@ context = [
   "docs/adr/0007-project-files-undo-exports.md, The file",
   "miniz: https://github.com/richgel999/miniz",
   "CLAUDE.md: parsers get a fuzz target and /security-review",
+  "M1-08 (#117): parse_project_json(std::string_view) is the entry point for a fuzz target; save_project_folder removes an existing project.json.tmp before writing, so a planted link is never written through; it does not flush to disk",
 ]
 acceptance = [
   "save_project(document, Name.curation) writes a zip of manifest.json, project.json, assets/<sha256>.<ext> and thumbnails/; open_project reads the zip or the folder form",
   "Zip and folder forms round-trip with project.json byte-identical; imported assets are copied once per content hash",
   "Saving writes Name.curation.tmp, flushes, renames over the original and keeps the previous file as Name.curation.bak; a test that stops after writing the temporary file finds the original intact",
+  "The temporary file is created new, never through an existing file or link (a test plants a link there); flushing means fsync of the file before the rename (FlushFileBuffers, and MoveFileExW with MOVEFILE_WRITE_THROUGH, on Windows) and, on Linux, fsync of the folder after it",
   "Entries with absolute paths or '..', more than 10,000 entries, or more than 4 GB uncompressed are refused with a message",
   "A libFuzzer target runs 60 s without findings; `ctest --preset debug -L doc` passes; /security-review run and answered in the PR",
+  "A second libFuzzer target, libs/doc/fuzz/fuzz_project_json.cpp, passes its input to parse_project_json and catches only ProjectError; it runs 60 s without findings",
 ]
 out_of_scope = ["Migrations (M2-22)", "The journal (M2-23)", "Menus (M2-25)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
   "cmake --preset fuzz && cmake --build --preset fuzz && ./build/fuzz/libs/doc/fuzz_container -max_total_time=60",
+  "./build/fuzz/libs/doc/fuzz_project_json -max_total_time=60",
   "python3 scripts/format.py --check",
 ]
 
@@ -2100,18 +2107,20 @@ epic = "E2.5"
 title = "Schema versions and migrations"
 area = "doc"
 type = "feature"
-size = "S"
+size = "M"
 owner = "agent"
 blocked_by = ["M2-06", "M1-34", "M1-02"]
-touches = ["libs/doc/include/cs/doc/migrate.hpp", "libs/doc/src/migrate.cpp", "libs/doc/src/migrations/", "libs/doc/CMakeLists.txt", "libs/doc/tests/test_migrate.cpp", "libs/doc/tests/data/migrations/", "libs/doc/src/project_io.cpp"]
+touches = ["libs/doc/include/cs/doc/migrate.hpp", "libs/doc/src/migrate.cpp", "libs/doc/src/migrations/", "libs/doc/CMakeLists.txt", "libs/doc/tests/test_migrate.cpp", "libs/doc/tests/data/migrations/", "libs/doc/src/project_io.cpp", "libs/doc/include/cs/doc/document.hpp", "libs/doc/include/cs/doc/work.hpp"]
 goal = "Every future change to the file format arrives with a migration, one file each, tested against golden inputs and outputs, so that old projects always open."
 context = [
   "docs/adr/0007-project-files-undo-exports.md, Versioning",
+  "M1-08 (#117) and the owner's notes on this issue: read_document in project_io.cpp checks schemaVersion (at the top of project.json) before the typed read, which is where migrations run; reading is strict today, every unknown key is an error",
 ]
 acceptance = [
   "Migrations are pure JSON-to-JSON functions, one per file in libs/doc/src/migrations/, registered with cs_generate_registry (M1-34), so adding one edits no shared list",
   "Loading runs every migration from the file's version to the current one; a test migration from a v0 fixture to v1 has golden input and output files",
   "A file with a newer schemaVersion opens read-only with a message naming both versions; unknown fields survive a load and save",
+  "Unknown fields are stored on Entity and DocumentData (document.hpp) and Work (work.hpp) as one field each holding their JSON, and written back in a fixed order, so a file with unknown fields round-trips byte-identical",
   "`ctest --preset debug -L doc` passes",
 ]
 out_of_scope = ["Real schema changes (none yet)"]
@@ -2520,5 +2529,39 @@ acceptance = [
 out_of_scope = ["Conservation classes and warnings (M3)"]
 verification = [
   "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-38"
+epic = "E2.5"
+title = "Read project.json in bounded memory"
+area = "doc"
+type = "bug"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-22"]
+touches = ["libs/doc/src/project_io.cpp", "libs/doc/include/cs/doc/project_io.hpp", "libs/doc/tests/test_project_io_memory.cpp"]
+goal = "A project file from someone else cannot exhaust memory. Today project.json is parsed into nlohmann's tree of the whole file before any limit is checked, at about 36 bytes per byte of input, so a hostile 64 MiB file of empty objects peaks near 2.3 GB before it is rejected (measured in M1-08, #117). Reading should stream into the typed document and refuse a file as soon as it crosses a limit."
+context = [
+  "M1-08 (#117), Follow-ups: the measurement, and the one-pass depth scan that a streaming reader makes unnecessary",
+  "libs/doc/src/project_io.cpp: describe() lists each type's members once for both the reader and the writer; keep that single description",
+  "nlohmann/json's SAX interface: https://json.nlohmann.me/features/parsing/sax_interface/",
+  "M2-22: unknown fields are kept (ADR 0007); the streaming reader must keep them too",
+]
+acceptance = [
+  "Reading project.json never holds a tree of the whole file: values go into the typed document as they are read, and the size, count, depth and string-length limits refuse the file as soon as one is crossed, with the same ProjectError paths as before",
+  "A Linux test, skipped under sanitizers, reads a generated 64 MiB project.json whose entities are empty objects: it is refused, and the peak resident memory of its process (getrusage, ru_maxrss) stays below 256 MiB",
+  "Every existing test in libs/doc/tests passes unchanged, including the byte-identical round trips, the max_entities load and unknown fields kept",
+  "`ctest --preset debug -L doc` and `ctest --preset release -L doc` pass; /security-review run and answered in the pull request",
+]
+out_of_scope = [
+  "The writer, which is already linear",
+  "The limits' values and the file format",
+  "The .curation zip (M2-21)",
+]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -L doc",
   "python3 scripts/format.py --check",
 ]
