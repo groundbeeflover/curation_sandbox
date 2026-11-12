@@ -36,9 +36,10 @@ inline constexpr std::uint64_t golden_gamma = 0x9e3779b97f4a7c15;
 
 } // namespace detail
 
-// The seed for one pixel sample's generator. For one scene seed, different pixels never share
-// a seed, and within one pixel different (sample, dimension) pairs never do: each step below is
-// a bijection of the value it adds.
+// The seed for one pixel sample's generator. For one scene seed, different pixels at the same
+// (sample, dimension) never share a seed, and within one pixel different (sample, dimension)
+// pairs never do: each step below is a bijection of the value it adds. Otherwise two seeds are
+// equal only by chance, about once in 2^64 pairs.
 constexpr std::uint64_t hash_seed(std::uint64_t scene_seed, std::uint32_t pixel_x,
                                   std::uint32_t pixel_y, std::uint32_t sample,
                                   std::uint32_t dimension) {

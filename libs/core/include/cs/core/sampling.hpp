@@ -6,12 +6,16 @@
 // -----------------------------------------------
 // Each sampler turns two uniform numbers u in [0, 1)^2 (from cs::Rng) into a unit direction and
 // the probability density of choosing it, per steradian. An estimate of an integral over
-// directions is then the average of f(direction) / pdf.
+// directions is then the average of f(direction) / pdf. A u of exactly 1, which rounding in a
+// caller can produce, still gives a valid sample with a positive pdf.
 //
 // Directions are in a local frame: +z is the surface normal for the hemisphere, the axis for
 // the cone. The caller rotates them into the world.
 //
-// Physically Based Rendering, 4th edition, appendix A.5, derives each mapping.
+// Physically Based Rendering, 4th edition, section 2.4 and appendix A.5, derives the mappings.
+// The hemisphere uses Malley's method on the polar disk mapping; PBRT lifts the concentric disk
+// mapping instead, which keeps strata compact and is worth switching to if stratified or
+// low-discrepancy samples arrive.
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
