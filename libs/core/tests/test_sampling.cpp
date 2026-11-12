@@ -48,6 +48,7 @@ TEST_CASE("cosine-weighted hemisphere sampling", "[core][sampling][accuracy]") {
     cs::Rng rng(cs::hash_seed(11, 0, 0, 0, 0));
 
     double sum_cos = 0.0;
+    double sum_cos_squared = 0.0;
     glm::dvec3 sum_direction(0.0);
     double min_z = 1.0;
     double max_pdf_error = 0.0;
@@ -56,6 +57,7 @@ TEST_CASE("cosine-weighted hemisphere sampling", "[core][sampling][accuracy]") {
         const cs::DirectionSample s = cs::sample_cosine_hemisphere(next_u(rng));
         const double cos_theta = s.direction.z; // the normal is +z
         sum_cos += cos_theta;
+        sum_cos_squared += cos_theta * cos_theta;
         sum_direction += s.direction;
         min_z = std::min(min_z, cos_theta);
         max_pdf_error = std::max(max_pdf_error, std::abs(s.pdf - cos_theta / pi));
@@ -66,6 +68,10 @@ TEST_CASE("cosine-weighted hemisphere sampling", "[core][sampling][accuracy]") {
     // standard deviation of cos theta is sqrt(1/18) = 0.236, so the standard error of the mean
     // of 10^6 samples is 2.4e-4; 0.005 is the tolerance of the acceptance criterion, 20 of them.
     CHECK_THAT(sum_cos / n, WithinAbs(2.0 / 3.0, 0.005));
+
+    // Many densities have that mean; under this one cos^2(theta) is uniform on (0, 1], so
+    // E[cos^2 theta] = 1/2 with a variance of 1/12: standard error 2.9e-4, and 0.0015 is 5 of them.
+    CHECK_THAT(sum_cos_squared / n, WithinAbs(0.5, 0.0015));
 
     // The azimuth is uniform: the mean direction has no sideways part (same standard error).
     CHECK_THAT(sum_direction.x / n, WithinAbs(0.0, 0.005));
@@ -100,6 +106,7 @@ TEST_CASE("uniform cone sampling", "[core][sampling][accuracy]") {
     cs::Rng rng(cs::hash_seed(12, 0, 0, 0, 0));
 
     double sum_cos = 0.0;
+    glm::dvec2 sum_sideways(0.0);
     double min_cos_margin = 1.0;
     double max_length_error = 0.0;
     double min_pdf = INFINITY;
@@ -108,6 +115,7 @@ TEST_CASE("uniform cone sampling", "[core][sampling][accuracy]") {
         const cs::DirectionSample s = cs::sample_uniform_cone(next_u(rng), half_angle);
         const double cos_theta = s.direction.z; // the axis is +z
         sum_cos += cos_theta;
+        sum_sideways += glm::dvec2(s.direction.x, s.direction.y);
         min_cos_margin = std::min(min_cos_margin, cos_theta - cos_max);
         max_length_error = std::max(max_length_error, std::abs(glm::length(s.direction) - 1.0));
         min_pdf = std::min(min_pdf, s.pdf);
@@ -133,6 +141,13 @@ TEST_CASE("uniform cone sampling", "[core][sampling][accuracy]") {
     // the width is more than 5 of them.
     const double width = 1.0 - cos_max;
     CHECK_THAT(sum_cos / n, WithinAbs((1.0 + cos_max) / 2.0, 0.005 * width));
+
+    // The azimuth covers the whole circle evenly, so the mean direction has no sideways part.
+    // With t = 1 - cos(theta) uniform on [0, width), E[sin^2 theta] = E[t (2 - t)] =
+    // width - width^2 / 3, and x = sin(theta) cos(phi) has half that variance. 5 standard errors.
+    const double sideways_se = std::sqrt((width - width * width / 3.0) / 2.0 / n);
+    CHECK_THAT(sum_sideways.x / n, WithinAbs(0.0, 5.0 * sideways_se));
+    CHECK_THAT(sum_sideways.y / n, WithinAbs(0.0, 5.0 * sideways_se));
 
     for (const glm::dvec2& u : edge_u) {
         const cs::DirectionSample s = cs::sample_uniform_cone(u, half_angle);
@@ -161,10 +176,12 @@ TEST_CASE("uniform sphere sampling", "[core][sampling][accuracy]") {
 
     glm::dvec3 sum_direction(0.0);
     double max_length_error = 0.0;
+    double sum_x_squared = 0.0;
     double sum_z_squared = 0.0;
     for (int i = 0; i < n; ++i) {
         const cs::DirectionSample s = cs::sample_uniform_sphere(next_u(rng));
         sum_direction += s.direction;
+        sum_x_squared += s.direction.x * s.direction.x;
         sum_z_squared += s.direction.z * s.direction.z;
         max_length_error = std::max(max_length_error, std::abs(glm::length(s.direction) - 1.0));
         REQUIRE(s.pdf == cs::uniform_sphere_pdf());
@@ -174,8 +191,10 @@ TEST_CASE("uniform sphere sampling", "[core][sampling][accuracy]") {
     // error of 5.8e-4 per axis and a typical length of 1e-3; 0.005 is the acceptance criterion.
     CHECK(glm::length(sum_direction / static_cast<double>(n)) < 0.005);
 
-    // Not only balanced but uniform: E[z^2] = 1/3 (standard error 3e-4).
+    // Not only balanced but uniform: E[z^2] = 1/3 for the polar angle, and E[x^2] = 1/3 for the
+    // azimuth (standard error 3e-4 each).
     CHECK_THAT(sum_z_squared / n, WithinAbs(1.0 / 3.0, 0.003));
+    CHECK_THAT(sum_x_squared / n, WithinAbs(1.0 / 3.0, 0.003));
 
     CHECK(max_length_error < unit_tolerance);
     CHECK_THAT(cs::uniform_sphere_pdf(), WithinRel(1.0 / (4.0 * pi), 1e-15));

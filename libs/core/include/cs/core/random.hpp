@@ -66,11 +66,14 @@ constexpr double unit_double(std::uint32_t bits) {
 // against the reference library.
 class Rng {
   public:
-    // The reference library's default stream (PCG32_INITIALIZER).
+    // The increment of the reference library's PCG32_INITIALIZER, used here as a stream id (the
+    // initseq of pcg32_srandom_r), so the increment in use is this shifted left, plus one. Any
+    // value selects a valid stream; this one is fixed because the pinned test outputs depend on it.
     static constexpr std::uint64_t default_stream = 0xda3e39cb94b95bdb;
 
-    // As pcg32_srandom_r(seed, stream). Pass hash_seed(...) as the seed; the stream is for tests
-    // against the reference.
+    // As pcg32_srandom_r(seed, stream). Always pass hash_seed(...) as the seed: raw seeds that
+    // differ only in their high bits give correlated sequences. The stream is for tests against
+    // the reference.
     constexpr explicit Rng(std::uint64_t seed, std::uint64_t stream = default_stream)
         : increment_(stream << 1 | 1) {
         next_u32();
