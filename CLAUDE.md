@@ -40,6 +40,8 @@ python3 scripts/github-bootstrap.py --check             # validate docs/roadmap/
 - Modules live in `libs/<m>/{include/cs/<m>/,src/,tests/,fuzz/}`, namespace `cs::<m>`. A module
   may use only the modules its `CMakeLists.txt` declares; the allowed graph is in blueprint
   section 7. Never add a dependency edge to make something compile; say so in the issue.
+  A module may re-export (`EXPORTS`) a declared dependency whose types appear in its public
+  headers, so its users see it too; every other dependency stays private.
 - Only `gpu` (and the viewport adapter in `ui`) includes Vulkan. Only `ui` and `apps/curation`
   include Qt. Only `doc` knows the file format.
 - The document changes **only** through `doc::Transaction`. No command writes undo code.

@@ -10,7 +10,11 @@
 #   - a new source file, in a new subdirectory of src/, and a new test file are built by
 #     `cmake --build` alone, with no CMake edit;
 #   - including a header of a module that is not declared fails to compile, also when it is a
-#     dependency of a declared module.
+#     dependency of a declared module;
+#   - a module that re-exports a dependency (EXPORTS), compiled or header-only, lets its users
+#     include that dependency's headers (delta and epsilon re-export beta; zeta and eta use
+#     beta through them), but not the dependency's own private dependencies;
+#   - exporting a module that is not in DEPS stops configuring with a message naming it.
 #
 # cmake -D CS_REPO_DIR=... -D WORK_DIR=... -D GENERATOR=... -D CXX_COMPILER=... -D BUILD_TYPE=...
 #       -D Catch2_DIR=... -D CTEST_COMMAND=... -P module_glob.cmake
@@ -100,5 +104,29 @@ run("building gamma including a header of alpha, a dependency of its dependency"
     ${build})
 expect_output("the build fails on that include" "cs/alpha/alpha\\.hpp")
 file(REMOVE "${src}/libs/gamma/src/sneaky.cpp")
+
+# ---- Re-exported dependencies -------------------------------------------------
+# zeta and eta include beta's header, which they see only because delta (compiled) and epsilon
+# (header-only) re-export beta; the fixture's build above already proved they compile. What
+# beta keeps private stays hidden: alpha is a dependency of beta that beta does not export.
+file(WRITE "${src}/libs/zeta/src/sneaky.cpp" "#include <cs/alpha/alpha.hpp>\n")
+run("building zeta including alpha, private to beta, which delta re-exports"
+    fails ${build})
+expect_output("the build fails on that include" "cs/alpha/alpha\\.hpp")
+file(REMOVE "${src}/libs/zeta/src/sneaky.cpp")
+
+file(WRITE "${src}/libs/eta/src/sneaky.cpp" "#include <cs/alpha/alpha.hpp>\n")
+run("building eta including alpha, private to beta, which epsilon re-exports"
+    fails ${build})
+expect_output("the build fails on that include" "cs/alpha/alpha\\.hpp")
+file(REMOVE "${src}/libs/eta/src/sneaky.cpp")
+
+# A module may re-export only what it declares.
+file(WRITE "${src}/libs/theta/CMakeLists.txt" "cs_add_module(NAME theta DEPS alpha EXPORTS beta)\n")
+run("configuring theta, which exports beta without declaring it" fails
+    ${CMAKE_COMMAND} -S "${src}" -B "${bin}")
+expect_output("the message names theta and beta" "cs_add_module\\(theta\\)[^\n]*beta")
+file(REMOVE_RECURSE "${src}/libs/theta")
+run("configuring again once theta is gone" succeeds ${CMAKE_COMMAND} -S "${src}" -B "${bin}")
 
 run("building again once the includes are gone" succeeds ${build})
