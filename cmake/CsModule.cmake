@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# cs_add_module(NAME <m> [DEPS <modules>...] [EXTERNAL <targets>...])
+# cs_add_module(NAME <m> [DEPS <modules>...] [EXPORTS <modules>...] [EXTERNAL <targets>...])
 #
 # The whole of libs/<m>/CMakeLists.txt. Everything is found by glob, so adding a file, or a
 # subdirectory such as src/commands/, never edits a CMake list:
@@ -15,8 +15,12 @@
 # DEPS are other modules, linked PRIVATE: a module sees the headers of the modules it declares
 # and of no others, not even its dependencies' dependencies. That is how the build enforces the
 # module graph of blueprint section 7 (the engine reads the world, never the document): an
-# include of an undeclared module does not compile. A module's public headers may therefore use
-# only modules that every module declaring it also declares (core, in practice).
+# include of an undeclared module does not compile.
+#
+# EXPORTS are the DEPS whose types appear in the module's public headers (world's meshes are
+# geom's). They are linked PUBLIC, so the module's users see their headers too, but not those
+# modules' own private dependencies. Each must also be in DEPS. Everything else stays private:
+# a public header may use only exported modules and modules that its users declare themselves.
 #
 # EXTERNAL are third-party targets (glm::glm, Qt6::Widgets), linked PUBLIC, because a module's
 # headers may expose their types.
@@ -42,7 +46,7 @@ function(cs_add_subdirectories parent)
 endfunction()
 
 function(cs_add_module)
-    cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME" "DEPS;EXTERNAL")
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME" "DEPS;EXPORTS;EXTERNAL")
     if(NOT arg_NAME)
         message(FATAL_ERROR "cs_add_module: NAME is required")
     endif()
@@ -53,7 +57,19 @@ function(cs_add_module)
     set(name ${arg_NAME})
     set(target cs_${name})
     set(dir ${CMAKE_CURRENT_SOURCE_DIR})
+    foreach(export IN LISTS arg_EXPORTS)
+        if(NOT export IN_LIST arg_DEPS)
+            message(FATAL_ERROR "cs_add_module(${name}): EXPORTS ${export}, which is not in DEPS; "
+                "a module re-exports only modules it declares")
+        endif()
+    endforeach()
+    set(private_deps ${arg_DEPS})
+    if(arg_EXPORTS)
+        list(REMOVE_ITEM private_deps ${arg_EXPORTS})
+    endif()
     list(TRANSFORM arg_DEPS PREPEND "cs::" OUTPUT_VARIABLE deps)
+    list(TRANSFORM arg_EXPORTS PREPEND "cs::" OUTPUT_VARIABLE exports)
+    list(TRANSFORM private_deps PREPEND "cs::")
 
     # Every test in this directory (unit tests and fuzz smoke runs) gets the module's name as a
     # CTest label, next to its Catch2 tags: `ctest -L <m>`.
@@ -63,14 +79,17 @@ function(cs_add_module)
     if(sources)
         add_library(${target} ${sources})
         target_include_directories(${target} PUBLIC "${dir}/include" PRIVATE "${dir}/src")
-        target_link_libraries(${target} PUBLIC ${arg_EXTERNAL} PRIVATE cs_options ${deps})
+        target_link_libraries(${target}
+            PUBLIC ${arg_EXTERNAL} ${exports}
+            PRIVATE cs_options ${private_deps})
     else()
-        # Link-only, as a static library passes on its PRIVATE dependencies: consumers link them
-        # but do not see their headers.
-        list(TRANSFORM deps REPLACE "^(.+)$" "$<LINK_ONLY:\\1>" OUTPUT_VARIABLE link_only_deps)
+        # Private DEPS are link-only, as a static library passes on its PRIVATE dependencies:
+        # consumers link them but do not see their headers. EXPORTS are passed on whole.
+        list(TRANSFORM private_deps REPLACE "^(.+)$" "$<LINK_ONLY:\\1>"
+            OUTPUT_VARIABLE link_only_deps)
         add_library(${target} INTERFACE)
         target_include_directories(${target} INTERFACE "${dir}/include")
-        target_link_libraries(${target} INTERFACE ${arg_EXTERNAL} ${link_only_deps})
+        target_link_libraries(${target} INTERFACE ${arg_EXTERNAL} ${exports} ${link_only_deps})
     endif()
     add_library(cs::${name} ALIAS ${target})
 

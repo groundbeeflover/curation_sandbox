@@ -181,7 +181,10 @@ engine's reference by NVIDIA FLIP, mean at most 0.10 for Standard and 0.05 for R
 ### Modules
 
 C++20 libraries under `libs/`, each with `include/cs/<module>/`, `src/` and `tests/`, in
-namespace `cs::<module>`. A module may depend only on the modules listed for it.
+namespace `cs::<module>`. A module may depend only on the modules listed for it, and sees only
+their headers, not their dependencies'. A module may re-export a listed dependency whose types
+appear in its public headers, so that the modules depending on it see that dependency too;
+everything else stays private. Re-exports are marked *(re-exported)* below.
 
 | Module | Responsibility | May depend on | External libraries |
 | --- | --- | --- | --- |
@@ -191,7 +194,7 @@ namespace `cs::<module>`. A module may depend only on the modules listed for it.
 | `light` | IES LM-63 parsing, photometric distributions (evaluate, sample, integrate), fixture library, conservation policy and exposure | core | |
 | `material` | `PaintingMaterial`, presets, finish-to-roughness mapping, the reference BRDF (evaluate, sample, pdf) | core | |
 | `assets` | image import with colour management, linearisation, mips, KTX2 encoding, the texture cache, catalogue manifest and verification | core | stb_image, libtiff, lcms2, KTX-Software |
-| `world` | compiles the document into the render world (meshes, instances, materials, lights, cameras) and updates it from each transaction's change list | core, doc, geom, light, material | |
+| `world` | compiles the document into the render world (meshes, instances, materials, lights, cameras) and updates it from each transaction's change list | core, doc, geom *(re-exported)*, light, material | |
 | `engine` | the calculation engine: Embree scene, path tracer, lux meter, baker, still renderer, denoising | core, world, light, material, assets | Embree, OIDN |
 | `gpu` | the Vulkan renderer: device, memory, swapchain and offscreen targets, texture residency, the Standard tier, later Ray-traced and GPU path tracing; shaders in `libs/gpu/shaders/` | core, world, light, material, assets | volk, vk-bootstrap, VMA, Slang |
 | `editor` | everything a curator does, without a UI: tools, commands, selection, snapping, measuring, camera controllers, checklist import, exports as CSV and drawing display lists | core, doc, world, geom, light, material, assets, engine | |
@@ -216,7 +219,8 @@ graph BT
   apps["apps: curation, cs-render, cs-bench"] --> ui & engine & gpu
 ```
 
-Hard rules, enforced by the build (each module links only what it declares) and by review:
+Hard rules, enforced by the build (each module links only what it declares, and passes on only
+what it re-exports) and by review:
 only `gpu` and the viewport adapter in `ui` include Vulkan; only `ui` and `apps/curation`
 include Qt; only `doc` knows the file format; nothing changes the document except through the
 mutation API; the engine and the GPU tiers read the render world, never the document.

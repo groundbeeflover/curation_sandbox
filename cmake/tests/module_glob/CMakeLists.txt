@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# A small project of four modules built with the repository's cs_add_module, driven by
+# A small project of modules built with the repository's cs_add_module, driven by
 # ../module_glob.cmake. It is copied into the build tree before it is configured.
 cmake_minimum_required(VERSION 3.25)
 project(CsModuleGlobFixture LANGUAGES CXX)
