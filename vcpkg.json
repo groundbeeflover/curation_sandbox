@@ -7,7 +7,36 @@
   "builtin-baseline": "27560a5fe9ff2ba4a08a0d7a5800a679684fa733",
   "dependencies": [
     "catch2",
+    {
+      "name": "embree",
+      "default-features": false,
+      "features": [
+        "filter-function",
+        "geometry-instance",
+        "geometry-triangle",
+        "ray-mask"
+      ]
+    },
     "glm",
-    "nlohmann-json"
+    "lcms",
+    "miniz",
+    "nlohmann-json",
+    {
+      "name": "shader-slang",
+      "host": true
+    },
+    "stb",
+    {
+      "name": "tiff",
+      "default-features": false,
+      "features": [
+        "zip"
+      ]
+    },
+    "tinyexr",
+    "vk-bootstrap",
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator"
   ]
 }
