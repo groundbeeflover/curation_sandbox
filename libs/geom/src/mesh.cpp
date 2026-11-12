@@ -12,6 +12,7 @@
 #include <limits>
 #include <map>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -33,13 +34,7 @@ std::size_t triangle_count(const Mesh& mesh) {
 // Orders positions so that exactly equal ones (0.0 and -0.0 included) are the same key.
 struct PositionLess {
     bool operator()(const glm::dvec3& a, const glm::dvec3& b) const {
-        if (a.x != b.x) {
-            return a.x < b.x;
-        }
-        if (a.y != b.y) {
-            return a.y < b.y;
-        }
-        return a.z < b.z;
+        return std::tie(a.x, a.y, a.z) < std::tie(b.x, b.y, b.z);
     }
 };
 

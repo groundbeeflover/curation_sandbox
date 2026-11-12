@@ -56,22 +56,21 @@ Mesh box_frame(const BoxFrame& frame) {
         // The member from corner i to corner j: a trapezoid on the front and on the back, mitred
         // at the corners.
         detail::add_planar_quad(
-            mesh, {{{out[i], front}, {out[j], front}, {in[j], front}, {in[i], front}}}, z_axis,
-            x_axis, y_axis, origin);
+            mesh, {{{out[i], front}, {out[j], front}, {in[j], front}, {in[i], front}}}, x_axis,
+            y_axis, origin);
         detail::add_planar_quad(mesh,
                                 {{{in[i], back}, {in[j], back}, {out[j], back}, {out[i], back}}},
-                                -z_axis, -x_axis, y_axis, origin);
+                                -x_axis, y_axis, origin);
 
         // Its outer side faces away from the opening, its inner side into it. Both have u along
-        // the member and v along z, from the back.
+        // the member, one way or the other, and v along z, from the back.
         const glm::dvec3 along{glm::normalize(out[j] - out[i]), 0.0};
-        const glm::dvec3 outward = glm::cross(along, z_axis);
         detail::add_planar_quad(
-            mesh, {{{out[i], back}, {out[j], back}, {out[j], front}, {out[i], front}}}, outward,
-            along, z_axis, origin);
+            mesh, {{{out[i], back}, {out[j], back}, {out[j], front}, {out[i], front}}}, along,
+            z_axis, origin);
         detail::add_planar_quad(mesh,
                                 {{{in[j], back}, {in[i], back}, {in[i], front}, {in[j], front}}},
-                                -outward, -along, z_axis, origin);
+                                -along, z_axis, origin);
     }
     return mesh;
 }

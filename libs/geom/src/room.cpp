@@ -26,18 +26,18 @@ Mesh room_mesh(double width_m, double depth_m, double height_m) {
     Mesh mesh;
     // The floor faces up; seen from above the outline runs anticlockwise.
     detail::add_planar_quad(mesh, {{{0.0, 0.0, 0.0}, {w, 0.0, 0.0}, {w, d, 0.0}, {0.0, d, 0.0}}},
-                            {0.0, 0.0, 1.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 0.0});
+                            {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 0.0});
     // The ceiling faces down, so seen from below it runs the other way, and v runs along -y.
     detail::add_planar_quad(mesh, {{{0.0, 0.0, h}, {0.0, d, h}, {w, d, h}, {w, 0.0, h}}},
-                            {0.0, 0.0, -1.0}, {1.0, 0.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, d, h});
+                            {1.0, 0.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, d, h});
     // Each wall is face A of a wall along its side of the outline, whose inside is on the left.
     for (std::size_t i = 0; i < outline.size(); ++i) {
         const glm::dvec2 start = outline[i];
         const glm::dvec2 end = outline[(i + 1) % outline.size()];
         const FaceFrame face = wall_face_frame(start, end, 0.0, WallFace::a);
         // Seen from inside: the face's left end (the side's end) at the bottom left, anticlockwise.
-        detail::add_planar_quad(mesh, {{{end, 0.0}, {start, 0.0}, {start, h}, {end, h}}},
-                                face.normal, face.u, face.v, face.origin);
+        detail::add_planar_quad(mesh, {{{end, 0.0}, {start, 0.0}, {start, h}, {end, h}}}, face.u,
+                                face.v, face.origin);
     }
     return mesh;
 }
