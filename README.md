@@ -68,6 +68,6 @@ never edits a CMake list, and a module sees only the modules it declares.
 
 ## Licence
 
-Apache-2.0 (the licence file arrives with milestone 1). Every dependency must allow
+Apache-2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Every dependency must allow
 redistribution, and catalogue images must be public domain or CC0 with a credit line; see the
 decision records.

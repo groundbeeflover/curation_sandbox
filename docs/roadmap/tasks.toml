@@ -955,7 +955,7 @@ goal = "One command that turns a project folder into a path-traced image and a l
 context = [
   "docs/product/blueprint.md, section 7: Applications",
   "docs/adr/0002-rendering-tiers.md: Colour and exposure",
-  "tests/scenes/skeleton/ (M1-08)",
+  "tests/scenes/skeleton/ (M1-32, #120): its viewpoint's ev100 of 8 is an estimate. If the render shows it is wrong, say so in the pull request with the value that fits; tests/scenes/skeleton/project.json is outside this task's Touches, so the owner changes it",
 ]
 acceptance = [
   "`cs-render <project-folder> --tier path --size 256x144 --spp 64 --seed 1 --out <prefix>` writes <prefix>.exr (linear nits), <prefix>.png (EV100 exposure from the viewpoint, PBR Neutral, sRGB) and <prefix>.lux.json",
@@ -1352,7 +1352,7 @@ area = "build"
 type = "chore"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-26", "M1-29", "M1-30"]
+blocked_by = ["M1-26", "M1-29", "M1-30", "M1-39"]
 touches = [".github/workflows/ci.yml", ".github/workflows/gpu.yml"]
 goal = "Every pull request builds the Qt application on both platforms and runs its UI tests headless, so UI regressions are caught like any other."
 context = [
@@ -1511,6 +1511,123 @@ out_of_scope = [
 verification = [
   "grep -rn 'lvp_icd' CLAUDE.md .claude docs/roadmap/tasks.toml",
   "ls /usr/share/vulkan/icd.d/lvp_icd.json",
+]
+
+[[tasks]]
+id = "M1-37"
+epic = "E1.3"
+title = "Per-run temporary folders in the doc tests"
+area = "doc"
+type = "bug"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-32"]
+touches = ["libs/doc/tests/test_project_io.cpp", "libs/doc/tests/test_skeleton_scene.cpp", "libs/doc/tests/temp_folder.hpp"]
+goal = "Doc tests that write files never collide with another build or worktree testing at the same time. test_project_io.cpp's TempFolder uses one fixed folder under the system's temporary folder (cs_doc_tests), so two presets or two sessions running ctest at once can delete each other's files and fail at random. Every session's definition of done runs these tests, and up to three sessions share this machine. Found in M1-32 (#120)."
+context = [
+  "M1-32 (#120), Follow-ups: test_skeleton_scene.cpp already writes inside the test's working directory, which CTest sets to the preset's build folder",
+  "libs/doc/tests/test_project_io.cpp (M1-08): TempFolder, built on std::filesystem::temp_directory_path()",
+]
+acceptance = [
+  "One helper, libs/doc/tests/temp_folder.hpp, gives each test case its own folder under the test's working directory, removed afterwards; test_project_io.cpp and test_skeleton_scene.cpp both use it and no longer define their own",
+  "`grep -rn 'temp_directory_path' libs/doc/tests` prints nothing",
+  "`ctest --preset debug -L doc -j 8` and `ctest --preset release -L doc -j 8`, started at the same time, both pass three times in a row",
+]
+out_of_scope = ["Tests of other modules", "What the tests check"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && cmake --preset release && cmake --build --preset release",
+  "ctest --preset debug -L doc -j 8 & ctest --preset release -L doc -j 8; wait",
+  "grep -rn 'temp_directory_path' libs/doc/tests",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-38"
+epic = "E1.1"
+title = "CI: check installed dependency versions and test the test chart"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-30", "M1-32", "M1-02"]
+touches = [".github/workflows/ci.yml"]
+goal = "Two checks CI does not run yet: that the libraries vcpkg actually installed have the versions docs/dependencies.md records, and the test chart's own tests, which also check the committed chart byte for byte. Both were left out because ci.yml was outside the tasks that wrote them (M1-02, #116; M1-32, #120)."
+context = [
+  "scripts/check-dependencies.py --installed <a configured build's vcpkg_installed folder> (M1-02)",
+  "tools/test-chart/test_make_test_chart.py (M1-32)",
+  ".github/workflows/ci.yml after M1-30: the checks job and the build-and-test jobs",
+]
+acceptance = [
+  "Every build-and-test job runs `python3 scripts/check-dependencies.py --installed build/<preset>/vcpkg_installed` right after configure, so a version that differs from docs/dependencies.md fails the job",
+  "The checks job runs `python3 -m unittest discover -s tools/test-chart -v`",
+  "Both commands pass locally against a configured debug build, and CI is green on the pull request",
+]
+out_of_scope = ["Changes to the scripts themselves", "The GPU workflow (M1-29)"]
+verification = [
+  "cmake --preset debug && python3 scripts/check-dependencies.py --installed build/debug/vcpkg_installed",
+  "python3 -m unittest discover -s tools/test-chart -v",
+]
+
+[[tasks]]
+id = "M1-39"
+epic = "E1.1"
+title = "Build Embree and Slang in release only, through overlay triplets"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-38"]
+touches = ["triplets/", "vcpkg-configuration.json", ".github/workflows/ci.yml", "docs/dependencies.md"]
+goal = "Cut a cold build of the dependencies by about two thirds. A cold build compiles Embree in debug and release: about 2.3 h on the Windows runner and 1 h on Linux, and Windows minutes count double. M1-30's cache avoids that most of the time, but every runner-image compiler update or baseline bump rebuilds it. Building the heavy ports in release only removes most of that cost, as M1-02 (#116) measured."
+context = [
+  "M1-02 (#116), Follow-ups: Embree took about 3,500 CPU-seconds for debug and release together; its AVX and AVX-512 kernels take 52% of its release compile",
+  "vcpkg triplets and VCPKG_BUILD_TYPE: https://learn.microsoft.com/vcpkg/users/triplets",
+  "M1-30 (#53): the cache key names the triplet",
+]
+acceptance = [
+  "Overlay triplets in triplets/, named in vcpkg-configuration.json, build embree and shader-slang with VCPKG_BUILD_TYPE release on Linux and Windows; every other port is built as before",
+  "On Linux the debug preset (ASan and UBSan) and the release preset build and pass every test, the debug build linking the release Embree; on Windows the release preset does. The pull request says whether a Windows debug build still links",
+  "The pull request gives Embree's cold build time before and after on this machine, with an empty binary cache",
+  "docs/dependencies.md says which ports are release-only and why",
+]
+out_of_scope = [
+  "Dropping Embree's AVX and AVX-512 kernels (the owner decides that separately)",
+  "Any other port",
+]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release",
+  "python3 scripts/check-dependencies.py",
+]
+
+[[tasks]]
+id = "M1-40"
+epic = "E1.1"
+title = "Private external libraries, and third_party/ from the root"
+area = "build"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-35", "M1-02"]
+touches = ["cmake/CsModule.cmake", "cmake/tests/module_glob.cmake", "cmake/tests/module_glob/", "CMakeLists.txt", "third_party/", "libs/core/CMakeLists.txt", "libs/assets/CMakeLists.txt", "docs/product/blueprint.md", "CLAUDE.md"]
+goal = "Every module declares the third-party code it includes, as it already declares the modules it uses. Today core lists tinyexr, stb and FLIP as EXTERNAL, which cs_add_module links PUBLIC, so every module sees them as it sees glm (M1-02, #116). A module that includes stb through core breaks silently when core changes."
+context = [
+  "M1-02 (#116), Departures and Follow-ups: why core links tinyexr, stb and FLIP, and that assets gets stb_image through core",
+  "cmake/CsModule.cmake after M1-35: DEPS linked PRIVATE, EXPORTS and EXTERNAL linked PUBLIC",
+  "docs/product/blueprint.md, section 7: the module table",
+]
+acceptance = [
+  "cs_add_module accepts PRIVATE_EXTERNAL <targets>, linked PRIVATE; EXTERNAL stays PUBLIC, for libraries whose types appear in public headers (glm)",
+  "core declares tinyexr, stb and FLIP as PRIVATE_EXTERNAL, and assets declares stb itself; the cmake_module_glob fixture gains a case in which a module's user cannot include that module's private external library",
+  "third_party/ is added from the root CMakeLists.txt, so any module can declare flip::flip; core no longer adds it",
+  "Blueprint section 7 lists each module's external libraries, core as glm public and tinyexr, stb and FLIP private; CLAUDE.md's architecture rules mention PRIVATE_EXTERNAL",
+  "`ctest --preset debug` and `ctest --preset release` pass, including `-R cmake_module_glob`",
+]
+out_of_scope = ["Moving a library to another module", "gpu's stb_truetype (M2-19 declares it)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release -R cmake_module_glob",
+  "python3 scripts/format.py --check",
 ]
 
 # =============================================================================================
@@ -1783,6 +1900,7 @@ acceptance = [
   "parse_dimensions over at least 40 committed real-world strings (styles of the Met, Cleveland, NGA, SMK and auction catalogues: '73 x 92 cm', '28 3/4 x 36 1/4 in. (73 x 92 cm)', 'H. 73 cm; W. 92 cm', 'framed: 95 x 114 cm', 'sheet: 30 x 40 cm; image: 25 x 35 cm') returns height and width in mm (museum strings give height first), which surface was measured and a confidence; every expected value matches",
   "parse_medium maps at least 30 committed medium lines to preset ids (oil on canvas, tempera on panel, watercolour, gouache, pastel, ink, graphite, etching and so on); unknown text gives 'unknown' with low confidence",
   "data/presets/<id>.json holds the twelve presets of ADR 0003 with their default finish, glazing and sensitivity class (material parameters are added in M3); parse_medium returns these ids",
+  "Preset 11 of ADR 0003 has the id print-on-paper, which tests/scenes/skeleton/project.json (M1-32, #120) already uses",
   "`ctest --preset debug -L editor` passes",
 ]
 out_of_scope = ["The import dialog (M2-11)", "Checklists (M2-12)"]

@@ -185,12 +185,16 @@ Bold IDs are on the critical path.
 | M1-28 | cs-bench, the empty-room scene and the first baseline | build | test | M | agent | M1-22, M1-33 | `apps/cs-bench/`, `bench/scenes/empty-room/`, `bench/baselines/` |
 | **M1-29** | GPU and golden tests on lavapipe in CI | build | test | S | agent | M1-03, M1-18, M1-22 | `.github/workflows/gpu.yml`, `apps/cs-render/`, `tests/golden/skeleton-standard/` |
 | M1-30 | CI: binary caches and the full compiler matrix | build | chore | S | agent | M1-02 | `.github/workflows/ci.yml` |
-| **M1-31** | The app in CI: builds on Windows and Linux, UI tests on lavapipe | build | chore | S | agent | M1-26, M1-29, M1-30 | `.github/workflows/ci.yml`, `.github/workflows/gpu.yml` |
+| **M1-31** | The app in CI: builds on Windows and Linux, UI tests on lavapipe | build | chore | S | agent | M1-26, M1-29, M1-30, M1-39 | `.github/workflows/ci.yml`, `.github/workflows/gpu.yml` |
 | **M1-32** | The skeleton test scene and its test chart | doc | test | S | agent | M1-08 | `tests/scenes/skeleton/`, `tools/test-chart/`, `libs/doc/tests/test_skeleton_scene.cpp` |
 | M1-33 | Budgets as data and the benchmark comparison script | build | test | S | agent | - | `bench/budgets.json`, `scripts/perf-compare.py`, `scripts/tests/test_perf_compare.py` |
 | M1-34 | Generated registries and the integration-test executable | build | chore | S | agent | M1-01 | `cmake/CsRegistry.cmake`, `cmake/CsIntegration.cmake`, `tests/integration/` |
 | M1-35 | Re-exported module dependencies (EXPORTS in cs_add_module) | build | chore | S | agent | M1-01, M1-36 | `cmake/CsModule.cmake`, `cmake/tests/module_glob.cmake`, `cmake/tests/module_glob/`, `libs/world/CMakeLists.txt`, `docs/product/blueprint.md`, `CLAUDE.md` |
 | M1-36 | Fix the lavapipe manifest path in CLAUDE.md and /ship | gpu | chore | S | agent | - | `CLAUDE.md`, `.claude/skills/ship/SKILL.md` |
+| M1-37 | Per-run temporary folders in the doc tests | doc | bug | S | agent | M1-32 | `libs/doc/tests/test_project_io.cpp`, `libs/doc/tests/test_skeleton_scene.cpp`, `libs/doc/tests/temp_folder.hpp` |
+| M1-38 | CI: check installed dependency versions and test the test chart | build | chore | S | agent | M1-30, M1-32, M1-02 | `.github/workflows/ci.yml` |
+| M1-39 | Build Embree and Slang in release only, through overlay triplets | build | chore | S | agent | M1-38 | `triplets/`, `vcpkg-configuration.json`, `.github/workflows/ci.yml`, `docs/dependencies.md` |
+| M1-40 | Private external libraries, and third_party/ from the root | build | chore | S | agent | M1-35, M1-02 | `cmake/CsModule.cmake`, `cmake/tests/module_glob.cmake`, `cmake/tests/module_glob/`, `CMakeLists.txt`, `third_party/`, `libs/core/CMakeLists.txt`, `libs/assets/CMakeLists.txt`, `docs/product/blueprint.md`, `CLAUDE.md` |
 
 ### Task graph
 
@@ -207,6 +211,9 @@ graph LR
     M1_34["M1-34 Generated registries and the int..."]
     M1_35["M1-35 Re-exported module dependencies ..."]
     M1_36["M1-36 Fix the lavapipe manifest path i..."]
+    M1_38["M1-38 CI: check installed dependency v..."]
+    M1_39["M1-39 Build Embree and Slang in releas..."]
+    M1_40["M1-40 Private external libraries, and ..."]
   end
   subgraph E1_2["E1.2 Light you can measure"]
     M1_05["M1-05 Counter-based random numbers and..."]
@@ -225,6 +232,7 @@ graph LR
     M1_14["M1-14 Import an image as a linear text..."]
     M1_17["M1-17 cs-render: headless renders and ..."]
     M1_32["M1-32 The skeleton test scene and its ..."]
+    M1_37["M1-37 Per-run temporary folders in the..."]
   end
   subgraph E1_4["E1.4 First light on the GPU"]
     M1_19["M1-19 Vulkan device bootstrap, headles..."]
@@ -301,13 +309,21 @@ graph LR
   M1_26 --> M1_31
   M1_29 --> M1_31
   M1_30 --> M1_31
+  M1_39 --> M1_31
   M1_08 --> M1_32
   M1_01 --> M1_34
   M1_01 --> M1_35
   M1_36 --> M1_35
+  M1_32 --> M1_37
+  M1_30 --> M1_38
+  M1_32 --> M1_38
+  M1_02 --> M1_38
+  M1_38 --> M1_39
+  M1_35 --> M1_40
+  M1_02 --> M1_40
   classDef crit stroke:#b60205,stroke-width:3px
   class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_31 crit
-  linkStyle 4,14,17,20,21,25,53,57,59 stroke:#b60205,stroke-width:3px
+  linkStyle 4,14,17,20,21,25,53,57,60 stroke:#b60205,stroke-width:3px
 ```
 
 The critical path is ten tasks: the module layout, the document store, the skeleton scene, the
@@ -323,8 +339,8 @@ A lane is a group of tasks that touch different files, so they can run in parall
 | Stage | Opens when | Lanes open (tasks) |
 | --- | --- | --- |
 | 0 | at once | build (M1-01, M1-33), gpu spike (M1-03), ui spike (M1-04) |
-| 1 | M1-01 merged | build (M1-02, M1-34, M1-35), core (M1-05, M1-06), doc (M1-08), geom (M1-10), light (M1-11), gpu (M1-36, once M1-03 frees the lane), editor (M2-10, M2-12 from M2, which need only the layout) |
-| 2 | M1-02, M1-05, M1-08, M1-36 merged | core (M1-07), doc (M1-32 → M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30) |
+| 1 | M1-01 merged | build (M1-02, M1-34, M1-35 → M1-40), core (M1-05, M1-06), doc (M1-08), geom (M1-10), light (M1-11), gpu (M1-36, once M1-03 frees the lane), editor (M2-10, M2-12 from M2, which need only the layout) |
+| 2 | M1-02, M1-05, M1-08, M1-36 merged | core (M1-07), doc (M1-32 → M1-37, M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30 → M1-38 → M1-39) |
 | 3 | M1-13 merged | engine (M1-15 → M1-17), gpu (M1-21 → M1-22, M1-23), editor (M1-24, M1-25) |
 | 4 | M1-22 merged | ui (M1-26 → M1-27), build (M1-18, M1-28, M1-29 → M1-31) |
 
