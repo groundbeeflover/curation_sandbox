@@ -39,16 +39,24 @@ class Distribution {
 //
 //     I(theta) = I_peak * 2^-((theta / half_beam)^p),   p = ln(log2(10)) / ln(field / beam),
 //
-// which is 50% of the peak at half the beam angle and 10% at half the field angle exactly, and
-// keeps falling beyond, as the spill of a real spot does. I_peak is chosen so that the fixture
-// emits exactly its lumens.
+// which is 50% of the peak at half the beam angle and 10% at half the field angle exactly.
 //
-// How much light falls outside the field angle depends on the ratio field / beam: about 13% at
-// a ratio of 2 (p = 1.73) and 5% at 1.5, which is plausible for a real spot. Above a ratio of
-// about 3.3, p < 1: the profile comes to a point on the axis instead of a flat top, about half
-// the lumens land outside the field, some even behind the fixture (12% for 15 / 90 degrees),
-// and the peak is a tenth of what the beam angle suggests. Generic fixtures should keep the
-// ratio at about 2 or below.
+// Beyond half the field angle the profile is multiplied by a taper, 1 - smoothstep, that falls
+// from 1 to 0 at a cut-off of 1.5 times the half field angle, and at most 90 degrees from the
+// axis when the half field angle is 90 degrees or less (180 degrees otherwise). The taper is
+// flat at both ends, so the intensity and its slope are continuous; nothing is emitted beyond
+// the cut-off, and nothing behind a fixture whose field angle is 180 degrees or less, as with
+// a real spot whose housing blocks the back. Left alone, the Gaussian's tail would put half the
+// lumens outside the field once field / beam exceeds about 3.3, some of them behind the
+// fixture. The factor 1.5 is a judgement, not a measurement: the spill of real spots ends
+// about that far out, and milestone 3's IES files should be used to check it. As the half field
+// angle approaches 90 degrees the taper narrows, and at a field angle of exactly 180 degrees
+// the intensity drops from 10% to 0 at 90 degrees.
+//
+// I_peak is chosen so that the fixture emits exactly its lumens. The share of them inside the
+// field angle is about 96% for 24 / 36 degrees, 94% for 15 / 25, 85% for 10 / 40 and 82% for
+// 10 / 60. Above a field / beam ratio of about 3.3, p < 1 and the profile comes to a point on
+// the axis instead of a flat top.
 //
 // With the beam angle equal to the field angle the spot is a uniform cone: the same intensity
 // everywhere inside the cone, cs::photometry::uniform_cone_intensity, and none outside.
@@ -76,7 +84,9 @@ class GenericSpot final : public Distribution {
     double beam_angle_rad_;
     double field_angle_rad_;
     double half_beam_rad_;
-    double exponent_; // p; zero for a uniform cone
+    double half_field_rad_;
+    double cutoff_rad_; // nothing is emitted beyond it; zero for a uniform cone
+    double exponent_;   // p; zero for a uniform cone
     double peak_cd_;
 };
 

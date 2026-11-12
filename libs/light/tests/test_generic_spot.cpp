@@ -13,6 +13,7 @@
 
 #include <glm/vec3.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -58,6 +59,19 @@ double integrate_over_sphere(const GenericSpot& spot) {
     return sum;
 }
 
+// The flux in lumens between two angles from the axis, by the midpoint rule in theta, for a
+// spot symmetric about its axis.
+double flux_between(const GenericSpot& spot, double from_theta, double to_theta) {
+    constexpr int n = 100'000;
+    const double d_theta = (to_theta - from_theta) / n;
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const double theta = from_theta + (i + 0.5) * d_theta;
+        sum += spot.intensity_cd(direction(theta, 0.0)) * std::sin(theta);
+    }
+    return 2.0 * pi * sum * d_theta;
+}
+
 struct Angles {
     double beam_deg;
     double field_deg;
@@ -100,7 +114,8 @@ TEST_CASE("generic spot: integrating over the sphere returns the lumens", "[ligh
     // Tolerance 0.5% (the issue's); the test's own quadrature is good to 1e-4 or better here.
     const auto [beam_deg, field_deg] =
         GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{30, 60}, Angles{60, 100}, Angles{15, 90},
-                 Angles{1, 2}, Angles{30, 30.5}, Angles{120, 360}, Angles{40, 40});
+                 Angles{1, 2}, Angles{30, 30.5}, Angles{120, 360}, Angles{40, 40}, Angles{10, 40},
+                 Angles{10, 60}, Angles{60, 180}, Angles{100, 200});
     CAPTURE(beam_deg, field_deg);
     const double lumens = 680.0;
     const GenericSpot spot(lumens, deg(beam_deg), deg(field_deg));
@@ -109,25 +124,70 @@ TEST_CASE("generic spot: integrating over the sphere returns the lumens", "[ligh
     CHECK_THAT(integrate_over_sphere(spot), WithinRel(lumens, 0.005));
 }
 
+struct Spill {
+    double beam_deg;
+    double field_deg;
+    double inside_field; // the share of the lumens inside half the field angle
+};
+
 TEST_CASE("generic spot: how much light spills beyond the field angle", "[light][accuracy]") {
-    // Pins the profile's shape, not only its two defining points (physics review of this task).
-    // For 24 / 36 degrees, 5.07% of the lumens fall outside the half field angle and none
-    // behind the fixture. Tolerance 0.1% of the lumens: the midpoint rule below, in theta with
-    // the symmetry of the spot, is good to about 1e-6 here.
+    // Pins the profile's shape, not only its two defining points: the share of the lumens inside
+    // half the field angle, with the taper the owner chose on #135. The shares are this
+    // implementation's, and agree with an independent model of the same rule to within 1%.
+    // Tolerance 0.1% of the lumens: flux_between is good to about 1e-6 here.
+    const auto [beam_deg, field_deg, inside_field] =
+        GENERATE(Spill{15, 25, 0.9427}, Spill{24, 36, 0.9575}, Spill{10, 40, 0.8461},
+                 Spill{10, 60, 0.8196}, Spill{15, 90, 0.8279}, Spill{60, 100, 0.9484});
+    CAPTURE(beam_deg, field_deg);
     const double lumens = 680.0;
-    const GenericSpot spot(lumens, deg(24), deg(36));
-    const auto flux_beyond = [&spot](double from_theta) {
-        constexpr int n = 100'000;
-        const double d_theta = (pi - from_theta) / n;
-        double sum = 0.0;
-        for (int i = 0; i < n; ++i) {
-            const double theta = from_theta + (i + 0.5) * d_theta;
-            sum += spot.intensity_cd(direction(theta, 0.0)) * std::sin(theta);
+    const GenericSpot spot(lumens, deg(beam_deg), deg(field_deg));
+    CHECK_THAT(flux_between(spot, 0.0, deg(field_deg) / 2.0) / lumens,
+               WithinAbs(inside_field, 0.001));
+}
+
+TEST_CASE("generic spot: nothing beyond the cut-off, nothing behind", "[light]") {
+    // The cut-off is 1.5 times the half field angle, at most 90 degrees when the field angle is
+    // 180 degrees or less, and at most 180 degrees otherwise.
+    const auto [beam_deg, field_deg] =
+        GENERATE(Angles{10, 20}, Angles{10, 60}, Angles{15, 90}, Angles{60, 100}, Angles{30, 170},
+                 Angles{60, 180}, Angles{100, 200}, Angles{120, 360});
+    CAPTURE(beam_deg, field_deg);
+    const GenericSpot spot(800.0, deg(beam_deg), deg(field_deg));
+    const double half_field = deg(field_deg) / 2.0;
+    const double cutoff = std::min(1.5 * half_field, half_field <= pi / 2.0 ? pi / 2.0 : pi);
+
+    if (cutoff > half_field) {
+        CHECK(spot.intensity_cd(direction(0.5 * (half_field + cutoff), 0.4)) > 0.0);
+    }
+    for (int i = 0; i <= 1000; ++i) {
+        const double theta = cutoff + (pi - cutoff) * i / 1000.0;
+        if (theta > cutoff) {
+            CHECK(spot.intensity_cd(direction(theta, 0.4)) == 0.0);
         }
-        return 2.0 * pi * sum * d_theta;
-    };
-    CHECK_THAT(flux_beyond(deg(18)) / lumens, WithinAbs(0.0507, 0.001));
-    CHECK(flux_beyond(pi / 2.0) / lumens < 1e-6);
+    }
+    if (field_deg <= 180) {
+        CHECK(flux_between(spot, pi / 2.0, pi) == 0.0);
+    }
+}
+
+TEST_CASE("generic spot: no jump where the taper starts", "[light][accuracy]") {
+    // Just inside and just outside half the field angle, the intensity and its slope agree. With
+    // a step of h = 1e-6 rad, the values differ by about the slope times h (tolerance 1e-5 of
+    // the peak) and the one-sided slopes by the taper's curvature times h (tolerance 1%).
+    const auto [beam_deg, field_deg] =
+        GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{10, 60}, Angles{15, 90}, Angles{60, 100});
+    CAPTURE(beam_deg, field_deg);
+    const GenericSpot spot(800.0, deg(beam_deg), deg(field_deg));
+    const double half_field = deg(field_deg) / 2.0;
+    const double h = 1e-6;
+    const auto at = [&spot](double theta) { return spot.intensity_cd(direction(theta, 1.1)); };
+
+    const double inside = at(half_field - h);
+    const double edge = at(half_field);
+    const double outside = at(half_field + h);
+    CHECK_THAT(inside, WithinAbs(edge, 1e-5 * spot.peak_intensity_cd()));
+    CHECK_THAT(outside, WithinAbs(edge, 1e-5 * spot.peak_intensity_cd()));
+    CHECK_THAT((outside - edge) / h, WithinRel((edge - inside) / h, 0.01));
 }
 
 TEST_CASE("generic spot: a narrow spot is finite everywhere", "[light][accuracy]") {
