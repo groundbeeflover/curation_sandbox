@@ -63,6 +63,7 @@ jobs:
       # port's list of versions from the checked-out files, so the runner image's older checkout
       # cannot find newer ports even when the baseline commit has been fetched.
       - name: vcpkg
+        id: vcpkg
         shell: bash
         run: |
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
@@ -78,42 +79,64 @@ jobs:
           else
             "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.sh" -disableMetrics
           fi
-          # vcpkg's binary cache: a zip per built package, read and written in this directory,
-          # which the next two steps restore and save.
+          # vcpkg's binary cache: a zip per built package, named by its ABI hash, read and
+          # written in this directory, which later steps restore, prune and save.
           mkdir -p "$RUNNER_TEMP/vcpkg-archives"
           echo "VCPKG_BINARY_SOURCES=clear;files,$RUNNER_TEMP/vcpkg-archives,readwrite" >> "$GITHUB_ENV"
+          # The runner image fixes the compilers and CMake, which are part of every package's
+          # ABI hash, so a new image means new packages and a new cache entry.
+          echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
-      # Keyed on the triplet and vcpkg.json, which holds the baseline. When either changes, the
-      # newest older entry is restored and vcpkg rebuilds only the packages whose inputs changed.
+      # Keyed on the triplet, the runner image and vcpkg.json (which holds the baseline): exactly
+      # what decides the packages' ABI hashes, so an exact hit has nothing to rebuild. When the
+      # key changes, the newest older entry is restored and vcpkg rebuilds only what changed.
+      # vcpkg-configuration.json (overlay triplets or registries, none yet) would change them too.
       # Both Linux jobs share an entry: ports are built with the triplet's default compiler,
-      # whichever compiler builds the project.
+      # whichever compiler builds the project (CMAKE_CXX_COMPILER below, not CC or CXX).
       - name: Restore vcpkg packages
         id: vcpkg-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ matrix.triplet }}-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: vcpkg-${{ matrix.triplet }}-
 
       - name: MSVC environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # Only a speed-up: if it cannot be installed, the build goes on without it.
+      # Only a speed-up: if it cannot be installed, the build goes on without it. ccache handles
+      # MSVC from version 4.6 when no PDB is written (/Zi); the release preset writes none.
       - name: Compiler cache
         continue-on-error: true
         timeout-minutes: 5
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.preset }}
+          max-size: 1G
 
+      # The project is C++ only, so CMAKE_CXX_COMPILER chooses the whole compiler.
       - name: Configure
+        id: configure
         shell: bash
         run: |
           launcher=""
           if command -v ccache >/dev/null; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
           cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
-            -DCS_WARNINGS_AS_ERRORS=ON $launcher
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCS_WARNINGS_AS_ERRORS=ON $launcher
+
+      # Only the packages this build installed are kept (vcpkg's status file lists their ABI
+      # hashes), so zips of old ABIs are not carried from one entry to the next.
+      - name: Prune vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          keep=$(sed -n 's/^Abi: //p' "build/${{ matrix.preset }}/vcpkg_installed/vcpkg/status")
+          test -n "$keep" || { echo "no installed packages found"; exit 1; }
+          find "$RUNNER_TEMP/vcpkg-archives" -name '*.zip' | while read -r zip; do
+            grep -qxF "$(basename "$zip" .zip)" <<< "$keep" || rm -f "$zip"
+          done
+          echo "kept $(find "$RUNNER_TEMP/vcpkg-archives" -name '*.zip' | wc -l) packages"
 
       # Saved as soon as every package is installed, so a later build or test failure keeps it.
       # A failed configure saves nothing, so an incomplete set never takes the key.
