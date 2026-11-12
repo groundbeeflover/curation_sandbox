@@ -64,7 +64,9 @@ jobs:
           baseline=$(sed -n 's/.*"builtin-baseline": *"\([0-9a-f]*\)".*/\1/p' vcpkg.json)
           test -n "$baseline" || { echo "no builtin-baseline in vcpkg.json"; exit 1; }
           git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin "$baseline"
-          git -C "$VCPKG_INSTALLATION_ROOT" checkout --quiet --detach "$baseline"
+          # --force: the Ubuntu image's clone has local changes to port files, and is thrown away
+          # with the runner anyway.
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --quiet --force --detach "$baseline"
           # The vcpkg tool that goes with those scripts.
           if [ "$RUNNER_OS" = Windows ]; then
             cmd //c "$VCPKG_INSTALLATION_ROOT\\bootstrap-vcpkg.bat" -disableMetrics
