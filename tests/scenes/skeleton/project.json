@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "settings": {
+    "centreLine_m": 1.5,
+    "eyeHeight_m": 1.6,
+    "openingHoursPerYear": 2184.0,
+    "displayUnits": "centimetres"
+  },
+  "library": {
+    "fixtureTypes": [
+      {
+        "id": "generic-spot-800",
+        "name": "Generic spot 800 lm",
+        "flux_lm": 800.0,
+        "beamAngle_rad": 0.2617993877991494,
+        "fieldAngle_rad": 0.4363323129985824,
+        "colourTemperature_K": 3000.0
+      }
+    ]
+  },
+  "works": [
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000001",
+      "number": "1",
+      "title": "Test chart",
+      "artist": "",
+      "date": "",
+      "medium": "Print on paper",
+      "creditLine": "Made by tools/test-chart/make_test_chart.py",
+      "form": {
+        "kind": "flat",
+        "width_m": 0.73,
+        "height_m": 0.92
+      },
+      "image": {
+        "sha256": "26d3b28857e3da2b25625116fcf14d505ad4ff83944c83cdb74759ad56f23b6a",
+        "extension": "png"
+      },
+      "material": {
+        "preset": "print-on-paper"
+      },
+      "sensitivity": {
+        "responsivity": "medium"
+      },
+      "externalIds": []
+    }
+  ],
+  "entities": [
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000002",
+      "name": "Gallery",
+      "room": {
+        "outline_m": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            6.0,
+            0.0
+          ],
+          [
+            6.0,
+            4.0
+          ],
+          [
+            0.0,
+            4.0
+          ]
+        ],
+        "floorHeight_m": 0.0,
+        "ceilingHeight_m": 3.5
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000003",
+      "name": "Wall A",
+      "wall": {
+        "start_m": [
+          0.0,
+          -0.05
+        ],
+        "end_m": [
+          6.0,
+          -0.05
+        ],
+        "height_m": 3.5,
+        "thickness_m": 0.1,
+        "label": "A"
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000004",
+      "name": "Wall B",
+      "wall": {
+        "start_m": [
+          6.05,
+          0.0
+        ],
+        "end_m": [
+          6.05,
+          4.0
+        ],
+        "height_m": 3.5,
+        "thickness_m": 0.1,
+        "label": "B"
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000005",
+      "name": "Wall C",
+      "wall": {
+        "start_m": [
+          6.0,
+          4.05
+        ],
+        "end_m": [
+          0.0,
+          4.05
+        ],
+        "height_m": 3.5,
+        "thickness_m": 0.1,
+        "label": "C"
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000006",
+      "name": "Wall D",
+      "wall": {
+        "start_m": [
+          -0.05,
+          4.0
+        ],
+        "end_m": [
+          -0.05,
+          0.0
+        ],
+        "height_m": 3.5,
+        "thickness_m": 0.1,
+        "label": "D"
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000007",
+      "name": "Test chart",
+      "exhibit": {
+        "work": "01a1cd0d-dc00-7000-8000-000000000001"
+      },
+      "framing": {
+        "style": "box",
+        "glazing": "none"
+      },
+      "placement": {
+        "kind": "onWall",
+        "wall": "01a1cd0d-dc00-7000-8000-000000000003",
+        "face": "A",
+        "distance_m": 3.0,
+        "centreHeight_m": 1.5,
+        "standOff_m": 0.04
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000008",
+      "name": "Track A",
+      "track": {
+        "points_m": [
+          [
+            1.0,
+            1.097
+          ],
+          [
+            5.0,
+            1.097
+          ]
+        ],
+        "height_m": 3.5
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-000000000009",
+      "name": "Spot 1",
+      "placement": {
+        "kind": "onTrack",
+        "track": "01a1cd0d-dc00-7000-8000-000000000008",
+        "distance_m": 2.465
+      },
+      "luminaire": {
+        "fixtureType": "generic-spot-800",
+        "dimming": 1.0,
+        "aim": {
+          "kind": "entity",
+          "target": "01a1cd0d-dc00-7000-8000-000000000007"
+        }
+      }
+    },
+    {
+      "id": "01a1cd0d-dc00-7000-8000-00000000000a",
+      "name": "Opposite the chart",
+      "viewpoint": {
+        "position_m": [
+          3.0,
+          3.0,
+          1.6
+        ],
+        "yaw_rad": -1.5707963267948966,
+        "pitch_rad": 0.0,
+        "fieldOfView_rad": 0.8726646259971648,
+        "ev100": 8.0
+      }
+    }
+  ]
+}
