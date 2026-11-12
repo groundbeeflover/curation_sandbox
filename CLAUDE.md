@@ -104,8 +104,8 @@ All of these, then `/ship` opens the pull request:
 8. `/code-review` run: `high` for rendering, lighting, materials and sampling; `medium`
    elsewhere. Findings fixed or answered in the pull request.
 9. A new or changed parser or importer: `/security-review` run and answered.
-10. The pull request template filled from what was actually run, with the **Concepts** section;
-    CI green.
+10. The pull request template filled from what was actually run, with the **In plain words**
+    and **Concepts** sections; CI green.
 
 ## Subagents and skills
 

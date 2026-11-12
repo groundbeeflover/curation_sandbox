@@ -109,7 +109,9 @@ python3 scripts/github-bootstrap.py --milestone <M> --apply
 ```
 
 Commit the roadmap and tasks.toml changes on the groom branch and open a pull request
-(`docs: groom <date>`), so main changes only through pull requests.
+(`docs: groom <date>`), so main changes only through pull requests. Its description starts with
+an **In plain words** section, as in `.github/pull_request_template.md`: what changed in the plan,
+and what it means for the milestone, without jargon.
 
 ## Close a finished milestone
 
