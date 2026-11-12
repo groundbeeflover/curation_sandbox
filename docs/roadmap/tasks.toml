@@ -1608,7 +1608,7 @@ area = "build"
 type = "chore"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-35", "M1-02"]
+blocked_by = ["M1-35", "M1-02", "M1-41"]
 touches = ["cmake/CsModule.cmake", "cmake/tests/module_glob.cmake", "cmake/tests/module_glob/", "CMakeLists.txt", "third_party/", "libs/core/CMakeLists.txt", "libs/assets/CMakeLists.txt", "docs/product/blueprint.md", "CLAUDE.md"]
 goal = "Every module declares the third-party code it includes, as it already declares the modules it uses. Today core lists tinyexr, stb and FLIP as EXTERNAL, which cs_add_module links PUBLIC, so every module sees them as it sees glm (M1-02, #116). A module that includes stb through core breaks silently when core changes."
 context = [
@@ -1627,6 +1627,37 @@ out_of_scope = ["Moving a library to another module", "gpu's stb_truetype (M2-19
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug",
   "cmake --preset release && cmake --build --preset release && ctest --preset release -R cmake_module_glob",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-41"
+epic = "E1.1"
+title = "Link vcpkg's libtiff, not the system's, and check every vcpkg library"
+area = "build"
+type = "bug"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-02"]
+touches = ["libs/assets/CMakeLists.txt", "cmake/CsVcpkgPackages.cmake"]
+goal = "Every library that vcpkg.json declares is linked from vcpkg, on every machine. On Arch Linux, configure reports `Found TIFF: /usr/lib/cmake/tiff` and sets Tiff_DIR to the system libtiff package's CMake config: CMake's FindTIFF looks for a Tiff CONFIG package first, and vcpkg's tiff port installs none, so the system's wins. Both are 4.7.2 today and nothing links libtiff yet, but from M2-32 on, local builds would link a different libtiff from CI's, outside the version and licence docs/dependencies.md records, and `check-dependencies.py --installed` would not notice, because it reads vcpkg_installed. Found in the status check of 12 November."
+context = [
+  "Configure on Arch with the libtiff package installed: `-- Found TIFF: /usr/lib/cmake/tiff (found version \"4.7.2\")`; CMakeCache.txt: `Tiff_DIR:PATH=/usr/lib/cmake/tiff`",
+  "libs/assets/CMakeLists.txt (M1-02): find_package(TIFF REQUIRED), then cs_add_module(NAME assets DEPS core EXTERNAL TIFF::TIFF lcms2::lcms2)",
+  "vcpkg's usage note for tiff says to use CMake's built-in find_package(TIFF). One possible fix is CMAKE_DISABLE_FIND_PACKAGE_Tiff before find_package(TIFF), so FindTIFF's module search finds vcpkg's prefix first; check whatever is chosen against the CMake documentation of the version the presets require",
+  "Every cmake/Cs*.cmake is included from the root CMakeLists.txt. cs_add_module records nothing about EXTERNAL targets, and cmake/CsModule.cmake is in M1-35's and M1-40's Touches, so the check finds imported targets another way (for example the IMPORTED_TARGETS directory property, after every module is configured)",
+]
+acceptance = [
+  "With the system's libtiff CMake config installed (Arch: libtiff; Ubuntu: libtiff-dev), `cmake --preset debug` and `cmake --preset release` resolve TIFF::TIFF to a library under build/<preset>/vcpkg_installed, and CMakeCache.txt names no path under /usr/lib/cmake/tiff",
+  "Configure fails, naming the target and the file, when an imported target provided by a package in vcpkg.json resolves to a library or include directory outside build/<preset>/vcpkg_installed; targets from outside vcpkg (Qt in the app preset) are not checked. The pull request shows the check failing on main before the fix, on a machine with the system libtiff",
+  "The check lives in cmake/CsVcpkgPackages.cmake; cmake/CsModule.cmake and the root CMakeLists.txt are unchanged",
+  "`ctest --preset debug` and `ctest --preset release` pass",
+]
+out_of_scope = ["Installing a system libtiff on the CI runners, so CI exercises the check (ci.yml belongs to M1-38 and M1-39; say so in Follow-ups)", "TIFF import (M2-32)", "PRIVATE_EXTERNAL (M1-40)"]
+verification = [
+  "cmake --preset debug && grep -E '^(Tiff|TIFF)_' build/debug/CMakeCache.txt",
+  "cmake --build --preset debug && ctest --preset debug",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release",
   "python3 scripts/format.py --check",
 ]
 
@@ -2499,7 +2530,7 @@ area = "assets"
 type = "feature"
 size = "S"
 owner = "agent"
-blocked_by = ["M2-09"]
+blocked_by = ["M2-09", "M1-41"]
 touches = ["libs/assets/src/tiff.cpp", "libs/assets/tests/test_import_tiff.cpp", "libs/assets/tests/data/tiff/", "libs/assets/fuzz/"]
 goal = "Read the TIFF masters museums and photographers deliver, and fuzz every image loader, because images come from outside."
 context = [
