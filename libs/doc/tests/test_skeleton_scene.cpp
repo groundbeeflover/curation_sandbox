@@ -11,6 +11,8 @@
 #include <cs/doc/project_io.hpp>
 #include <cs/doc/work.hpp>
 
+#include "temp_folder.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -27,12 +29,12 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <variant>
 #include <vector>
 
 using namespace cs::doc;
 using Catch::Matchers::WithinAbs;
+using cs::doc::testing::TempFolder;
 
 namespace {
 
@@ -130,28 +132,6 @@ std::string sha256_hex(std::string_view data) {
     }
     return hex;
 }
-
-// A folder of its own in the working directory, which CTest sets to the test's build folder, so
-// that two presets or two worktrees testing at once do not share it. Removed before and after.
-class TempFolder {
-  public:
-    explicit TempFolder(std::string_view name)
-        : path_(std::filesystem::current_path() / "skeleton_scene_scratch" / name) {
-        std::filesystem::remove_all(path_);
-        std::filesystem::create_directories(path_.parent_path());
-    }
-    ~TempFolder() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path_, ignored);
-    }
-    TempFolder(const TempFolder&) = delete;
-    TempFolder& operator=(const TempFolder&) = delete;
-
-    const std::filesystem::path& path() const { return path_; }
-
-  private:
-    std::filesystem::path path_;
-};
 
 const Document& skeleton() {
     static const Document document = load_project_folder(scene_folder());
