@@ -1,5 +1,19 @@
 Closes #
 
+## In plain words
+
+<!-- For the owner, before the details. Two short paragraphs, three to six sentences in all, with
+no file, function or library names, and any term the reader may not know explained in the same
+sentence.
+What it does: what the project can do after this pull request that it could not before, or what
+problem it removes. If nothing is visible yet, say so and say what it is groundwork for.
+Why it matters: where it fits in the product (the milestone's goal, a curator's journey, an exit
+criterion), and what it unblocks next, by task ID and a few words. -->
+
+**What it does.**
+
+**Why it matters.**
+
 ## What changed
 
 <!-- Two to five bullets, in the order a reviewer should read the diff. Name the main files. -->

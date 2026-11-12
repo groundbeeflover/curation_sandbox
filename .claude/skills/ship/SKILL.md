@@ -64,6 +64,20 @@ Fill `.github/pull_request_template.md` from what was actually run, and write it
 file:
 
 - **Closes #<n>** on the first line, so merging closes the issue and the board moves it.
+- **In plain words:** the owner reads this first, often without the code. Write it last, once
+  the rest is true, in two short paragraphs:
+  - *What it does:* what the project can do now that it could not before, or what problem is
+    gone. If nothing is visible yet, say so, and what it is groundwork for.
+  - *Why it matters:* where it fits in the product (the milestone's goal from
+    `docs/roadmap.md`, a curator's journey from the blueprint, an exit criterion it delivers),
+    and what it unblocks next, by task ID and a few words.
+
+  Three to six sentences in all. No file, function or library names; explain any term the
+  reader may not know in the same sentence. For example: "Before this, every render would come
+  out slightly different each time, and differently with more threads. Now each pixel gets its
+  own repeatable random numbers, so the same scene always gives the same picture, which the
+  golden-image tests need. It also gives the lighting code its ways of picking directions,
+  which the paint material (M1-12) and the lux meter (M1-15) are built on."
 - **What changed:** two to five bullets in reading order, naming the main files.
 - **How it was verified:** the table, one row per step above, with the command and the summary
   line of its output (pass counts, the benchmark table, FLIP values). A skipped step says
