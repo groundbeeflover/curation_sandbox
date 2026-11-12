@@ -21,3 +21,6 @@ compile_commands.json
 !.claude/
 .claude/worktrees/
 .claude/settings.local.json
+
+# Python bytecode, left behind by the script and test-chart tests
+__pycache__/
