@@ -85,7 +85,7 @@ TEST_CASE("generic spot: 50% of the peak at half the beam angle, 10% at half the
     // this only allows for rounding.
     const auto [beam_deg, field_deg] =
         GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{30, 60}, Angles{60, 100}, Angles{15, 90},
-                 Angles{1, 2}, Angles{120, 360});
+                 Angles{1, 2}, Angles{120, 360}, Angles{60, 180}, Angles{100, 200});
     CAPTURE(beam_deg, field_deg);
     const GenericSpot spot(800.0, deg(beam_deg), deg(field_deg));
     const double peak = spot.peak_intensity_cd();
@@ -111,17 +111,19 @@ TEST_CASE("generic spot: the intensity falls steadily away from the axis", "[lig
 }
 
 TEST_CASE("generic spot: integrating over the sphere returns the lumens", "[light][accuracy]") {
-    // Tolerance 0.5% (the issue's); the test's own quadrature is good to 1e-4 or better here.
+    // Tolerance 0.1%, inside the issue's 0.5%: the implementation is good to 1e-5 or better, and
+    // the test's own midpoint rule to about 1e-4 (its error for a hard edge).
     const auto [beam_deg, field_deg] =
         GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{30, 60}, Angles{60, 100}, Angles{15, 90},
                  Angles{1, 2}, Angles{30, 30.5}, Angles{120, 360}, Angles{40, 40}, Angles{10, 40},
-                 Angles{10, 60}, Angles{60, 180}, Angles{100, 200});
+                 Angles{10, 60}, Angles{60, 180}, Angles{100, 200}, Angles{5, 120},
+                 Angles{30, 30.0003}, Angles{359, 360}, Angles{30, 170});
     CAPTURE(beam_deg, field_deg);
     const double lumens = 680.0;
     const GenericSpot spot(lumens, deg(beam_deg), deg(field_deg));
 
     CHECK(spot.total_lumens() == lumens);
-    CHECK_THAT(integrate_over_sphere(spot), WithinRel(lumens, 0.005));
+    CHECK_THAT(integrate_over_sphere(spot), WithinRel(lumens, 0.001));
 }
 
 struct Spill {
@@ -154,7 +156,10 @@ TEST_CASE("generic spot: nothing beyond the cut-off, nothing behind", "[light]")
     CAPTURE(beam_deg, field_deg);
     const GenericSpot spot(800.0, deg(beam_deg), deg(field_deg));
     const double half_field = deg(field_deg) / 2.0;
-    const double cutoff = std::min(1.5 * half_field, half_field <= pi / 2.0 ? pi / 2.0 : pi);
+    const double cutoff =
+        half_field <= pi / 2.0
+            ? std::min(1.5 * half_field, pi / 2.0)
+            : std::min({1.5 * half_field, pi, half_field + 3.0 * (half_field - pi / 2.0)});
 
     if (cutoff > half_field) {
         CHECK(spot.intensity_cd(direction(0.5 * (half_field + cutoff), 0.4)) > 0.0);
@@ -174,8 +179,8 @@ TEST_CASE("generic spot: no jump where the taper starts", "[light][accuracy]") {
     // Just inside and just outside half the field angle, the intensity and its slope agree. With
     // a step of h = 1e-6 rad, the values differ by about the slope times h (tolerance 1e-5 of
     // the peak) and the one-sided slopes by the taper's curvature times h (tolerance 1%).
-    const auto [beam_deg, field_deg] =
-        GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{10, 60}, Angles{15, 90}, Angles{60, 100});
+    const auto [beam_deg, field_deg] = GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{10, 60},
+                                                Angles{15, 90}, Angles{60, 100}, Angles{30, 170});
     CAPTURE(beam_deg, field_deg);
     const GenericSpot spot(800.0, deg(beam_deg), deg(field_deg));
     const double half_field = deg(field_deg) / 2.0;
@@ -188,6 +193,18 @@ TEST_CASE("generic spot: no jump where the taper starts", "[light][accuracy]") {
     CHECK_THAT(inside, WithinAbs(edge, 1e-5 * spot.peak_intensity_cd()));
     CHECK_THAT(outside, WithinAbs(edge, 1e-5 * spot.peak_intensity_cd()));
     CHECK_THAT((outside - edge) / h, WithinRel((edge - inside) / h, 0.01));
+}
+
+TEST_CASE("generic spot: no jump as the field angle passes 180 degrees", "[light][accuracy]") {
+    // The cut-off moves continuously through a 180-degree field (physics review of the taper):
+    // a hundredth of a degree wider must not move a share of the lumens behind the fixture.
+    // Tolerance 0.1% of the peak.
+    const GenericSpot at_180(1.0, deg(60), deg(180));
+    for (const double field_deg : {179.99, 180.01}) {
+        CAPTURE(field_deg);
+        const GenericSpot near(1.0, deg(60), deg(field_deg));
+        CHECK_THAT(near.peak_intensity_cd(), WithinRel(at_180.peak_intensity_cd(), 0.001));
+    }
 }
 
 TEST_CASE("generic spot: a narrow spot is finite everywhere", "[light][accuracy]") {

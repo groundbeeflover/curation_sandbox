@@ -24,6 +24,17 @@ template <typename F> double simpson(F f, double a, double b, int n) {
     return sum * h / 3.0;
 }
 
+// Where the taper beyond the half field angle reaches zero (see the header): 1.5 times the half
+// field angle, but never past 90 degrees for a field angle of 180 degrees or less; for wider
+// fields the taper grows again from nothing at 90 degrees, three times as fast as the half field
+// angle passes it, until it rejoins 1.5 times at 108 degrees, and stops at 180 degrees.
+double taper_cutoff_rad(double half_field_rad) {
+    if (half_field_rad <= pi / 2.0) {
+        return std::min(1.5 * half_field_rad, pi / 2.0);
+    }
+    return std::min({1.5 * half_field_rad, pi, half_field_rad + 3.0 * (half_field_rad - pi / 2.0)});
+}
+
 } // namespace
 
 GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angle_rad)
@@ -51,10 +62,7 @@ GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angl
     }
     // 2^-(r^p) = 1/10 at r = field / beam.
     exponent_ = std::log(std::log2(10.0)) / log_ratio;
-    // The taper ends half as far again beyond the axis as the half field angle, but never
-    // behind the fixture when the field angle is 180 degrees or less (see the header).
-    const double half_field = half_field_rad_;
-    cutoff_rad_ = std::min(1.5 * half_field, half_field <= pi / 2.0 ? pi / 2.0 : pi);
+    cutoff_rad_ = taper_cutoff_rad(half_field_rad_);
 
     // The solid angle the spot would cover at its peak intensity, 2 pi times the integral of
     // relative_intensity(theta) sin(theta) over theta, in three parts. Near the axis, where the
@@ -73,9 +81,9 @@ GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angl
     // area is too small to matter, and the floor keeps ln(start) finite.
     const double start = half_beam * std::max(std::pow(1000.0, -1.0 / exponent_), 1e-6);
     double integral = simpson(in_theta, 0.0, start, 1024);
-    integral += simpson(in_log_theta, std::log(start), std::log(half_field), 4096);
-    if (cutoff_rad_ > half_field) {
-        integral += simpson(in_theta, half_field, cutoff_rad_, 4096);
+    integral += simpson(in_log_theta, std::log(start), std::log(half_field_rad_), 4096);
+    if (cutoff_rad_ > half_field_rad_) {
+        integral += simpson(in_theta, half_field_rad_, cutoff_rad_, 4096);
     }
     peak_cd_ = lumens / (2.0 * pi * integral);
     check_peak();
