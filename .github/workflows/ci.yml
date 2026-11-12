@@ -40,8 +40,10 @@ jobs:
         run: python3 scripts/github-bootstrap.py --check
 
   # The release preset on Linux and Windows, the debug preset (ASan and UBSan) on Linux. The
-  # libraries come from the runner's vcpkg in manifest mode (vcpkg.json); its clone is fetched
-  # first, because the pinned builtin-baseline can be newer than the runner image.
+  # libraries come from the runner's vcpkg in manifest mode (vcpkg.json). Its clone is moved to
+  # the manifest's builtin-baseline first: vcpkg reads each port's list of versions from the
+  # checked-out files, so the runner image's older checkout cannot find newer ports even when
+  # the baseline commit has been fetched.
   build-and-test:
     strategy:
       fail-fast: false
@@ -59,7 +61,16 @@ jobs:
         shell: bash
         run: |
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin
+          baseline=$(sed -n 's/.*"builtin-baseline": *"\([0-9a-f]*\)".*/\1/p' vcpkg.json)
+          test -n "$baseline" || { echo "no builtin-baseline in vcpkg.json"; exit 1; }
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin "$baseline"
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --quiet --detach "$baseline"
+          # The vcpkg tool that goes with those scripts.
+          if [ "$RUNNER_OS" = Windows ]; then
+            cmd //c "$VCPKG_INSTALLATION_ROOT\\bootstrap-vcpkg.bat" -disableMetrics
+          else
+            "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          fi
 
       - name: MSVC environment (Windows)
         if: runner.os == 'Windows'
