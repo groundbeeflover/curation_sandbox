@@ -32,7 +32,9 @@ struct Mesh {
     std::vector<std::uint32_t> indices; // three per triangle, into positions
 };
 
-// Adds the vertices and triangles of `from` to `to`.
+// Adds the vertices and triangles of `from` to `to`. Throws std::invalid_argument, leaving `to`
+// as it was, if `from` has not one normal and one uv per position or has an index out of range,
+// and std::length_error if the result would have more vertices than 32-bit indices can number.
 void append(Mesh& to, const Mesh& from);
 
 // The total area of the mesh's triangles, in m^2.

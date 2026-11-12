@@ -262,4 +262,9 @@ TEST_CASE("painting_quad: rejects sizes that are not positive, negative offsets 
     CHECK_THROWS_AS(painting_quad(face, chart, at(not_a_number, 1.5, 0.04)), std::invalid_argument);
     CHECK_THROWS_AS(painting_quad(face, chart, at(3.0, -infinity, 0.04)), std::invalid_argument);
     CHECK_THROWS_AS(painting_quad(face, chart, at(3.0, 1.5, infinity)), std::invalid_argument);
+
+    // Finite values whose corners are not: the centre at x = 6 - 1.7e308 is finite, but half of a
+    // 1.7e308 m width beyond it is not.
+    CHECK_THROWS_AS(painting_quad(face, work(1.7e308, 0.92, 0.0), at(1.7e308, 1.5, 0.04)),
+                    std::invalid_argument);
 }

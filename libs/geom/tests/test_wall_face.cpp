@@ -285,3 +285,31 @@ TEST_CASE("on_wall_transform: rejects a negative stand-off and values that are n
     CHECK_THROWS_AS(on_wall_transform(face, {.u_m = 3.0, .v_m = 1.5, .stand_off_m = infinity}),
                     std::invalid_argument);
 }
+
+TEST_CASE("wall_face_frame: walls of huge or tiny finite length get unit axes; a length that "
+          "overflows is rejected",
+          "[geom][wall_face]") {
+    // 2e200 m long: the square of the length overflows a double, the length itself does not.
+    const FaceFrame long_face = wall_face_frame({-1e200, 0.0}, {1e200, 0.0}, 0.1, WallFace::b);
+    CHECK(long_face.length_m == 2e200);
+    CHECK_THAT(long_face.u, VecWithin(dvec3(1.0, 0.0, 0.0), unit_tolerance));
+    CHECK_THAT(long_face.normal, VecWithin(dvec3(0.0, -1.0, 0.0), unit_tolerance));
+
+    // 1e-160 m long: the square of the length underflows, the length does not.
+    const FaceFrame short_face = wall_face_frame({0.0, 0.0}, {0.0, 1e-160}, 0.0, WallFace::a);
+    CHECK_THAT(short_face.u, VecWithin(dvec3(0.0, -1.0, 0.0), unit_tolerance));
+    CHECK_THAT(short_face.normal, VecWithin(dvec3(-1.0, 0.0, 0.0), unit_tolerance));
+
+    // 3e308 m long, from finite ends: more than the largest double.
+    CHECK_THROWS_AS(wall_face_frame({-1.5e308, 0.0}, {1.5e308, 0.0}, 0.1, WallFace::a),
+                    std::invalid_argument);
+}
+
+TEST_CASE("on_wall_transform: rejects a placement whose position overflows", "[geom][wall_face]") {
+    // Face A of a wall ending at x = 1.7e308: its left end is there, and u runs along -x.
+    const FaceFrame face = wall_face_frame({0.0, 0.0}, {1.7e308, 0.0}, 0.0, WallFace::a);
+    CHECK_NOTHROW(on_wall_transform(face, {.u_m = 1.0, .v_m = 1.5, .stand_off_m = 0.0}));
+    // u = -1.7e308 puts the origin at x = 3.4e308, past the largest double.
+    CHECK_THROWS_AS(on_wall_transform(face, {.u_m = -1.7e308, .v_m = 1.5, .stand_off_m = 0.0}),
+                    std::invalid_argument);
+}

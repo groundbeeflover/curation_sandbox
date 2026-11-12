@@ -28,6 +28,7 @@ Mesh painting_quad(const FaceFrame& face, const FlatWork& work, const WallPlacem
     Mesh mesh;
     detail::add_quad(mesh, {world(-x, -y), world(x, -y), world(x, y), world(-x, y)}, face.normal,
                      {{{0.0, 1.0}, {1.0, 1.0}, {1.0, 0.0}, {0.0, 0.0}}});
+    detail::require_finite_positions(mesh, function);
     return mesh;
 }
 

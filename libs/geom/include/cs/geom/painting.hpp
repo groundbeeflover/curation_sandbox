@@ -28,7 +28,7 @@ struct FlatWork {
 // as images are stored (core/image.hpp) and Vulkan samples them.
 //
 // Throws std::invalid_argument if the width or height is not positive, the depth or stand-off is
-// negative, or a value is not finite.
+// negative, or a value or a corner is not finite.
 Mesh painting_quad(const FaceFrame& face, const FlatWork& work, const WallPlacement& at);
 
 } // namespace cs::geom

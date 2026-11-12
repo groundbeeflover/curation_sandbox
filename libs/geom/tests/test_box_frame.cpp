@@ -350,4 +350,23 @@ TEST_CASE("box_frame: rejects sizes that are not positive, a negative rebate, an
     CHECK_THROWS_AS(box_frame(frame(0.73, 0.92, 0.06, infinity, 0.005)), std::invalid_argument);
     CHECK_THROWS_AS(box_frame(frame(0.73, 0.92, 0.06, 0.04, not_a_number)), std::invalid_argument);
     CHECK_THROWS_AS(box_frame(frame(0.73, 0.92, 0.06, 0.04, infinity)), std::invalid_argument);
+
+    // Finite sizes whose outer size is not: 1e308 + 2 * 1e308 overflows to infinity.
+    const double huge = 1e308;
+    CHECK_THROWS_AS(box_frame(frame(huge, 0.92, huge, 0.04, 0.005)), std::invalid_argument);
+}
+
+TEST_CASE("box_frame: sight_opening and outer_size reject the frames box_frame rejects",
+          "[geom][box_frame]") {
+    // A rebate of 0.4 m leaves nothing of a 0.73 m work to see: no size, rather than a negative
+    // one.
+    BoxFrame frame = chart_frame;
+    frame.rebate_m = 0.4;
+    CHECK_THROWS_AS(sight_opening(frame), std::invalid_argument);
+    CHECK_THROWS_AS(outer_size(frame), std::invalid_argument);
+
+    frame = chart_frame;
+    frame.member_width_m = 0.0;
+    CHECK_THROWS_AS(sight_opening(frame), std::invalid_argument);
+    CHECK_THROWS_AS(outer_size(frame), std::invalid_argument);
 }

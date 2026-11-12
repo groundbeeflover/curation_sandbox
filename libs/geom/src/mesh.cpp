@@ -41,8 +41,19 @@ struct PositionLess {
 } // namespace
 
 void append(Mesh& to, const Mesh& from) {
+    const std::size_t count = from.positions.size();
+    if (from.normals.size() != count || from.uvs.size() != count) {
+        throw std::invalid_argument("geom::append: the mesh must have one normal and one uv per "
+                                    "position");
+    }
+    if (std::any_of(from.indices.begin(), from.indices.end(),
+                    [count](std::uint32_t index) { return index >= count; })) {
+        throw std::invalid_argument("geom::append: an index is out of range");
+    }
+    // Every new index is then offset + index < offset + count, at most the largest 32-bit index.
+    constexpr std::size_t max_vertices = std::numeric_limits<std::uint32_t>::max();
     const std::size_t offset = to.positions.size();
-    if (from.positions.size() > std::numeric_limits<std::uint32_t>::max() - offset) {
+    if (offset > max_vertices || count > max_vertices - offset) {
         throw std::length_error("geom::append: more vertices than 32-bit indices can number");
     }
     to.positions.insert(to.positions.end(), from.positions.begin(), from.positions.end());

@@ -9,32 +9,55 @@
 #include <array>
 #include <cstddef>
 #include <stdexcept>
+#include <string>
 
 namespace cs::geom {
 
-glm::dvec2 sight_opening(const BoxFrame& frame) {
+namespace {
+
+glm::dvec2 unchecked_sight_opening(const BoxFrame& frame) {
     return glm::dvec2(frame.work_width_m, frame.work_height_m) - 2.0 * frame.rebate_m;
 }
 
-glm::dvec2 outer_size(const BoxFrame& frame) {
-    return sight_opening(frame) + 2.0 * frame.member_width_m;
+glm::dvec2 unchecked_outer_size(const BoxFrame& frame) {
+    return unchecked_sight_opening(frame) + 2.0 * frame.member_width_m;
 }
 
-Mesh box_frame(const BoxFrame& frame) {
-    constexpr const char* function = "box_frame";
+// Throws std::invalid_argument, naming the function, unless the frame can be built.
+void check(const BoxFrame& frame, const char* function) {
     detail::require_positive(frame.work_width_m, function, "the work's width");
     detail::require_positive(frame.work_height_m, function, "the work's height");
     detail::require_positive(frame.member_width_m, function, "the member width");
     detail::require_positive(frame.depth_m, function, "the depth");
     detail::require_non_negative(frame.rebate_m, function, "the rebate");
 
-    const glm::dvec2 inner = sight_opening(frame) / 2.0;
-    const glm::dvec2 outer = outer_size(frame) / 2.0;
-    if (!(inner.x > 0.0 && inner.y > 0.0)) {
+    const glm::dvec2 sight = unchecked_sight_opening(frame);
+    if (!(sight.x > 0.0 && sight.y > 0.0)) {
         throw std::invalid_argument(
-            "geom::box_frame: the rebate leaves no sight opening; it must be less than half the "
-            "work's width and height");
+            std::string("geom::") + function +
+            ": the rebate leaves no sight opening; it must be less than half the work's width "
+            "and height");
     }
+    detail::require_finite_result({unchecked_outer_size(frame), frame.depth_m}, function,
+                                  "the outer size");
+}
+
+} // namespace
+
+glm::dvec2 sight_opening(const BoxFrame& frame) {
+    check(frame, "sight_opening");
+    return unchecked_sight_opening(frame);
+}
+
+glm::dvec2 outer_size(const BoxFrame& frame) {
+    check(frame, "outer_size");
+    return unchecked_outer_size(frame);
+}
+
+Mesh box_frame(const BoxFrame& frame) {
+    check(frame, "box_frame");
+    const glm::dvec2 inner = unchecked_sight_opening(frame) / 2.0;
+    const glm::dvec2 outer = unchecked_outer_size(frame) / 2.0;
 
     // The corners of the opening and of the outside, anticlockwise seen from the front from the
     // bottom left, computed once so that the faces share them bit for bit.

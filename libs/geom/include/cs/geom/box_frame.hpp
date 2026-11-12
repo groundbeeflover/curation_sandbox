@@ -22,11 +22,11 @@ struct BoxFrame {
 };
 
 // The part of the work seen through the frame, as (width, height) in metres: the work less twice
-// the rebate on each axis.
+// the rebate on each axis. Throws std::invalid_argument for a frame box_frame rejects.
 glm::dvec2 sight_opening(const BoxFrame& frame);
 
 // The frame's outside, as (width, height) in metres: the sight opening plus twice the member
-// width on each axis.
+// width on each axis. Throws std::invalid_argument for a frame box_frame rejects.
 glm::dvec2 outer_size(const BoxFrame& frame);
 
 // The frame, in its own coordinates (on_wall_transform in wall_face.hpp hangs it): x to the right
@@ -40,7 +40,7 @@ glm::dvec2 outer_size(const BoxFrame& frame);
 //
 // Throws std::invalid_argument if the work's size, the member width or the depth is not positive,
 // the rebate is negative, the sight opening is empty (twice the rebate at least the work's width
-// or height), or a value is not finite.
+// or height), or a value or the outer size is not finite.
 Mesh box_frame(const BoxFrame& frame);
 
 } // namespace cs::geom

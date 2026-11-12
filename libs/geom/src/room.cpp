@@ -25,11 +25,13 @@ Mesh room_mesh(double width_m, double depth_m, double height_m) {
 
     Mesh mesh;
     // The floor faces up; seen from above the outline runs anticlockwise.
-    detail::add_planar_quad(mesh, {{{0.0, 0.0, 0.0}, {w, 0.0, 0.0}, {w, d, 0.0}, {0.0, d, 0.0}}},
-                            {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 0.0});
+    detail::add_planar_quad(
+        mesh, {{{outline[0], 0.0}, {outline[1], 0.0}, {outline[2], 0.0}, {outline[3], 0.0}}},
+        {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {outline[0], 0.0});
     // The ceiling faces down, so seen from below it runs the other way, and v runs along -y.
-    detail::add_planar_quad(mesh, {{{0.0, 0.0, h}, {0.0, d, h}, {w, d, h}, {w, 0.0, h}}},
-                            {1.0, 0.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, d, h});
+    detail::add_planar_quad(mesh,
+                            {{{outline[0], h}, {outline[3], h}, {outline[2], h}, {outline[1], h}}},
+                            {1.0, 0.0, 0.0}, {0.0, -1.0, 0.0}, {outline[3], h});
     // Each wall is face A of a wall along its side of the outline, whose inside is on the left.
     for (std::size_t i = 0; i < outline.size(); ++i) {
         const glm::dvec2 start = outline[i];

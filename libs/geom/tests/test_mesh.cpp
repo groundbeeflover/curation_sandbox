@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <utility>
 
 using namespace cs::geom;
@@ -349,4 +350,29 @@ TEST_CASE("mesh: append with an empty mesh", "[geom][mesh]") {
         CHECK(to.uvs == cube.uvs);
         CHECK(to.indices == cube.indices);
     }
+}
+
+TEST_CASE("mesh: append rejects a mesh whose arrays disagree, leaving the target as it was",
+          "[geom][mesh]") {
+    const Mesh cube = unit_cube();
+    Mesh to = cube;
+    Mesh from = cube;
+    SECTION("fewer normals than positions") {
+        from.normals.pop_back();
+        CHECK_THROWS_AS(append(to, from), std::invalid_argument);
+    }
+    SECTION("fewer uvs than positions") {
+        from.uvs.pop_back();
+        CHECK_THROWS_AS(append(to, from), std::invalid_argument);
+    }
+    SECTION("an index out of range") {
+        // Offset by the target's 24 vertices, 0xFFFFFFF0 would wrap to 8 in 32 bits and silently
+        // point at a vertex of the target.
+        from.indices.back() = 0xFFFFFFF0u;
+        CHECK_THROWS_AS(append(to, from), std::invalid_argument);
+    }
+    CHECK(to.positions == cube.positions);
+    CHECK(to.normals == cube.normals);
+    CHECK(to.uvs == cube.uvs);
+    CHECK(to.indices == cube.indices);
 }
