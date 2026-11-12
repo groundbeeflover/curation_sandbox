@@ -1,0 +1,3 @@
+# The scene is compared byte for byte with what the code writes (project.json) and with its hash
+# (the chart): check it out exactly as committed on every platform, with no line-ending conversion.
+* -text
