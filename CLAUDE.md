@@ -21,7 +21,8 @@ cmake --preset app && cmake --build --preset app       # debug build with the Qt
 ctest --preset debug                                    # all tests; filter with -L <label>
 ctest --preset debug -L engine                          # one module (labels = module names)
 ctest --preset release -L accuracy                      # physical accuracy tests
-VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ctest --preset debug -L gpu   # software Vulkan
+CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu   # lavapipe
+# some distributions name the file lvp_icd.x86_64.json; `ls /usr/share/vulkan/icd.d/` shows which
 QT_QPA_PLATFORM=offscreen ctest --preset app -L ui      # UI tests without a display
 ctest --preset release -L golden                        # golden images; failures write build/<preset>/golden-out/
 ./build/release/apps/cs-render/cs-render <project> --tier path|standard --size 256x144 --spp 64 --seed 1 --out build/out/x
@@ -71,7 +72,8 @@ python3 scripts/github-bootstrap.py --check             # validate docs/roadmap/
   addresses. Renders must be identical across thread counts.
 - Golden images and benchmark baselines change only on purpose: `--update` in a pull request
   that says why. Never loosen a tolerance to pass a test without saying so in the pull request.
-- GPU tests are tagged `[gpu]`; any validation message fails the test; with no device they skip.
+- GPU tests are tagged `[gpu]`; any validation message fails the test; with no device they skip,
+  unless `CS_REQUIRE_GPU=1` is set (CI and /ship set it), when they fail.
 - A test that compares two modules (the GPU tier against the engine, an editor camera rendered
   on the GPU) goes in `tests/integration/`, never into a module's own tests.
 - Tag every test with its module (Catch2 tags become CTest labels).
