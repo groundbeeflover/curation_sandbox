@@ -55,11 +55,11 @@ TEST_CASE("PaintingMaterial has the defaults of ADR 0003", "[material]") {
 TEST_CASE("The glazing IOR gives the ADR's 8.2% reflectance for float glass",
           "[material][accuracy]") {
     // Two surfaces at normal incidence, with the light bouncing between them: R = 2 r / (1 + r),
-    // where r = ((n - 1) / (n + 1))^2 for one surface. Tolerance 0.001: the ADR gives 8.2%, to
+    // where r = ((n - 1) / (n + 1))^2 for one surface. Tolerance 0.0005: the ADR gives 8.2%, to
     // one decimal.
     const double n = cs::material::PaintingMaterial{}.glazing.ior;
     const double r = (n - 1.0) * (n - 1.0) / ((n + 1.0) * (n + 1.0));
-    CHECK_THAT(2.0 * r / (1.0 + r), WithinAbs(0.082, 0.001));
+    CHECK_THAT(2.0 * r / (1.0 + r), WithinAbs(0.082, 0.0005));
 }
 
 TEST_CASE("PaintingBrdf evaluates only the base", "[material][accuracy]") {

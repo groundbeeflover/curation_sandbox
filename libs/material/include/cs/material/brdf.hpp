@@ -19,6 +19,8 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <cassert>
+
 namespace cs::material {
 
 struct BrdfSample {
@@ -54,7 +56,11 @@ class Brdf {
 // create energy. Sampled by cos(theta) / pi, so every sample's weight is the albedo.
 class LambertianBrdf final : public Brdf {
   public:
-    explicit LambertianBrdf(const glm::dvec3& albedo) : albedo_(albedo) {}
+    // Checked only in debug builds: albedos from files are clamped where they are imported.
+    explicit LambertianBrdf(const glm::dvec3& albedo) : albedo_(albedo) {
+        assert(albedo.r >= 0.0 && albedo.r <= 1.0 && albedo.g >= 0.0 && albedo.g <= 1.0 &&
+               albedo.b >= 0.0 && albedo.b <= 1.0);
+    }
 
     const glm::dvec3& albedo() const { return albedo_; }
 
