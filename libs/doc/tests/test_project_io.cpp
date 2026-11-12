@@ -10,6 +10,8 @@
 #include <cs/doc/uuid.hpp>
 #include <cs/doc/work.hpp>
 
+#include "temp_folder.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
@@ -34,6 +36,7 @@
 using namespace cs::doc;
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::StartsWith;
+using cs::doc::testing::TempFolder;
 
 // Tests edit the fixture as JSON, keeping its key order, to make invalid documents.
 using Json = nlohmann::ordered_json;
@@ -359,28 +362,6 @@ std::string difference(std::string_view written, std::string_view expected) {
            "\n  expected: " + line_of(expected) + "\n  (sizes " + std::to_string(written.size()) +
            " and " + std::to_string(expected.size()) + ")";
 }
-
-// A folder of its own under the system's temporary folder, one name per test, since CTest runs
-// test cases in parallel processes. Removed before and after; created by whoever needs it.
-class TempFolder {
-  public:
-    explicit TempFolder(std::string_view name)
-        : path_(std::filesystem::temp_directory_path() / "cs_doc_tests" / name) {
-        std::filesystem::remove_all(path_);
-        std::filesystem::create_directories(path_.parent_path());
-    }
-    ~TempFolder() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path_, ignored);
-    }
-    TempFolder(const TempFolder&) = delete;
-    TempFolder& operator=(const TempFolder&) = delete;
-
-    const std::filesystem::path& path() const { return path_; }
-
-  private:
-    std::filesystem::path path_;
-};
 
 // ---- Rejections ------------------------------------------------------------------------------
 
