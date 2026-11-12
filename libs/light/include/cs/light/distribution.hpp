@@ -21,7 +21,7 @@ class Distribution {
     virtual ~Distribution() = default;
 
     // Intensity in candela towards direction, in fixture space. The direction need not be of
-    // unit length; a zero vector counts as the beam axis.
+    // unit length; a zero vector counts as the beam axis, and a NaN component gives NaN.
     virtual double intensity_cd(glm::dvec3 direction) const = 0;
 
     // All the light the fixture emits, in lumens: intensity_cd integrated over the sphere.
@@ -75,6 +75,7 @@ class GenericSpot final : public Distribution {
     double lumens_;
     double beam_angle_rad_;
     double field_angle_rad_;
+    double half_beam_rad_;
     double exponent_; // p; zero for a uniform cone
     double peak_cd_;
 };

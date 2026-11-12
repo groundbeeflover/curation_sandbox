@@ -115,6 +115,16 @@ TEST_CASE("luminaire: the fixture's x points left of the beam and y up", "[light
     CHECK(near(down.to_fixture({0.0, -1.0, 0.0}), {0.0, 1.0, 0.0}));
 }
 
+TEST_CASE("luminaire: towards its own position, the peak", "[light]") {
+    // A zero direction counts as the beam axis, even when the fixture frame turns it into
+    // components of -0.0.
+    const auto distribution = spot();
+    const dvec3 position{1.0, 2.0, 3.0};
+    const Luminaire luminaire(position, {0.0, 0.0, 0.0}, distribution);
+    CHECK(luminaire.intensity_cd_towards(position) == distribution->peak_intensity_cd());
+    CHECK(distribution->intensity_cd({0.0, 0.0, -0.0}) == distribution->peak_intensity_cd());
+}
+
 TEST_CASE("luminaire: refuses an aim it cannot point at", "[light]") {
     constexpr double nan = std::numeric_limits<double>::quiet_NaN();
     constexpr double infinity = std::numeric_limits<double>::infinity();

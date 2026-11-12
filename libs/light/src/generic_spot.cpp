@@ -28,7 +28,7 @@ template <typename F> double simpson(F f, double a, double b, int n) {
 
 GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angle_rad)
     : lumens_(lumens), beam_angle_rad_(beam_angle_rad), field_angle_rad_(field_angle_rad),
-      exponent_(0.0), peak_cd_(0.0) {
+      half_beam_rad_(beam_angle_rad / 2.0), exponent_(0.0), peak_cd_(0.0) {
     // Written so that NaN fails every test.
     if (!(std::isfinite(lumens) && lumens > 0.0)) {
         throw std::invalid_argument("GenericSpot: lumens must be positive and finite");
@@ -41,7 +41,7 @@ GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angl
             "GenericSpot: the field angle must lie between the beam angle and 2 pi");
     }
 
-    const double half_beam = beam_angle_rad / 2.0;
+    const double half_beam = half_beam_rad_;
     const double log_ratio = std::log(field_angle_rad / beam_angle_rad);
     if (!(log_ratio > 0.0)) { // equal angles, or so close that their ratio rounds to 1
         peak_cd_ = photometry::uniform_cone_intensity(lumens, half_beam);
@@ -84,15 +84,17 @@ void GenericSpot::check_peak() const {
 }
 
 double GenericSpot::relative_intensity(double theta_rad) const {
-    const double half_beam = beam_angle_rad_ / 2.0;
     if (exponent_ == 0.0) {
-        return theta_rad <= half_beam ? 1.0 : 0.0;
+        return theta_rad <= half_beam_rad_ ? 1.0 : 0.0;
     }
-    return std::exp2(-std::pow(theta_rad / half_beam, exponent_));
+    return std::exp2(-std::pow(theta_rad / half_beam_rad_, exponent_));
 }
 
 double GenericSpot::intensity_cd(glm::dvec3 direction) const {
-    const double theta = std::atan2(std::hypot(direction.x, direction.y), direction.z);
+    // A zero vector is the axis even when its z is -0.0, which atan2 would read as pi.
+    const double sin_part = std::hypot(direction.x, direction.y);
+    const double theta =
+        sin_part == 0.0 && direction.z == 0.0 ? 0.0 : std::atan2(sin_part, direction.z);
     return peak_cd_ * relative_intensity(theta);
 }
 

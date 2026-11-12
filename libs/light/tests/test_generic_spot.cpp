@@ -39,7 +39,8 @@ glm::dvec3 direction(double theta, double phi) {
 
 // The intensity integrated over the sphere, in lumens, by the midpoint rule in theta and phi.
 // It only calls intensity_cd, so it does not assume the symmetry the implementation relies on.
-// 100,000 steps in theta put about 280 inside the half beam of a 1-degree spot.
+// 100,000 steps in theta put about 280 inside the half beam of a 1-degree spot; its error is
+// about 1e-5 for smooth profiles and 1e-4 for the step of a uniform cone.
 double integrate_over_sphere(const GenericSpot& spot) {
     constexpr int n_theta = 100'000;
     constexpr int n_phi = 4;
@@ -96,7 +97,7 @@ TEST_CASE("generic spot: the intensity falls steadily away from the axis", "[lig
 }
 
 TEST_CASE("generic spot: integrating over the sphere returns the lumens", "[light][accuracy]") {
-    // Tolerance 0.5% (the issue's); the test's own quadrature is good to about 1e-5 here.
+    // Tolerance 0.5% (the issue's); the test's own quadrature is good to 1e-4 or better here.
     const auto [beam_deg, field_deg] =
         GENERATE(Angles{10, 20}, Angles{24, 36}, Angles{30, 60}, Angles{60, 100}, Angles{15, 90},
                  Angles{1, 2}, Angles{30, 30.5}, Angles{120, 360}, Angles{40, 40});
