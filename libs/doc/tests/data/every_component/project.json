@@ -1,0 +1,425 @@
+{
+  "schemaVersion": 1,
+  "settings": {
+    "centreLine_m": 1.45,
+    "eyeHeight_m": 1.55,
+    "openingHoursPerYear": 2500.0,
+    "displayUnits": "inches"
+  },
+  "library": {
+    "fixtureTypes": [
+      {
+        "id": "generic-spot-800",
+        "name": "Generic spot 800 lm",
+        "flux_lm": 800.0,
+        "beamAngle_rad": 0.4,
+        "fieldAngle_rad": 0.7,
+        "colourTemperature_K": 3000.0
+      },
+      {
+        "id": "generic-wash-1200",
+        "name": "Generic wash 1200 lm",
+        "flux_lm": 1200.0,
+        "beamAngle_rad": 1.0,
+        "fieldAngle_rad": 1.6,
+        "colourTemperature_K": 4000.0
+      }
+    ]
+  },
+  "works": [
+    {
+      "id": "01932f5e-7f00-7000-8000-000000000001",
+      "number": "1",
+      "title": "Harbour at Dusk",
+      "artist": "Hélène Dubois",
+      "date": "1872",
+      "medium": "Oil on canvas",
+      "accessionNumber": "1985.12",
+      "lender": "Private collection",
+      "creditLine": "Lent by a private collector",
+      "licence": "CC0-1.0",
+      "form": {
+        "kind": "flat",
+        "width_m": 0.73,
+        "height_m": 0.6,
+        "depth_m": 0.03
+      },
+      "image": {
+        "sha256": "9efd8c22d4e910f296919762e790de1c0b225e41356c2b99653bd55a21c44f0e",
+        "extension": "png"
+      },
+      "material": {
+        "preset": "oil-canvas-gloss",
+        "baseRoughness": 0.4,
+        "coatWeight": 0.8,
+        "coatRoughness": 0.1
+      },
+      "sensitivity": {
+        "responsivity": "medium",
+        "maxLux": 150.0,
+        "maxLuxHours": 150000.0
+      },
+      "source": {
+        "kind": "catalogue",
+        "catalogueId": "dubois-harbour-1872",
+        "imageSha256": "9efd8c22d4e910f296919762e790de1c0b225e41356c2b99653bd55a21c44f0e"
+      },
+      "externalIds": [
+        {
+          "system": "TMS",
+          "recordId": "48213"
+        },
+        {
+          "system": "Wikidata",
+          "recordId": "Q123456789"
+        }
+      ]
+    },
+    {
+      "id": "01932f5e-7f00-7000-8000-000000000002",
+      "number": "2a",
+      "title": "Study of a Head",
+      "artist": "Unknown",
+      "date": "c. 1650",
+      "medium": "Red chalk on paper",
+      "creditLine": "Museum purchase, 1902",
+      "form": {
+        "kind": "flat",
+        "width_m": 0.3,
+        "height_m": 0.4
+      },
+      "material": {
+        "preset": "paper-matte"
+      },
+      "sensitivity": {
+        "responsivity": "high",
+        "maxLux": 50.0
+      },
+      "source": {
+        "kind": "import",
+        "originalName": "study-of-a-head.jpg"
+      },
+      "externalIds": []
+    },
+    {
+      "id": "01932f5e-7f00-7000-8000-000000000003",
+      "number": "3",
+      "title": "Seated Figure",
+      "artist": "",
+      "date": "",
+      "medium": "",
+      "creditLine": "",
+      "form": {
+        "kind": "flat",
+        "width_m": 0.2,
+        "height_m": 0.25
+      },
+      "material": {
+        "preset": "oil-canvas-matte",
+        "coatWeight": 0.0
+      },
+      "sensitivity": {
+        "responsivity": "irresponsive",
+        "maxLuxHours": 0.0
+      },
+      "source": {
+        "kind": "checklist",
+        "row": 12
+      },
+      "externalIds": []
+    },
+    {
+      "id": "01932f5e-7f00-7000-8000-000000000004",
+      "number": "4",
+      "title": "Untitled (\"Blue\")",
+      "artist": "B. Printer",
+      "date": "1890-1895",
+      "medium": "Etching",
+      "creditLine": "Gift of the artist",
+      "form": {
+        "kind": "flat",
+        "width_m": 0.15,
+        "height_m": 0.1
+      },
+      "material": {
+        "preset": "paper-matte"
+      },
+      "sensitivity": {
+        "responsivity": "low"
+      },
+      "externalIds": []
+    }
+  ],
+  "entities": [
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000001",
+      "name": "Wall A",
+      "wall": {
+        "start_m": [
+          0.0,
+          0.0
+        ],
+        "end_m": [
+          8.0,
+          0.0
+        ],
+        "height_m": 3.5,
+        "thickness_m": 0.2,
+        "finishA": "wall-white",
+        "finishB": "wall-grey",
+        "label": "A"
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000002",
+      "name": "Wall B",
+      "wall": {
+        "start_m": [
+          8.0,
+          6.0
+        ],
+        "end_m": [
+          8.0,
+          0.0
+        ],
+        "height_m": 3.5,
+        "thickness_m": 0.2,
+        "label": "B"
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000003",
+      "name": "Gallery 1",
+      "room": {
+        "outline_m": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            8.0,
+            0.0
+          ],
+          [
+            8.0,
+            6.0
+          ],
+          [
+            0.0,
+            6.0
+          ]
+        ],
+        "floorHeight_m": 0.0,
+        "ceilingHeight_m": 3.5,
+        "floorFinish": "oak-floor",
+        "ceilingFinish": "ceiling-white"
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000004",
+      "name": "Harbour at Dusk",
+      "exhibit": {
+        "work": "01932f5e-7f00-7000-8000-000000000001"
+      },
+      "framing": {
+        "style": "gilt-classic",
+        "width_m": 0.08,
+        "colour": [
+          0.6,
+          0.45,
+          0.2
+        ],
+        "mat": {
+          "border_m": 0.05,
+          "bottomExtra_m": 0.02,
+          "overlap_m": 0.01,
+          "colour": [
+            0.9,
+            0.88,
+            0.85
+          ]
+        },
+        "glazing": "antiReflectiveGlass"
+      },
+      "placement": {
+        "kind": "onWall",
+        "wall": "01932f5e-8a00-7000-8000-000000000001",
+        "face": "A",
+        "distance_m": 2.5,
+        "centreHeight_m": 1.45,
+        "standOff_m": 0.02
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000005",
+      "name": "Doorway",
+      "opening": {
+        "wall": "01932f5e-8a00-7000-8000-000000000002",
+        "offset_m": 1.0,
+        "width_m": 1.2,
+        "height_m": 2.2,
+        "sill_m": 0.0,
+        "kind": "door"
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000006",
+      "name": "Study of a Head",
+      "exhibit": {
+        "work": "01932f5e-7f00-7000-8000-000000000002"
+      },
+      "framing": {
+        "style": "box"
+      },
+      "placement": {
+        "kind": "onWall",
+        "wall": "01932f5e-8a00-7000-8000-000000000002",
+        "face": "B",
+        "distance_m": 4.0,
+        "centreHeight_m": 1.45,
+        "standOff_m": 0.0
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000007",
+      "name": "Plinth",
+      "placement": {
+        "kind": "onFloor",
+        "room": "01932f5e-8a00-7000-8000-000000000003",
+        "position_m": [
+          4.0,
+          3.0
+        ],
+        "rotation_rad": 0.5
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000008",
+      "name": "Seated Figure",
+      "exhibit": {
+        "work": "01932f5e-7f00-7000-8000-000000000003"
+      },
+      "placement": {
+        "kind": "onHost",
+        "host": "01932f5e-8a00-7000-8000-000000000007",
+        "offset_m": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "rotation_rad": -0.25
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-000000000009",
+      "name": "Track 1",
+      "track": {
+        "points_m": [
+          [
+            1.0,
+            1.5
+          ],
+          [
+            7.0,
+            1.5
+          ]
+        ],
+        "height_m": 3.2
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-00000000000a",
+      "name": "Spot 1",
+      "placement": {
+        "kind": "onTrack",
+        "track": "01932f5e-8a00-7000-8000-000000000009",
+        "distance_m": 1.5
+      },
+      "luminaire": {
+        "fixtureType": "generic-spot-800",
+        "dimming": 0.75,
+        "aim": {
+          "kind": "entity",
+          "target": "01932f5e-8a00-7000-8000-000000000004"
+        },
+        "colourTemperature_K": 2700.0
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-00000000000b",
+      "name": "Downlight 1",
+      "placement": {
+        "kind": "onCeiling",
+        "room": "01932f5e-8a00-7000-8000-000000000003",
+        "position_m": [
+          6.0,
+          4.0
+        ]
+      },
+      "luminaire": {
+        "fixtureType": "generic-wash-1200",
+        "dimming": 1.0,
+        "aim": {
+          "kind": "point",
+          "point_m": [
+            6.0,
+            4.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-00000000000c",
+      "name": "Sensor 1",
+      "luxSensor": {
+        "position_m": [
+          2.5,
+          0.1,
+          1.45
+        ],
+        "normal": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-00000000000d",
+      "name": "Entrance view",
+      "viewpoint": {
+        "position_m": [
+          4.0,
+          5.0,
+          1.55
+        ],
+        "yaw_rad": -1.5,
+        "pitch_rad": -0.1,
+        "fieldOfView_rad": 0.9,
+        "ev100": 7.5
+      }
+    },
+    {
+      "id": "01932f5e-8a00-7000-8000-00000000000e",
+      "name": "Width of wall A",
+      "dimension": {
+        "from": {
+          "entity": "01932f5e-8a00-7000-8000-000000000001",
+          "point_m": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "to": {
+          "point_m": [
+            8.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    }
+  ]
+}
