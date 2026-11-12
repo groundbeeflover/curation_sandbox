@@ -31,6 +31,10 @@ glm::dvec3 any_direction(cs::Rng& rng) {
     return cs::sample_uniform_sphere(next_u(rng)).direction;
 }
 
+// Values that are a single multiplication or division by pi agree to a few rounding errors of a
+// double (about 1e-17 at these sizes); 1e-15 leaves room for that and still fails any real error.
+constexpr double rounding = 1e-15;
+
 // Different values per channel, the darkest at the ADR's import clamp, so a mixed-up channel
 // shows.
 const glm::dvec3 test_albedo{0.8, 0.45, 0.02};
@@ -97,14 +101,14 @@ TEST_CASE("Lambert evaluates to albedo over pi above the surface", "[material][a
         const glm::dvec3 wi = any_direction(rng);
         const glm::dvec3 f = lambert.eval(wo, wi);
         if (wo.z > 0.0 && wi.z > 0.0) {
-            check_rgb(f, test_albedo * inv_pi, 1e-15);
+            check_rgb(f, test_albedo * inv_pi, rounding);
         } else {
             // Reflection only: no light passes through, and none comes from below.
             check_rgb(f, glm::dvec3(0.0), 0.0);
         }
     }
     // Exactly at the normal, both ways.
-    check_rgb(lambert.eval({0, 0, 1}, {0, 0, 1}), test_albedo * inv_pi, 1e-15);
+    check_rgb(lambert.eval({0, 0, 1}, {0, 0, 1}), test_albedo * inv_pi, rounding);
 }
 
 TEST_CASE("Lambert reflects its albedo: integral of f cos over the hemisphere",
@@ -143,10 +147,10 @@ TEST_CASE("Lambert reflects its albedo: integral of f cos over the hemisphere",
             sum += lambert.eval(wo, s.wi) * s.wi.z / lambert.pdf(wo, s.wi);
             weight_sum += s.weight;
         }
-        const glm::dvec3 estimate = sum / static_cast<double>(n);
-        CHECK_THAT(estimate.r, WithinRel(test_albedo.r, 0.005));
-        CHECK_THAT(estimate.g, WithinRel(test_albedo.g, 0.005));
-        CHECK_THAT(estimate.b, WithinRel(test_albedo.b, 0.005));
+        // Every term is rho to rounding, so the mean is too, but for the rounding of 10^5
+        // additions (about n epsilon, 2e-11): 1e-9 rather than the 0.5% of a noisy estimate, so
+        // that a pdf slightly off from sample's would show.
+        check_rgb(sum / static_cast<double>(n), test_albedo, 1e-9);
         check_rgb(weight_sum / static_cast<double>(n), test_albedo, 1e-9);
     }
 }
@@ -155,9 +159,9 @@ TEST_CASE("Lambert's pdf is the cosine over pi, and zero below the surface",
           "[material][accuracy]") {
     const cs::material::LambertianBrdf lambert(test_albedo);
     const glm::dvec3 wo{0.0, 0.0, 1.0};
-    CHECK_THAT(lambert.pdf(wo, {0, 0, 1}), WithinAbs(inv_pi, 1e-15));
+    CHECK_THAT(lambert.pdf(wo, {0, 0, 1}), WithinAbs(inv_pi, rounding));
     const glm::dvec3 wi = glm::normalize(glm::dvec3{1.0, 0.0, 1.0});
-    CHECK_THAT(lambert.pdf(wo, wi), WithinAbs(std::numbers::sqrt2 / 2.0 * inv_pi, 1e-15));
+    CHECK_THAT(lambert.pdf(wo, wi), WithinAbs(std::numbers::sqrt2 / 2.0 * inv_pi, rounding));
     CHECK(lambert.pdf(wo, {0, 0, -1}) == 0.0);
     CHECK(lambert.pdf({0, 0, -1}, {0, 0, 1}) == 0.0);
     CHECK(lambert.pdf(wo, {1, 0, 0}) == 0.0); // grazing: in the surface plane

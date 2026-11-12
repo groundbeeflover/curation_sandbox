@@ -91,5 +91,6 @@ TEST_CASE("PaintingBrdf evaluates only the base", "[material][accuracy]") {
         CHECK(equal(a.weight, b.weight));
     }
     const glm::dvec3 up{0.0, 0.0, 1.0};
+    // One division by pi: equal to rounding.
     CHECK_THAT(brdf.eval(up, up).g, WithinAbs(0.3 * std::numbers::inv_pi, 1e-15));
 }
