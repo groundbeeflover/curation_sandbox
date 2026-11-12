@@ -52,10 +52,11 @@ GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angl
     exponent_ = std::log(std::log2(10.0)) / log_ratio;
 
     // The solid angle the spot would cover at its peak intensity, 2 pi times the integral of
-    // relative_intensity(theta) sin(theta) over theta. Inside the half beam angle, Simpson's rule
-    // in theta; beyond it, in ln(theta), where the falloff is smooth and evenly resolved for any
-    // ratio of the angles. The integral stops at pi, or sooner where the intensity has fallen
-    // below 2^-1000 of the peak and what is left cannot be told from rounding.
+    // relative_intensity(theta) sin(theta) over theta. Near the axis, where the profile is
+    // almost flat (above 2^-(1/1000)), Simpson's rule in theta; from there on, in ln(theta),
+    // where the falloff is smooth and evenly resolved for any ratio of the angles, however
+    // sharp the edge. The integral stops at pi, or sooner where the intensity has fallen below
+    // 2^-1000 of the peak and what is left cannot be told from rounding.
     const auto in_theta = [this](double theta) {
         return relative_intensity(theta) * std::sin(theta);
     };
@@ -63,10 +64,13 @@ GenericSpot::GenericSpot(double lumens, double beam_angle_rad, double field_angl
         const double theta = std::exp(u);
         return in_theta(theta) * theta;
     };
+    // For small p the flat part shrinks towards nothing; below 1e-6 of the half beam angle the
+    // area is too small to matter, and the floor keeps ln(start) finite.
+    const double start = half_beam * std::max(std::pow(1000.0, -1.0 / exponent_), 1e-6);
     const double end = std::min(pi, half_beam * std::pow(1000.0, 1.0 / exponent_));
-    double integral = simpson(in_theta, 0.0, half_beam, 1024);
-    if (end > half_beam) {
-        integral += simpson(in_log_theta, std::log(half_beam), std::log(end), 4096);
+    double integral = simpson(in_theta, 0.0, start, 1024);
+    if (end > start) {
+        integral += simpson(in_log_theta, std::log(start), std::log(end), 4096);
     }
     peak_cd_ = lumens / (2.0 * pi * integral);
     check_peak();

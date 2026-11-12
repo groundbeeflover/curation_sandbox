@@ -96,6 +96,25 @@ TEST_CASE("luminaire: the fixture frame is right-handed, with x level", "[light]
     CHECK_THAT(z.x, WithinAbs(0.0, 1e-12));
 }
 
+TEST_CASE("luminaire: the fixture's x points left of the beam and y up", "[light]") {
+    // The documented roll, which IES files (milestone 3) will depend on.
+    const auto near = [](dvec3 actual, dvec3 expected) {
+        return glm::length(actual - expected) < 1e-12;
+    };
+    // Level, along world +x: left (seen from behind) is world +y, up is world +z.
+    const Luminaire level({0.0, 0.0, 2.0}, {1.0, 0.0, 2.0}, spot());
+    CHECK(near(level.to_fixture({0.0, 1.0, 0.0}), {1.0, 0.0, 0.0}));
+    CHECK(near(level.to_fixture({0.0, 0.0, 1.0}), {0.0, 1.0, 0.0}));
+    CHECK(near(level.to_fixture({1.0, 0.0, 0.0}), {0.0, 0.0, 1.0}));
+    // Straight up and straight down: x is the world's x axis.
+    const Luminaire up({0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, spot());
+    CHECK(near(up.to_fixture({1.0, 0.0, 0.0}), {1.0, 0.0, 0.0}));
+    CHECK(near(up.to_fixture({0.0, 1.0, 0.0}), {0.0, 1.0, 0.0}));
+    const Luminaire down({0.0, 0.0, 3.0}, {0.0, 0.0, 0.0}, spot());
+    CHECK(near(down.to_fixture({1.0, 0.0, 0.0}), {1.0, 0.0, 0.0}));
+    CHECK(near(down.to_fixture({0.0, -1.0, 0.0}), {0.0, 1.0, 0.0}));
+}
+
 TEST_CASE("luminaire: refuses an aim it cannot point at", "[light]") {
     constexpr double nan = std::numeric_limits<double>::quiet_NaN();
     constexpr double infinity = std::numeric_limits<double>::infinity();

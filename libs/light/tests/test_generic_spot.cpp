@@ -18,6 +18,7 @@
 #include <numbers>
 #include <stdexcept>
 
+using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 using cs::light::GenericSpot;
 
@@ -105,6 +106,27 @@ TEST_CASE("generic spot: integrating over the sphere returns the lumens", "[ligh
 
     CHECK(spot.total_lumens() == lumens);
     CHECK_THAT(integrate_over_sphere(spot), WithinRel(lumens, 0.005));
+}
+
+TEST_CASE("generic spot: how much light spills beyond the field angle", "[light][accuracy]") {
+    // Pins the profile's shape, not only its two defining points (physics review of this task).
+    // For 24 / 36 degrees, 5.07% of the lumens fall outside the half field angle and none
+    // behind the fixture. Tolerance 0.1% of the lumens: the midpoint rule below, in theta with
+    // the symmetry of the spot, is good to about 1e-6 here.
+    const double lumens = 680.0;
+    const GenericSpot spot(lumens, deg(24), deg(36));
+    const auto flux_beyond = [&spot](double from_theta) {
+        constexpr int n = 100'000;
+        const double d_theta = (pi - from_theta) / n;
+        double sum = 0.0;
+        for (int i = 0; i < n; ++i) {
+            const double theta = from_theta + (i + 0.5) * d_theta;
+            sum += spot.intensity_cd(direction(theta, 0.0)) * std::sin(theta);
+        }
+        return 2.0 * pi * sum * d_theta;
+    };
+    CHECK_THAT(flux_beyond(deg(18)) / lumens, WithinAbs(0.0507, 0.001));
+    CHECK(flux_beyond(pi / 2.0) / lumens < 1e-6);
 }
 
 TEST_CASE("generic spot: a narrow spot is finite everywhere", "[light][accuracy]") {

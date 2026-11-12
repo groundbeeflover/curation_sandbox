@@ -41,9 +41,14 @@ class Distribution {
 //
 // which is 50% of the peak at half the beam angle and 10% at half the field angle exactly, and
 // keeps falling beyond, as the spill of a real spot does. I_peak is chosen so that the fixture
-// emits exactly its lumens. When the field angle is more than about 3.3 times the beam angle,
-// p < 1 and the profile comes to a point on the axis instead of a flat top; real spots rarely
-// do that.
+// emits exactly its lumens.
+//
+// How much light falls outside the field angle depends on the ratio field / beam: about 13% at
+// a ratio of 2 (p = 1.73) and 5% at 1.5, which is plausible for a real spot. Above a ratio of
+// about 3.3, p < 1: the profile comes to a point on the axis instead of a flat top, about half
+// the lumens land outside the field, some even behind the fixture (12% for 15 / 90 degrees),
+// and the peak is a tenth of what the beam angle suggests. Generic fixtures should keep the
+// ratio at about 2 or below.
 //
 // With the beam angle equal to the field angle the spot is a uniform cone: the same intensity
 // everywhere inside the cone, cs::photometry::uniform_cone_intensity, and none outside.
