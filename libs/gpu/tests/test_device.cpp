@@ -302,7 +302,7 @@ TEST_CASE("device: a headless device renders with dynamic rendering, synchroniza
         // Declared after the pool, so destroyed first; the wait below (or wait_idle on failure)
         // guarantees the GPU is done with both.
         const Cleanup destroy_fence{[&] {
-            vkDeviceWaitIdle(device); // not wait_idle(), which may throw from a destructor
+            vkDeviceWaitIdle(device); // a destructor cannot act on a lost device anyway
             vkDestroyFence(device, fence, nullptr);
         }};
 
@@ -313,7 +313,8 @@ TEST_CASE("device: a headless device renders with dynamic rendering, synchroniza
 
         const VkImageSubresourceRange colour_range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-        // Undefined -> colour attachment, before the clear writes it.
+        // Undefined -> colour attachment, before the clear writes it. No source stage: the image
+        // is new. An attachment written before would need COLOR_ATTACHMENT_OUTPUT as source.
         VkImageMemoryBarrier2 to_attachment{};
         to_attachment.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         to_attachment.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
@@ -711,7 +712,7 @@ TEST_CASE("device: only one Device may be alive at a time", "[gpu]") {
 
     // The failed second construction left the first device working.
     CHECK(first->device() != VK_NULL_HANDLE);
-    CHECK_NOTHROW(first->wait_idle());
+    CHECK(first->wait_idle() == VK_SUCCESS);
 
     // Once the first is gone, another may be made.
     first.reset();

@@ -36,6 +36,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
@@ -87,25 +88,29 @@ VKAPI_ATTR VkBool32 VKAPI_CALL on_debug_message(VkDebugUtilsMessageSeverityFlagB
                                                 VkDebugUtilsMessageTypeFlagsEXT types,
                                                 const VkDebugUtilsMessengerCallbackDataEXT* data,
                                                 void* /*user_data*/) {
-    ValidationMessage message;
-    message.severity = to_severity(severity);
-    message.kind = to_kind(types);
-    if (data != nullptr) {
-        message.id = data->pMessageIdName != nullptr ? data->pMessageIdName : "";
-        message.text = data->pMessage != nullptr ? data->pMessage : "";
-    }
-    ValidationHandler handler;
-    {
-        const std::lock_guard lock(handler_mutex);
-        handler = validation_handler;
-    }
     try {
+        ValidationMessage message;
+        message.severity = to_severity(severity);
+        message.kind = to_kind(types);
+        if (data != nullptr) {
+            message.id = data->pMessageIdName != nullptr ? data->pMessageIdName : "";
+            message.text = data->pMessage != nullptr ? data->pMessage : "";
+        }
+        ValidationHandler handler;
+        {
+            const std::lock_guard lock(handler_mutex);
+            handler = validation_handler;
+        }
         if (handler)
             handler(message);
         else
             std::cerr << to_string(message) << '\n';
     } catch (...) {
-        std::cerr << to_string(message) << "\n(the validation handler threw; ignored)\n";
+        // Out of memory, or the handler threw: print without allocating, and carry on.
+        std::fputs(data != nullptr && data->pMessage != nullptr ? data->pMessage
+                                                                : "(no message text)",
+                   stderr);
+        std::fputs("\n(this validation message could not be handled)\n", stderr);
     }
     return VK_FALSE;
 }
@@ -405,8 +410,8 @@ bool Device::can_present(VkSurfaceKHR surface) const {
            supported == VK_TRUE;
 }
 
-void Device::wait_idle() const {
-    vkDeviceWaitIdle(device_);
+VkResult Device::wait_idle() const {
+    return vkDeviceWaitIdle(device_);
 }
 
 } // namespace cs::gpu

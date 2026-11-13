@@ -132,7 +132,8 @@ class Device {
     // False on a headless device.
     [[nodiscard]] bool can_present(VkSurfaceKHR surface) const;
 
-    void wait_idle() const;
+    // VK_SUCCESS, or the error, such as VK_ERROR_DEVICE_LOST, for the caller to act on.
+    VkResult wait_idle() const;
 
   private:
     VkInstance instance_ = VK_NULL_HANDLE;
