@@ -31,8 +31,9 @@ class OffscreenTarget {
     // mapping needs; every Vulkan device can render to and copy from this format.
     static constexpr VkFormat colour_format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-    // Throws std::invalid_argument when a size is 0 or larger than the device's
-    // maxImageDimension2D, or std::runtime_error on a Vulkan failure.
+    // Throws std::invalid_argument when a size is 0, larger than the device's
+    // maxImageDimension2D, or too large for the device to allocate the images and the readback
+    // buffer, or std::runtime_error on a Vulkan failure.
     OffscreenTarget(const Device& device, std::uint32_t width, std::uint32_t height);
     ~OffscreenTarget();
 
@@ -60,6 +61,11 @@ class OffscreenTarget {
     // image to host memory and returns its RGB (alpha is dropped), width() by height(). Throws
     // std::runtime_error on a Vulkan failure, or when the GPU has not finished within a minute;
     // an exception thrown by draw propagates, and the target stays usable.
+    //
+    // A pipeline drawn here is made with this target's colour_format and depth_format(), as the
+    // attachments are always both bound; GraphicsPipelineOptions::depth_test = false turns the
+    // depth test off. After the one-minute timeout the frame may still be running: call
+    // Device::wait_idle() before destroying anything draw used.
     [[nodiscard]] Image render(const DrawFunction& draw, const ClearValues& clear = {});
 
   private:
@@ -84,7 +90,7 @@ class OffscreenTarget {
     VkFence fence_ = VK_NULL_HANDLE;
     bool pending_ = false; // submitted, and the fence not yet waited for
 
-    // Waits for the submitted frame, then resets the fence. Throws as render() does.
+    // Waits for the submitted frame. Throws as render() does.
     void wait_for_frame();
     void destroy() noexcept;
 };

@@ -45,5 +45,7 @@ float4 fragment_main() : SV_Target { return float4(1, 0, 0, 1) }
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config $<CONFIG>
             --target cs_gpu_broken_shader)
     set_tests_properties("gpu: a shader with a syntax error fails the build" PROPERTIES
-        PASS_REGULAR_EXPRESSION "error\\[E[0-9]+\\][^\n]*\n[^\n]*broken\\.slang:2:")
+        PASS_REGULAR_EXPRESSION "error\\[E[0-9]+\\][^\n]*\n[^\n]*broken\\.slang:2:"
+        # It runs the build tool in the build tree, so never beside another test under -j.
+        RUN_SERIAL TRUE)
 endif()

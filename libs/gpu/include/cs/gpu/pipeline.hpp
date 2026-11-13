@@ -39,7 +39,8 @@ struct GraphicsPipelineOptions {
     std::string vertex_entry = "vertex_main";
     std::string fragment_entry = "fragment_main";
     // The formats of the attachments the pipeline renders into with dynamic rendering. With
-    // depth_format VK_FORMAT_UNDEFINED there is no depth attachment, and no depth test.
+    // depth_format VK_FORMAT_UNDEFINED there is no depth attachment, and no depth test; an
+    // OffscreenTarget always has one, so pass its depth_format().
     VkFormat colour_format = VK_FORMAT_UNDEFINED;
     VkFormat depth_format = VK_FORMAT_UNDEFINED;
     // With a depth attachment: keep fragments nearer than the depth already there
@@ -49,7 +50,9 @@ struct GraphicsPipelineOptions {
     VkCullModeFlags cull_mode = VK_CULL_MODE_NONE;
     VkFrontFace front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     // One push-constant range, from offset 0, seen by the vertex and fragment stages. A multiple
-    // of 4, at most the device's maxPushConstantsSize (128 on every device); 0 for none.
+    // of 4, at most the device's maxPushConstantsSize (at least 128 on every device); 0 for
+    // none. It must cover the shader's push-constant block, which is not checked here (the
+    // validation layer reports it).
     std::uint32_t push_constant_bytes = 0;
 };
 

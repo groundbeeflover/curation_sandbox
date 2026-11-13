@@ -21,6 +21,11 @@ constexpr std::uint64_t frame_timeout_ns = 60'000'000'000;
 constexpr std::size_t channels = 4;                                    // RGBA
 constexpr VkDeviceSize texel_bytes = channels * sizeof(std::uint16_t); // half floats
 
+constexpr VkImageUsageFlags colour_usage =
+    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+constexpr VkImageUsageFlags depth_usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+constexpr VkDeviceSize depth_texel_bytes = 4; // D32_SFLOAT and X8_D24_UNORM_PACK32
+
 constexpr VkImageSubresourceRange colour_range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 constexpr VkImageSubresourceRange depth_range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
 
@@ -34,6 +39,19 @@ bool supports(VkPhysicalDevice physical_device, VkFormat format, VkFormatFeature
     VkFormatProperties properties{};
     vkGetPhysicalDeviceFormatProperties(physical_device, format, &properties);
     return (properties.optimalTilingFeatures & features) == features;
+}
+
+// Whether the device can make an image this large in this format and use: maxImageDimension2D
+// alone is not enough, as a format's maxExtent and maxResourceSize may be smaller.
+bool image_fits(VkPhysicalDevice physical_device, VkFormat format, VkImageUsageFlags usage,
+                std::uint32_t width, std::uint32_t height, VkDeviceSize texel_size) {
+    VkImageFormatProperties properties{};
+    if (vkGetPhysicalDeviceImageFormatProperties(physical_device, format, VK_IMAGE_TYPE_2D,
+                                                 VK_IMAGE_TILING_OPTIMAL, usage, 0,
+                                                 &properties) != VK_SUCCESS)
+        return false;
+    return width <= properties.maxExtent.width && height <= properties.maxExtent.height &&
+           VkDeviceSize{width} * height * texel_size <= properties.maxResourceSize;
 }
 
 VkImageView create_view(VkDevice device, VkImage image, VkFormat format,
@@ -90,6 +108,23 @@ OffscreenTarget::OffscreenTarget(const Device& device, std::uint32_t width, std:
         throw std::runtime_error("OffscreenTarget: the device can render depth to neither "
                                  "D32_SFLOAT nor X8_D24_UNORM_PACK32");
 
+    // The images and the readback buffer must also fit the format's and the allocator's limits,
+    // so that a large size from outside (cs-render --size) is refused here, not by Vulkan.
+    VkPhysicalDeviceVulkan11Properties properties_11{};
+    properties_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+    VkPhysicalDeviceProperties2 properties_2{};
+    properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties_2.pNext = &properties_11;
+    vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
+    const VkDeviceSize readback_bytes = VkDeviceSize{width} * height * texel_bytes;
+    if (!image_fits(physical_device, colour_format, colour_usage, width, height, texel_bytes) ||
+        !image_fits(physical_device, depth_format_, depth_usage, width, height,
+                    depth_texel_bytes) ||
+        readback_bytes > properties_11.maxMemoryAllocationSize)
+        throw std::invalid_argument("OffscreenTarget: " + std::to_string(width) + "x" +
+                                    std::to_string(height) +
+                                    " is larger than the device can allocate as one image");
+
     try {
         VkImageCreateInfo image_info{};
         image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -105,14 +140,14 @@ OffscreenTarget::OffscreenTarget(const Device& device, std::uint32_t width, std:
         image_allocation.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
         image_info.format = colour_format;
-        image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        image_info.usage = colour_usage;
         check(vmaCreateImage(allocator_, &image_info, &image_allocation, &colour_image_,
                              &colour_allocation_, nullptr),
               "allocating the colour image");
         colour_view_ = create_view(device_, colour_image_, colour_format, colour_range);
 
         image_info.format = depth_format_;
-        image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        image_info.usage = depth_usage;
         check(vmaCreateImage(allocator_, &image_info, &image_allocation, &depth_image_,
                              &depth_allocation_, nullptr),
               "allocating the depth image");
@@ -121,7 +156,7 @@ OffscreenTarget::OffscreenTarget(const Device& device, std::uint32_t width, std:
         // The host reads every texel once, in order, after each frame.
         VkBufferCreateInfo buffer_info{};
         buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_info.size = VkDeviceSize{width} * height * texel_bytes;
+        buffer_info.size = readback_bytes;
         buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         VmaAllocationCreateInfo buffer_allocation{};
@@ -184,7 +219,6 @@ void OffscreenTarget::wait_for_frame() {
         throw std::runtime_error("OffscreenTarget: the GPU did not finish a frame within a minute");
     check(result, "waiting for the frame");
     pending_ = false;
-    check(vkResetFences(device_, 1, &fence_), "resetting the fence");
 }
 
 Image OffscreenTarget::render(const DrawFunction& draw, const ClearValues& clear) {
@@ -209,8 +243,7 @@ Image OffscreenTarget::render(const DrawFunction& draw, const ClearValues& clear
     to_attachments[0].srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
     to_attachments[0].srcAccessMask = VK_ACCESS_2_NONE; // write after read: execution only
     to_attachments[0].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    to_attachments[0].dstAccessMask =
-        VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    to_attachments[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT; // no blending
     to_attachments[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     to_attachments[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     constexpr VkPipelineStageFlags2 depth_stages =
@@ -309,6 +342,8 @@ Image OffscreenTarget::render(const DrawFunction& draw, const ClearValues& clear
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
     submit.commandBufferInfoCount = 1;
     submit.pCommandBufferInfos = &command_submit;
+    // Reset just before the submit, so that a failure anywhere earlier leaves it unsignalled.
+    check(vkResetFences(device_, 1, &fence_), "resetting the fence");
     check(vkQueueSubmit2(queue_, 1, &submit, fence_), "submitting the frame");
     pending_ = true;
     wait_for_frame();
