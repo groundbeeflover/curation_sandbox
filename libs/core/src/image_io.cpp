@@ -82,6 +82,14 @@ void write_exr(const Image& image, const std::filesystem::path& path, ExrChannel
     // Interleaved RGB, as tinyexr's SaveEXRToMemory takes it; it stores the channels in the
     // B, G, R order readers expect. A half file is clamped to the half range here; tinyexr then
     // rounds each float to the nearest half.
+    // Never write what read_exr would refuse; this also keeps tinyexr's int sizes from overflowing.
+    if (image.width() > max_image_side || image.height() > max_image_side ||
+        std::int64_t{image.width()} * image.height() > max_image_pixels) {
+        throw std::runtime_error("cannot write " + path.string() +
+                                 " as EXR: " + std::to_string(image.width()) + " x " +
+                                 std::to_string(image.height()) + " is larger than read_exr reads");
+    }
+
     const bool half = channels == ExrChannels::half;
     std::vector<float> rgb;
     rgb.reserve(static_cast<std::size_t>(image.width()) * static_cast<std::size_t>(image.height()) *
@@ -241,6 +249,11 @@ Image read_exr_from_memory(std::span<const std::byte> bytes) {
 void write_png(const Image& image, const std::filesystem::path& path, double ev100) {
     const int width = image.width();
     const int height = image.height();
+    if (!std::isfinite(ev100)) {
+        throw std::invalid_argument("cannot write " + path.string() +
+                                    ": the exposure must be finite, got EV100 " +
+                                    std::to_string(ev100));
+    }
     const float scale = static_cast<float>(exposure_scale(ev100));
 
     std::vector<unsigned char> pixels(static_cast<std::size_t>(width) *

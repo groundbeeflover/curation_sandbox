@@ -620,6 +620,22 @@ TEST_CASE("write_png throws std::runtime_error when the file cannot be written",
                     std::runtime_error);
 }
 
+TEST_CASE("write_png refuses an exposure that is not finite", "[core][image_io]") {
+    const cs::Image image(2, 2);
+    const TempFile file("cs_core_image_io_png_nan_exposure.png");
+    CHECK_THROWS_AS(cs::write_png(image, file.path(), std::numeric_limits<double>::quiet_NaN()),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(cs::write_png(image, file.path(), std::numeric_limits<double>::infinity()),
+                    std::invalid_argument);
+}
+
+TEST_CASE("write_exr refuses an image larger than read_exr reads", "[core][image_io]") {
+    // One pixel too wide: never written, so a golden reference can always be read back.
+    const cs::Image image(cs::max_image_side + 1, 1);
+    const TempFile file("cs_core_image_io_too_wide.exr");
+    CHECK_THROWS_AS(cs::write_exr(image, file.path()), std::runtime_error);
+}
+
 // --- Hostile EXR input ---------------------------------------------------------------------------
 
 TEST_CASE("read_exr_from_memory refuses an empty span with std::runtime_error",

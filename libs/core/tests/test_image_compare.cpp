@@ -391,6 +391,17 @@ TEST_CASE("compare: the numeric errors see a negative value as it is, FLIP sees 
     CHECK(with_zero.mean_flip > 0.0);
 }
 
+TEST_CASE("compare tells apart images darker than FLIP's median floor", "[core][image_compare]") {
+    // FLIP takes the median luminance as at least FLT_EPSILON (about 1.2e-7), which for images
+    // this dark puts its stop exposure before its start; compare must still see them differ.
+    const cs::Image reference = uniform(side, side, {1e-8f, 1e-8f, 1e-8f});
+    cs::Image test(side, side);
+    const cs::ImageComparison result = cs::compare(reference, test);
+    CHECK(result.mean_flip > 0.0);
+    CHECK(valid_flip(result.mean_flip));
+    CHECK(cs::compare(reference, reference).mean_flip == 0.0);
+}
+
 TEST_CASE("compare with a black reference and a test image that is not gives a positive, finite "
           "FLIP",
           "[core][image_compare]") {

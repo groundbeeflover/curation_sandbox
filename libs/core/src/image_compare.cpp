@@ -4,6 +4,7 @@
 
 #include <FLIP.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -37,16 +38,18 @@ FLIP::image<FLIP::color3> to_flip(const Image& image) {
 // HDR-FLIP's exposure range, as its evaluate() finds it from the reference when none is given:
 // from the exposure that maps the brightest pixel to 0.85 after tone mapping to the one that
 // does so for the median. A black image has no brightest pixel (the start is infinite, and
-// evaluate() would end the process), so then the range comes from the other image.
+// evaluate() would end the process), so then the range comes from the other image. FLIP takes the
+// median as at least FLT_EPSILON, so an image darker than that would get a stop before its start;
+// it is given the single exposure of its brightest pixel instead.
 bool find_exposures(FLIP::image<FLIP::color3>& image, FLIP::Parameters& parameters) {
     float start = 0.0f;
     float stop = 0.0f;
     image.computeExposures(parameters.tonemapper, start, stop);
-    if (!std::isfinite(start) || !std::isfinite(stop) || start > stop) {
+    if (!std::isfinite(start) || !std::isfinite(stop)) {
         return false;
     }
     parameters.startExposure = start;
-    parameters.stopExposure = stop;
+    parameters.stopExposure = std::max(start, stop);
     return true;
 }
 

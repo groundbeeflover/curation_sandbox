@@ -41,15 +41,17 @@ enum class ExrChannels {
 
 // Writes the image as a single-part, scanline OpenEXR file with channels R, G and B, compressed
 // losslessly with ZIP (images smaller than 16 x 16 are stored uncompressed). Throws
-// std::runtime_error if the file cannot be written.
+// std::runtime_error if the file cannot be written, or if the image is larger than read_exr
+// reads (max_image_side, max_image_pixels).
 void write_exr(const Image& image, const std::filesystem::path& path,
                ExrChannels channels = ExrChannels::float32);
 
 // Reads the R, G and B channels of a single-part, scanline OpenEXR file (half or float), ignoring
-// any others, such as alpha. Throws std::runtime_error if the file cannot be read, is larger than
-// max_exr_file_bytes, is not such an EXR file (tiled, multi-part, deep, subsampled, or without
-// R, G and B), or exceeds max_image_side, max_image_pixels, max_exr_channels or
-// max_exr_decoded_bytes.
+// any others, such as alpha. The image is the file's data window, whatever its origin; the display
+// window is ignored, as every file write_exr writes has the two equal. Throws std::runtime_error if
+// the file cannot be read, is larger than max_exr_file_bytes, is not such an EXR file (tiled,
+// multi-part, deep, subsampled, or without R, G and B), or exceeds max_image_side,
+// max_image_pixels, max_exr_channels or max_exr_decoded_bytes.
 Image read_exr(const std::filesystem::path& path);
 
 // The same, from the bytes of a file in memory. read_exr reads the file and calls this; the fuzz
@@ -59,7 +61,8 @@ Image read_exr_from_memory(std::span<const std::byte> bytes);
 // Writes an 8-bit sRGB PNG for display: every channel is multiplied by exposure_scale(ev100),
 // tone mapped with pbr_neutral and encoded with linear_to_srgb8, the pipeline of colour.hpp.
 // ev100 is the exposure of a physical camera (EV100 8 maps 307.2 nits to 1 before tone mapping).
-// Throws std::runtime_error if the file cannot be written.
+// Throws std::invalid_argument if ev100 is not finite, and std::runtime_error if the file cannot
+// be written.
 void write_png(const Image& image, const std::filesystem::path& path, double ev100);
 
 } // namespace cs
