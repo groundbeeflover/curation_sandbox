@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Every public header of cs/world/, compiled by a target that links what the engine and the GPU
+// tiers declare (core, world, light, material) and nothing else: geom comes only through world's
+// re-export, and doc must not come at all (#61). libs/world/CMakeLists.txt generates the
+// includes below from the headers it finds, so a new header is checked without editing a list.
+
+@world_includes@
+
+#if !__has_include(<cs/geom/mesh.hpp>)
+#error "geom must be reachable through cs::world's exports"
+#endif
+
+#if __has_include(<cs/doc/document.hpp>)
+#error "cs::doc is reachable through cs::world: the engine and the GPU must never see the document"
+#endif
