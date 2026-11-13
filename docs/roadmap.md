@@ -196,6 +196,7 @@ Bold IDs are on the critical path.
 | M1-39 | Build Embree and Slang in release only, through overlay triplets | build | chore | S | agent | M1-38 | `triplets/`, `vcpkg-configuration.json`, `.github/workflows/ci.yml`, `docs/dependencies.md` |
 | M1-40 | Private external libraries, and third_party/ from the root | build | chore | S | agent | M1-35, M1-02, M1-41 | `cmake/CsModule.cmake`, `cmake/tests/module_glob.cmake`, `cmake/tests/module_glob/`, `CMakeLists.txt`, `third_party/`, `libs/core/CMakeLists.txt`, `libs/assets/CMakeLists.txt`, `docs/product/blueprint.md`, `CLAUDE.md` |
 | M1-41 | Link vcpkg's libtiff, not the system's, and check every vcpkg library | build | bug | S | agent | M1-02 | `libs/assets/CMakeLists.txt`, `cmake/CsVcpkgPackages.cmake` |
+| M1-42 | Defaulted equality for meshes, materials and spots | world | chore | S | agent | M1-13 | `libs/geom/include/cs/geom/mesh.hpp`, `libs/material/include/cs/material/painting_material.hpp`, `libs/light/include/cs/light/distribution.hpp`, `libs/world/include/cs/world/world.hpp`, `libs/world/src/world.cpp`, `libs/world/tests/test_determinism.cpp` |
 
 ### Task graph
 
@@ -235,6 +236,7 @@ graph LR
     M1_17["M1-17 cs-render: headless renders and ..."]
     M1_32["M1-32 The skeleton test scene and its ..."]
     M1_37["M1-37 Per-run temporary folders in the..."]
+    M1_42["M1-42 Defaulted equality for meshes, m..."]
   end
   subgraph E1_4["E1.4 First light on the GPU"]
     M1_19["M1-19 Vulkan device bootstrap, headles..."]
@@ -325,6 +327,7 @@ graph LR
   M1_02 --> M1_40
   M1_41 --> M1_40
   M1_02 --> M1_41
+  M1_13 --> M1_42
   classDef crit stroke:#b60205,stroke-width:3px
   class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_31 crit
   linkStyle 4,14,17,20,21,25,53,57,60 stroke:#b60205,stroke-width:3px
@@ -345,7 +348,7 @@ A lane is a group of tasks that touch different files, so they can run in parall
 | 0 | at once | build (M1-01, M1-33), gpu spike (M1-03), ui spike (M1-04) |
 | 1 | M1-01 merged | build (M1-02, M1-34, M1-35), core (M1-05, M1-06), doc (M1-08), geom (M1-10), light (M1-11), gpu (M1-36, once M1-03 frees the lane), editor (M2-10, M2-12 from M2, which need only the layout) |
 | 2 | M1-02, M1-05, M1-08, M1-36 merged | core (M1-07), doc (M1-32 → M1-37, M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30 → M1-38 → M1-39, M1-41 → M1-40) |
-| 3 | M1-13 merged | engine (M1-15 → M1-17), gpu (M1-21 → M1-22, M1-23), editor (M1-24, M1-25) |
+| 3 | M1-13 merged | engine (M1-15 → M1-17), gpu (M1-21 → M1-22, M1-23), editor (M1-24, M1-25), world (M1-42) |
 | 4 | M1-22 merged | ui (M1-26 → M1-27), build (M1-18, M1-28, M1-29 → M1-31) |
 
 Three sessions are never short of work after stage 0: from stage 1 on, at least five lanes are
@@ -420,6 +423,7 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-36 | Incremental GPU scene updates | gpu | feature | M | agent | M2-24, M2-27 | `libs/gpu/src/scene.cpp`, `libs/gpu/src/scene_update.cpp`, `libs/gpu/include/cs/gpu/scene.hpp`, `libs/gpu/tests/test_scene_update.cpp` |
 | M2-37 | Lux on every work in the app | ui | feature | S | agent | M2-28, M2-13 | `libs/ui/src/features/lux_bridge.cpp`, `libs/ui/src/features/checklist_panel.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_lux_ui.cpp`, `docs/product/screens/m2-gallery-50.png` |
 | M2-38 | Read project.json in bounded memory | doc | bug | M | agent | M2-22 | `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/project_io.hpp`, `libs/doc/tests/test_project_io_memory.cpp` |
+| M2-39 | Automatic exposure in the viewport | gpu | feature | M | agent | M1-22, M1-27 | `libs/gpu/include/cs/gpu/auto_exposure.hpp`, `libs/gpu/src/auto_exposure.cpp`, `libs/gpu/shaders/auto_exposure.slang`, `libs/gpu/tests/test_auto_exposure.cpp`, `libs/ui/src/features/auto_exposure.cpp`, `libs/ui/tests/test_auto_exposure_ui.cpp` |
 
 ### Task graph
 
@@ -474,6 +478,7 @@ graph LR
     M2_29["M2-29 The gallery-50 benchmark scene a..."]
     M2_36["M2-36 Incremental GPU scene updates"]
     M2_37["M2-37 Lux on every work in the app"]
+    M2_39["M2-39 Automatic exposure in the viewport"]
   end
   M2_06 --> M2_03
   M2_02 --> M2_04
@@ -548,7 +553,7 @@ assets (M2-09), editor (M2-10 and M2-12 if not already done during M1), gpu (M2-
 | assets | M2-09 → M2-32 |
 | world | M2-31 → M2-08 → M2-24 |
 | editor | M2-10, M2-12 → M2-33; M2-14 → M2-15 → M2-16 → M2-17; M2-02, M2-03, M2-18; M2-30 last |
-| gpu | M2-19; M2-26 → M2-27 → M2-36 |
+| gpu | M2-19; M2-26 → M2-27 → M2-36; M2-39 (after M1-27) |
 | engine | M2-28 after M2-29 |
 | ui | M2-11 → M2-13 → M2-37; M2-04 → M2-34; M2-20 → M2-35; M2-25 |
 | build | M2-29 |
