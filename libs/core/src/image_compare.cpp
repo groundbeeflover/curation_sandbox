@@ -83,7 +83,6 @@ ImageComparison compare(const Image& reference, const Image& test) {
     // In double, so that sums of float differences are exact for small images and NaN carries.
     double sum = 0.0;
     double max = 0.0;
-    bool any_nan = false;
     for (int y = 0; y < reference.height(); ++y) {
         for (int x = 0; x < reference.width(); ++x) {
             const Rgb& a = reference.at(x, y);
@@ -91,8 +90,7 @@ ImageComparison compare(const Image& reference, const Image& test) {
             for (const double d :
                  {std::abs(double{a.r} - double{b.r}), std::abs(double{a.g} - double{b.g}),
                   std::abs(double{a.b} - double{b.b})}) {
-                sum += d;
-                any_nan = any_nan || std::isnan(d);
+                sum += d; // Every d is >= 0 or NaN, so a NaN carries into the sum.
                 max = d > max ? d : max;
             }
         }
@@ -101,7 +99,7 @@ ImageComparison compare(const Image& reference, const Image& test) {
     ImageComparison result;
     const double samples = 3.0 * reference.width() * reference.height();
     result.mean_absolute_error = sum / samples;
-    result.max_error = any_nan ? std::numeric_limits<double>::quiet_NaN() : max;
+    result.max_error = std::isnan(sum) ? std::numeric_limits<double>::quiet_NaN() : max;
     result.mean_flip = mean_flip(reference, test);
     return result;
 }

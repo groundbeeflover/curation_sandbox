@@ -69,6 +69,9 @@ struct ExrImage {
     ExrImage& operator=(const ExrImage&) = delete;
 };
 
+constexpr std::string_view not_single_part_scanline =
+    "only single-part scanline files are read, not multi-part, deep or tiled ones";
+
 [[noreturn]] void refuse(std::string_view reason) {
     throw std::runtime_error("not a readable EXR image: " + std::string(reason));
 }
@@ -76,75 +79,34 @@ struct ExrImage {
 } // namespace
 
 void write_exr(const Image& image, const std::filesystem::path& path, ExrChannels channels) {
-    const int width = image.width();
-    const int height = image.height();
-    const std::size_t pixels = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-
-    // EXR readers expect channels in alphabetical order, so B, G, R. A half file is clamped
-    // to the half range here; tinyexr then converts each float to the nearest half.
+    // Interleaved RGB, as tinyexr's SaveEXRToMemory takes it; it stores the channels in the
+    // B, G, R order readers expect. A half file is clamped to the half range here; tinyexr then
+    // rounds each float to the nearest half.
     const bool half = channels == ExrChannels::half;
-    std::array<std::vector<float>, 3> planes;
-    for (auto& plane : planes) {
-        plane.resize(pixels);
-    }
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const Rgb& rgb = image.at(x, y);
-            const std::size_t i = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
-                                  static_cast<std::size_t>(x);
-            const std::array<float, 3> bgr = {rgb.b, rgb.g, rgb.r};
-            for (std::size_t c = 0; c < 3; ++c) {
-                // std::clamp would keep NaN as NaN too, but its result is unspecified for NaN.
-                const float v = bgr[c];
-                planes[c][i] = half && !std::isnan(v) ? std::clamp(v, -max_half, max_half) : v;
+    std::vector<float> rgb;
+    rgb.reserve(static_cast<std::size_t>(image.width()) * static_cast<std::size_t>(image.height()) *
+                3);
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const Rgb& pixel = image.at(x, y);
+            for (const float v : {pixel.r, pixel.g, pixel.b}) {
+                // std::clamp's result is unspecified for NaN, which must stay NaN.
+                rgb.push_back(half && !std::isnan(v) ? std::clamp(v, -max_half, max_half) : v);
             }
         }
     }
 
-    std::array<unsigned char*, 3> plane_pointers{};
-    for (std::size_t c = 0; c < 3; ++c) {
-        plane_pointers[c] = reinterpret_cast<unsigned char*>(planes[c].data());
-    }
-
-    EXRImage exr_image;
-    InitEXRImage(&exr_image);
-    exr_image.num_channels = 3;
-    exr_image.images = plane_pointers.data();
-    exr_image.width = width;
-    exr_image.height = height;
-
-    std::array<EXRChannelInfo, 3> infos{};
-    constexpr std::array<const char*, 3> names = {"B", "G", "R"};
-    const int stored = half ? TINYEXR_PIXELTYPE_HALF : TINYEXR_PIXELTYPE_FLOAT;
-    std::array<int, 3> input_types{};
-    std::array<int, 3> stored_types{};
-    for (std::size_t c = 0; c < 3; ++c) {
-        std::strncpy(infos[c].name, names[c], sizeof(infos[c].name) - 1);
-        infos[c].pixel_type = stored;
-        infos[c].x_sampling = 1;
-        infos[c].y_sampling = 1;
-        input_types[c] = TINYEXR_PIXELTYPE_FLOAT;
-        stored_types[c] = stored;
-    }
-
-    EXRHeader header;
-    InitEXRHeader(&header);
-    header.num_channels = 3;
-    header.channels = infos.data();
-    header.pixel_types = input_types.data();
-    header.requested_pixel_types = stored_types.data();
-    header.compression_type = TINYEXR_COMPRESSIONTYPE_ZIP;
-
     unsigned char* memory = nullptr;
     const char* error = nullptr;
-    const std::size_t size = SaveEXRImageToMemory(&exr_image, &header, &memory, &error);
+    const int size = SaveEXRToMemory(rgb.data(), image.width(), image.height(), 3, half ? 1 : 0,
+                                     &memory, &error);
     // tinyexr allocates the file with malloc.
     const std::unique_ptr<unsigned char, decltype(&std::free)> owned(memory, &std::free);
-    if (size == 0) {
+    if (size <= 0) {
         throw std::runtime_error("cannot encode " + path.string() +
                                  " as EXR: " + take_error(error, "unknown error"));
     }
-    write_bytes(path, memory, size);
+    write_bytes(path, memory, static_cast<std::size_t>(size));
 }
 
 Image read_exr(const std::filesystem::path& path) {
@@ -184,7 +146,7 @@ Image read_exr_from_memory(std::span<const std::byte> bytes) {
         refuse("no EXR signature");
     }
     if (version.multipart != 0 || version.non_image != 0 || version.tiled != 0) {
-        refuse("only single-part scanline files are read, not multi-part, deep or tiled ones");
+        refuse(not_single_part_scanline);
     }
 
     ExrHeader header;
@@ -193,8 +155,9 @@ Image read_exr_from_memory(std::span<const std::byte> bytes) {
         refuse(take_error(error, "the header cannot be parsed"));
     }
     const EXRHeader& h = header.header;
+    // tinyexr fills these from the version, but a hostile header must not get past either.
     if (h.tiled != 0 || h.multipart != 0 || h.non_image != 0) {
-        refuse("only single-part scanline files are read, not multi-part, deep or tiled ones");
+        refuse(not_single_part_scanline);
     }
 
     // The size, before anything is decoded. 64-bit, as a hostile window can overflow an int.

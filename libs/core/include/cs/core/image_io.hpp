@@ -40,7 +40,8 @@ enum class ExrChannels {
 };
 
 // Writes the image as a single-part, scanline OpenEXR file with channels R, G and B, compressed
-// losslessly (ZIP). Throws std::runtime_error if the file cannot be written.
+// losslessly with ZIP (images smaller than 16 x 16 are stored uncompressed). Throws
+// std::runtime_error if the file cannot be written.
 void write_exr(const Image& image, const std::filesystem::path& path,
                ExrChannels channels = ExrChannels::float32);
 

@@ -25,7 +25,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -75,12 +74,9 @@ std::filesystem::path missing_directory() {
 std::vector<std::byte> read_bytes(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     REQUIRE(file);
-    const std::vector<char> chars((std::istreambuf_iterator<char>(file)),
-                                  std::istreambuf_iterator<char>());
-    std::vector<std::byte> bytes(chars.size());
-    if (!chars.empty()) {
-        std::memcpy(bytes.data(), chars.data(), chars.size());
-    }
+    std::vector<std::byte> bytes(static_cast<std::size_t>(std::filesystem::file_size(path)));
+    file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    REQUIRE(file.gcount() == static_cast<std::streamsize>(bytes.size()));
     return bytes;
 }
 
