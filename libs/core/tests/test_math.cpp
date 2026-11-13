@@ -16,7 +16,6 @@
 #include <glm/vec4.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <type_traits>
@@ -59,17 +58,17 @@ namespace {
 // ulps (~1e-15), so 1e-6 is very loose but is the criterion's number. For float, unit length and
 // orthogonality come out within a few float ulps of 1 (6e-8 each), and the normal itself, made
 // in double and rounded to float, is unit only to ~1e-7; 1e-6 still holds with room to spare.
-template <typename T> constexpr double onb_tolerance = 1e-6;
+constexpr double onb_tolerance = 1e-6;
 
-template <typename T> struct OnbErrors {
+struct OnbErrors {
     double length = 0.0;     // | |t| - 1 |, | |b| - 1 |
     double orthogonal = 0.0; // |t.b|, |t.n|, |b.n|
     double handedness = 0.0; // max component of |t x b - n|
 };
 
-template <typename T> OnbErrors<T> onb_errors(const cs::Onb<T>& onb) {
+template <typename T> OnbErrors onb_errors(const cs::Onb<T>& onb) {
     const glm::vec<3, T> c = glm::cross(onb.tangent, onb.bitangent) - onb.normal;
-    OnbErrors<T> e;
+    OnbErrors e;
     e.length = std::max(std::abs(double(glm::length(onb.tangent)) - 1.0),
                         std::abs(double(glm::length(onb.bitangent)) - 1.0));
     e.orthogonal = std::max({std::abs(double(glm::dot(onb.tangent, onb.bitangent))),
@@ -85,10 +84,10 @@ template <typename T> void check_onb(const glm::vec<3, T>& normal) {
     // The normal is passed through untouched, bit for bit.
     CHECK(onb.normal == normal);
     CHECK(std::signbit(onb.normal.z) == std::signbit(normal.z));
-    const OnbErrors<T> e = onb_errors(onb);
-    CHECK(e.length <= onb_tolerance<T>);
-    CHECK(e.orthogonal <= onb_tolerance<T>);
-    CHECK(e.handedness <= onb_tolerance<T>);
+    const OnbErrors e = onb_errors(onb);
+    CHECK(e.length <= onb_tolerance);
+    CHECK(e.orthogonal <= onb_tolerance);
+    CHECK(e.handedness <= onb_tolerance);
 }
 
 template <typename T> std::vector<glm::vec<3, T>> random_unit_normals(int n, std::uint64_t seed) {
@@ -112,14 +111,14 @@ TEMPLATE_TEST_CASE("onb_from_normal gives an orthonormal right-handed basis for 
     constexpr int n = 10'000;
     const std::vector<glm::vec<3, T>> normals = random_unit_normals<T>(n, 61);
 
-    OnbErrors<T> worst;
+    OnbErrors worst;
     int changed_normals = 0;
     int below = 0;
     for (const glm::vec<3, T>& normal : normals) {
         const cs::Onb<T> onb = cs::onb_from_normal(normal);
         changed_normals += onb.normal == normal ? 0 : 1;
         below += normal.z < T(0) ? 1 : 0;
-        const OnbErrors<T> e = onb_errors(onb);
+        const OnbErrors e = onb_errors(onb);
         worst.length = std::max(worst.length, e.length);
         worst.orthogonal = std::max(worst.orthogonal, e.orthogonal);
         worst.handedness = std::max(worst.handedness, e.handedness);
@@ -127,9 +126,9 @@ TEMPLATE_TEST_CASE("onb_from_normal gives an orthonormal right-handed basis for 
     INFO("worst length error " << worst.length << ", orthogonality " << worst.orthogonal
                                << ", handedness " << worst.handedness);
     CHECK(changed_normals == 0);
-    CHECK(worst.length <= onb_tolerance<T>);
-    CHECK(worst.orthogonal <= onb_tolerance<T>);
-    CHECK(worst.handedness <= onb_tolerance<T>);
+    CHECK(worst.length <= onb_tolerance);
+    CHECK(worst.orthogonal <= onb_tolerance);
+    CHECK(worst.handedness <= onb_tolerance);
 
     // Both hemispheres were exercised (the method has a branch-free sign switch at z = 0):
     // about half are below; with n = 10^4 the standard deviation of the count is 50, so the
@@ -172,12 +171,10 @@ TEMPLATE_TEST_CASE("onb_from_normal with a z of -0 takes the lower hemisphere an
     // sign of zero must not produce a division by zero: copysign gives -1, and -1 / (-1 + -0) = 1.
     // A unit normal on the equator with z = -0 is the case that matters, and is orthonormal.
     const cs::Onb<T> at_zero = cs::onb_from_normal(V(0, 0, T(-0.0)));
-    CHECK(std::isfinite(at_zero.tangent.x));
-    CHECK(std::isfinite(at_zero.tangent.y));
-    CHECK(std::isfinite(at_zero.tangent.z));
-    CHECK(std::isfinite(at_zero.bitangent.x));
-    CHECK(std::isfinite(at_zero.bitangent.y));
-    CHECK(std::isfinite(at_zero.bitangent.z));
+    for (int i = 0; i < 3; ++i) {
+        CHECK(std::isfinite(at_zero.tangent[i]));
+        CHECK(std::isfinite(at_zero.bitangent[i]));
+    }
     CHECK(std::signbit(at_zero.normal.z));
 
     check_onb(V(1, 0, T(-0.0)));

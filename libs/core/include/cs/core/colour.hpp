@@ -19,7 +19,6 @@
 #include <glm/vec3.hpp>
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 
 namespace cs {
@@ -48,20 +47,30 @@ glm::dvec3 cct_to_linear_rgb(double kelvin);
 inline constexpr double cct_min_kelvin = 1667.0;
 inline constexpr double cct_max_kelvin = 25000.0;
 
-// The exposure, as EV100, at which a camera's light meter puts an average scene luminance in
-// nits at middle grey: EV100 = log2(L * S / K) with ISO S = 100 and the reflected-light meter
-// calibration K = 12.5 (Lagarde and de Rousiers, Moving Frostbite to PBR, 2014, section 4.5).
-// The luminance must be positive.
+// The camera behind EV100 (Lagarde and de Rousiers, Moving Frostbite to PBR, 2014, section 4.5):
+// ISO 100, a reflected-light meter calibrated with K = 12.5, and a sensor that saturates at
+// 78 / (S q) * 2^EV100 = 1.2 * 2^EV100 nits, with lens and vignetting factor q = 0.65.
+inline constexpr double ev100_iso = 100.0;
+inline constexpr double ev100_meter_calibration = 12.5;
+inline constexpr double ev100_saturation_factor = 78.0 / (ev100_iso * 0.65);
+
+// The darkest average luminance ev100_from_average_luminance meters, about a moonless night sky
+// (EV100 -10.3). A black frame, an empty room with the lights off, thus gets a finite exposure.
+inline constexpr double ev100_min_luminance_nits = 1e-4;
+
+// The exposure, as EV100, at which the light meter puts an average scene luminance in nits at
+// middle grey: EV100 = log2(L * S / K). Luminances below ev100_min_luminance_nits, and NaN, meter
+// as that minimum.
 inline double ev100_from_average_luminance(double average_luminance_nits) {
-    assert(average_luminance_nits > 0.0);
-    return std::log2(average_luminance_nits * 100.0 / 12.5);
+    const double nits = std::max(ev100_min_luminance_nits, average_luminance_nits);
+    return std::log2(nits * ev100_iso / ev100_meter_calibration);
 }
 
 // What to multiply linear RGB in nits by before tone mapping: H = 1 / L_max, where
-// L_max = 1.2 * 2^EV100 is the luminance that just saturates the sensor (78 / (S q) * 2^EV100
-// with q = 0.65; same reference). At EV100 8 a surface of 307 nits maps to 1.
+// L_max = 1.2 * 2^EV100 is the luminance that just saturates the sensor. At EV100 8 a surface of
+// 307 nits maps to 1.
 inline double exposure_scale(double ev100) {
-    return 1.0 / (1.2 * std::exp2(ev100));
+    return 1.0 / (ev100_saturation_factor * std::exp2(ev100));
 }
 
 // Khronos PBR Neutral tone mapping (github.com/KhronosGroup/ToneMapping, version of 2024):

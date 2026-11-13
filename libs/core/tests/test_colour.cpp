@@ -14,6 +14,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -190,7 +191,6 @@ TEST_CASE("cct_to_linear_rgb at 6500 K is not white", "[core][colour][accuracy]"
     // the blackbody is slightly magenta (pink) of white, with green the smallest channel; in
     // Rec. 709 it is roughly (1.043, 0.984, 1.035), off white by about 0.04. An implementation
     // that returns (1, 1, 1) there, or uses a daylight formula, fails.
-    // Note: the header comment says "slightly green of D65"; the locus says the opposite.
     const glm::dvec3 rgb = cs::cct_to_linear_rgb(6500.0);
     INFO("rgb " << rgb.r << ", " << rgb.g << ", " << rgb.b);
 
@@ -275,6 +275,17 @@ TEST_CASE("cct_to_linear_rgb clamps kelvin to [1667, 25000] and maps NaN to 1667
 }
 
 // --- Criterion 3: physical camera exposure -----------------------------------------------------
+
+TEST_CASE("EV100 of a black frame is finite", "[core][colour]") {
+    // A room with the lights off averages 0 nits; the meter reads its floor instead of -inf, so
+    // the exposure scale stays finite. NaN meters as the floor too.
+    const double floor_ev = std::log2(cs::ev100_min_luminance_nits * 8.0);
+    for (const double nits : {0.0, -1.0, 1e-9, std::numeric_limits<double>::quiet_NaN()}) {
+        INFO("nits " << nits);
+        CHECK_THAT(cs::ev100_from_average_luminance(nits), WithinAbs(floor_ev, 1e-12));
+        CHECK(std::isfinite(cs::exposure_scale(cs::ev100_from_average_luminance(nits))));
+    }
+}
 
 TEST_CASE("EV100 and exposure scale at 1 nit and 1000 nits", "[core][colour][accuracy]") {
     // EV100 = log2(L * 100 / 12.5) = log2(8 L); H = 1 / (1.2 * 2^EV100).
