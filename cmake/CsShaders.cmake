@@ -54,7 +54,7 @@ function(cs_add_shaders target directory)
         list(APPEND headers "${header}")
         string(APPEND includes "#include \"${stem}.spv.h\"\n")
         string(APPEND entries
-            "    EmbeddedShader{\"${stem}\", std::span(${array}, ${array}_sizeInBytes / 4)},\n")
+            "    EmbeddedShader{\"${stem}\", std::span<const std::uint32_t>(${array})},\n")
         math(EXPR count "${count} + 1")
     endforeach()
 

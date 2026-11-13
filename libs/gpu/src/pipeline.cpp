@@ -198,8 +198,6 @@ GraphicsPipeline::~GraphicsPipeline() {
 void GraphicsPipeline::destroy() noexcept {
     vkDestroyPipeline(device_, pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, layout_, nullptr);
-    pipeline_ = VK_NULL_HANDLE;
-    layout_ = VK_NULL_HANDLE;
 }
 
 void GraphicsPipeline::bind(VkCommandBuffer commands) const {

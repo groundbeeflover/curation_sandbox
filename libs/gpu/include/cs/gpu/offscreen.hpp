@@ -84,6 +84,8 @@ class OffscreenTarget {
     VkFence fence_ = VK_NULL_HANDLE;
     bool pending_ = false; // submitted, and the fence not yet waited for
 
+    // Waits for the submitted frame, then resets the fence. Throws as render() does.
+    void wait_for_frame();
     void destroy() noexcept;
 };
 

@@ -2,10 +2,10 @@
 
 #include "cs/gpu/offscreen.hpp"
 
+#include <glm/gtc/packing.hpp>
+
 #include <algorithm>
 #include <array>
-#include <bit>
-#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -34,22 +34,6 @@ bool supports(VkPhysicalDevice physical_device, VkFormat format, VkFormatFeature
     VkFormatProperties properties{};
     vkGetPhysicalDeviceFormatProperties(physical_device, format, &properties);
     return (properties.optimalTilingFeatures & features) == features;
-}
-
-// IEEE 754 binary16 to binary32, exactly: every half float is a float.
-float half_to_float(std::uint16_t half) {
-    const std::uint32_t sign = static_cast<std::uint32_t>(half & 0x8000u) << 16;
-    const std::uint32_t exponent = (half >> 10) & 0x1fu;
-    const std::uint32_t mantissa = half & 0x3ffu;
-    if (exponent == 0) {
-        // Zero or subnormal: mantissa * 2^-24.
-        const float magnitude = std::ldexp(static_cast<float>(mantissa), -24);
-        return sign != 0 ? -magnitude : magnitude;
-    }
-    if (exponent == 0x1f) // infinity or NaN, keeping NaN's payload
-        return std::bit_cast<float>(sign | 0x7f800000u | (mantissa << 13));
-    // Rebias the exponent from 15 to 127.
-    return std::bit_cast<float>(sign | ((exponent + 112) << 23) | (mantissa << 13));
 }
 
 VkImageView create_view(VkDevice device, VkImage image, VkFormat format,
@@ -192,30 +176,20 @@ void OffscreenTarget::destroy() noexcept {
     vkDestroyImageView(device_, colour_view_, nullptr);
     if (colour_image_ != VK_NULL_HANDLE)
         vmaDestroyImage(allocator_, colour_image_, colour_allocation_);
-    fence_ = VK_NULL_HANDLE;
-    pool_ = VK_NULL_HANDLE;
-    commands_ = VK_NULL_HANDLE;
-    readback_ = VK_NULL_HANDLE;
-    readback_texels_ = nullptr;
-    depth_view_ = VK_NULL_HANDLE;
-    depth_image_ = VK_NULL_HANDLE;
-    colour_view_ = VK_NULL_HANDLE;
-    colour_image_ = VK_NULL_HANDLE;
+}
+
+void OffscreenTarget::wait_for_frame() {
+    const VkResult result = vkWaitForFences(device_, 1, &fence_, VK_TRUE, frame_timeout_ns);
+    if (result == VK_TIMEOUT)
+        throw std::runtime_error("OffscreenTarget: the GPU did not finish a frame within a minute");
+    check(result, "waiting for the frame");
     pending_ = false;
+    check(vkResetFences(device_, 1, &fence_), "resetting the fence");
 }
 
 Image OffscreenTarget::render(const DrawFunction& draw, const ClearValues& clear) {
-    // The previous frame, if its wait timed out, must finish before the command buffer and the
+    // A previous frame whose wait timed out must finish before the command buffer and the
     // fence are reused.
-    const auto wait_for_frame = [this] {
-        const VkResult result = vkWaitForFences(device_, 1, &fence_, VK_TRUE, frame_timeout_ns);
-        if (result == VK_TIMEOUT)
-            throw std::runtime_error("OffscreenTarget: the GPU did not finish a frame within a "
-                                     "minute");
-        check(result, "waiting for the frame");
-        pending_ = false;
-        check(vkResetFences(device_, 1, &fence_), "resetting the fence");
-    };
     if (pending_)
         wait_for_frame();
 
@@ -346,8 +320,8 @@ Image OffscreenTarget::render(const DrawFunction& draw, const ClearValues& clear
     const std::uint16_t* texel = readback_texels_;
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x, texel += channels)
-            image.at(x, y) = {half_to_float(texel[0]), half_to_float(texel[1]),
-                              half_to_float(texel[2])};
+            image.at(x, y) = {glm::unpackHalf1x16(texel[0]), glm::unpackHalf1x16(texel[1]),
+                              glm::unpackHalf1x16(texel[2])};
     }
     return image;
 }
