@@ -37,8 +37,10 @@ class Document;
 namespace cs::world {
 
 // The box frame that stands in for every frame style until M2-08, with the skeleton scene's
-// numbers (M1-10): members 6 cm wide and 4 cm deep, overlapping the work by 5 mm, the low end
-// of ADR 0003's 5 to 10 mm. The colour is a dark stained wood. [C]
+// numbers (M1-10): members 6 cm wide and 4 cm deep, overlapping the work by 5 mm, the low end of
+// ADR 0003's 5 to 10 mm. A work deeper than 4 cm gets a frame as deep as itself, so that its
+// face is never in front of the frame's. The colour is a dark stained wood, and a framing's
+// colour is clamped to at most 1 in each channel, with a problem. [C]
 struct DefaultFrame {
     double member_width_m = 0.06;
     double depth_m = 0.04;

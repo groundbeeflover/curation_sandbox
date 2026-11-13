@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -228,4 +229,41 @@ TEST_CASE("problems: a luminaire aimed at its own position is left out, with one
     CHECK(world.instances.size() == 3);
     CHECK(world.exhibits.size() == 1);
     CHECK(world.cameras.size() == 1);
+}
+
+TEST_CASE("problems: a frame colour brighter than white is shown white, with one problem",
+          "[world]") {
+    // The document allows any colour of at least 0 in each channel; a Lambertian surface reflects
+    // at most all the light it receives, and the engine's BRDF requires an albedo in [0, 1].
+    auto data = skeleton_data();
+    entity(data, chart_text).framing->colour = doc::LinearRgb{.r = 2.0, .g = 0.5, .b = 1.0};
+    World world;
+    REQUIRE_NOTHROW(world = compile(accepted(data)));
+    check_well_formed(world);
+
+    REQUIRE(world.problems.size() == 1);
+    CHECK(world.problems.front().entity == id(chart_text));
+    const Instance& frame = the_instance(world, id(chart_text), Part::frame);
+    const auto* lambert = std::get_if<LambertMaterial>(&material_of(world, frame));
+    REQUIRE(lambert != nullptr);
+    CHECK_THAT(lambert->albedo, VecWithin(dvec3(1.0, 0.5, 1.0), 0.0));
+}
+
+TEST_CASE("problems: are ordered by entity id, whatever kind of entity they come from", "[world]") {
+    // A second spot whose id sorts before the gallery's, aimed at its own position, and the
+    // gallery made L-shaped: one problem each, the spot's first.
+    constexpr std::string_view early_spot_text = "01a1cd0d-dc00-7000-8000-000000000000";
+    auto data = skeleton_data();
+    doc::Entity early_spot = entity(data, spot_text);
+    early_spot.placement = doc::OnCeiling{.room = uuid(gallery_text), .position_m = {2.0, 2.0}};
+    early_spot.luminaire->aim = doc::AimAtPoint{.point_m = {.x = 2.0, .y = 2.0, .z = 3.5}};
+    data.entities.emplace(uuid(early_spot_text), early_spot);
+    entity(data, gallery_text).room->outline_m = {{0.0, 0.0}, {6.0, 0.0}, {6.0, 2.0},
+                                                  {3.0, 2.0}, {3.0, 4.0}, {0.0, 4.0}};
+    World world;
+    REQUIRE_NOTHROW(world = compile(accepted(data)));
+
+    REQUIRE(world.problems.size() == 2);
+    CHECK(world.problems[0].entity == id(early_spot_text));
+    CHECK(world.problems[1].entity == id(gallery_text));
 }

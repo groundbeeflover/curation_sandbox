@@ -193,6 +193,22 @@ TEST_CASE("compile exhibits: a deep work's face stands out by its depth, and the
                VecWithin(glm::normalize(face_centre - spot_position), unit_tolerance));
 }
 
+TEST_CASE("compile exhibits: a work deeper than the default frame gets a frame as deep as itself",
+          "[world][accuracy]") {
+    // A panel 6 cm deep, its back at the 4 cm stand-off and its face at y = 0.10: the frame runs
+    // from the stand-off to the face, not to the default 4 cm, so the face is not in front of it.
+    auto data = skeleton_data();
+    work(data, chart_work_text).form.depth_m = 0.06;
+    const World world = compile(accepted(data));
+    check_well_formed(world);
+    CHECK(world.problems.empty());
+
+    const Box box = bounds(in_world(world, the_instance(world, id(chart_text), Part::frame)));
+    CHECK_THAT(box.min.y, WithinAbs(0.04, tolerance_m));
+    CHECK_THAT(box.max.y, WithinAbs(0.10, tolerance_m));
+    CHECK_THAT(the_exhibit(world, id(chart_text)).face_centre_m.y, WithinAbs(0.10, tolerance_m));
+}
+
 TEST_CASE("compile exhibits: a work without an image is a placeholder with no image", "[world]") {
     auto data = skeleton_data();
     work(data, chart_work_text).image.reset();

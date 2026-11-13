@@ -130,6 +130,8 @@ class Compiler {
                 add_camera(id, *entity.viewpoint);
             }
         }
+        // Each pass adds problems in id order; together, they are put in it too.
+        std::ranges::stable_sort(world_.problems, {}, &Problem::entity);
         return std::move(world_);
     }
 
@@ -203,13 +205,14 @@ class Compiler {
         const geom::FlatWork flat{work->form.width_m, work->form.height_m,
                                   work->form.depth_m.value_or(0.0)};
         glm::dmat4 transform;
+        geom::Mesh face_mesh;
         try {
             transform = hang(*wall_entity->wall, *on_wall);
+            face_mesh = geom::painting_quad(own_coordinates(), flat, {});
         } catch (const std::logic_error& error) {
             problem(id, std::string("the work cannot be hung: ") + error.what());
             return;
         }
-        geom::Mesh face_mesh = geom::painting_quad(own_coordinates(), flat, {});
 
         Exhibit exhibit;
         exhibit.entity = to_id(id);
@@ -246,9 +249,11 @@ class Compiler {
 
     void add_frame(const doc::Uuid& id, const doc::Framing& framing, const geom::FlatWork& work,
                    const glm::dmat4& transform, Exhibit& exhibit) {
-        const geom::BoxFrame frame{work.width_m, work.height_m,
-                                   framing.width_m.value_or(default_frame.member_width_m),
-                                   default_frame.depth_m, default_frame.rebate_m};
+        const geom::BoxFrame frame{
+            work.width_m, work.height_m, framing.width_m.value_or(default_frame.member_width_m),
+            // At least as deep as the work, whose face it must not
+            // stand behind.
+            std::max(default_frame.depth_m, work.depth_m), default_frame.rebate_m};
         geom::Mesh mesh;
         glm::dvec2 sight_m;
         try {
@@ -259,8 +264,15 @@ class Compiler {
                             error.what());
             return;
         }
-        const LambertMaterial finish{framing.colour ? to_glm(*framing.colour)
-                                                    : glm::dvec3(default_frame.albedo)};
+        LambertMaterial finish{glm::dvec3(default_frame.albedo)};
+        if (framing.colour) {
+            // The document allows any colour of at least 0; a surface reflects at most all the
+            // light it receives.
+            finish.albedo = glm::min(to_glm(*framing.colour), glm::dvec3(1.0));
+            if (finish.albedo != to_glm(*framing.colour)) {
+                problem(id, "the frame's colour is brighter than white; it is shown white");
+            }
+        }
         exhibit.frame_instance = add_instance(id, Part::frame, std::move(mesh), finish, transform);
         exhibit.visible = {-sight_m / 2.0, sight_m / 2.0};
     }
