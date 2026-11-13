@@ -1,6 +1,7 @@
 # 0011. The Qt viewport spike: keep Qt Widgets around our own Vulkan swapchain
 
-- Status: proposed; accepted when the owner's Windows result is in (section "Windows")
+- Status: accepted (the owner reported the Windows result on 2026-11-12 and confirmed it on
+  2026-11-13; section "Windows")
 - Date: 2026-11-11
 - Decides: milestone 1 task M1-04 (issue #39), which confirms or replaces the toolkit choice of
   [ADR 0006](0006-ui-and-interaction.md) before any UI is built on it
@@ -100,7 +101,8 @@ What the table does not cover, and why:
 | --- | --- | --- |
 | Wayland | `zwp_pointer_constraints_v1` lock + `zwp_relative_pointer_v1`, cursor hidden | **Works.** niri granted the lock (`locked` event) in every run; 266 unaccelerated relative-motion events arrived in a 3 s run while the mouse was in use; the compositor sent `unlocked` when focus moved away, and Esc leaves walk mode. How it feels over a longer walk is for the owner to judge. [wayland-walk](0011-qt-vulkan-viewport/wayland-walk.png) shows the inspector reporting "locked by compositor" |
 | X11 on Xwayland | `QWindow::setMouseGrabEnabled`, hidden cursor, `QCursor::setPos` back to the centre after each move | **Does not work.** The X server reports the warp as done (`warp to 802,1636 -> cursor at 802,1636`), but the next motion events follow the real Wayland pointer, not the warped one (positions 293, 251, 210… against a centre of 302), so the deltas accumulate the pointer's distance from the centre instead of its motion |
-| Native X11, Windows | grab and warp, as above | Untested here; warping works on native X11 and on Windows, but see "What M1-26 and M1-27 must do differently" for why raw input is better |
+| Windows | grab and warp, as above | **Works** (the owner's hand check on the RTX 2060): the cursor is hidden, the relative-event count climbs, the cursor never escapes or shows at the window edge, motion is smooth; Esc brings the cursor back and Alt-Tab ends walk mode. Raw input is still better; see "What M1-26 and M1-27 must do differently" |
+| Native X11 | grab and warp, as above | Untested: no Xorg session was available |
 
 Qt has no public API for relative mouse motion or pointer locking. The Wayland path binds the
 two protocols itself, generated with `qt6_generate_wayland_protocol_client_sources` and bound
@@ -112,13 +114,51 @@ must be checked again at every Qt upgrade.
 
 ## Windows (RTX 2060)
 
-**Pending: the owner's result.** The exact commands are in [the comment on
-#39](https://github.com/groundbeeflover/curation_sandbox/issues/39#issuecomment-6783358146). They
-use the `qt-vulkan-spike-windows` build from CI (Qt 6.10.3, bundled with `windeployqt`), so nothing
-has to be installed. This section will record, from the owner's reply: the status lines and
-screenshots at the display's own scale and at 1.5 and 2.0; a resize by dragging a window edge;
-moving between displays of different scale, if there are two; and walk mode (right-click the
-viewport, move the mouse, Esc), where Windows uses the grab-and-warp path.
+The owner ran the build from CI (`qt-vulkan-spike-windows` from run 42932204772: Qt 6.10.3,
+bundled with `windeployqt`) on the desktop with the RTX 2060, following the commands in
+[a comment on #39](https://github.com/groundbeeflover/curation_sandbox/issues/39#issuecomment-6783358146),
+and [reported the results](https://github.com/groundbeeflover/curation_sandbox/issues/39#issuecomment-6839052083)
+on 2026-11-12.
+
+**Scripted runs** (display scaling 100%; `--resize-cycle`, with `QT_SCALE_FACTOR` for 1.5 and
+2.0):
+
+| Scale | Viewport (logical) | Swapchain extent | Swapchains in the cycle | Validation messages |
+| --- | --- | --- | --- | --- |
+| 1.0 | 816 × 657 | 816 × 657 | 5 | 0, layer unknown |
+| 1.5 | 816 × 657 | 1224 × 986 | 5 | 0, layer unknown |
+| 2.0 | 816 × 657 | 1632 × 1314 | 5 | 0, layer unknown |
+
+```text
+[final] platform=windows device="NVIDIA GeForce RTX 2060" screen_scale=1 dpr=1 viewport=816x657 extent=816x657 swapchains=5 frames=194 validation=0 pointer="free" relative_events=0 relative_total=0.0,0.0 error=""
+[final] platform=windows device="NVIDIA GeForce RTX 2060" screen_scale=1.5 dpr=1.5 viewport=816x657 extent=1224x986 swapchains=5 frames=195 validation=0 pointer="free" relative_events=0 relative_total=0.0,0.0 error=""
+[final] platform=windows device="NVIDIA GeForce RTX 2060" screen_scale=2 dpr=2 viewport=816x657 extent=1632x1314 swapchains=5 frames=189 validation=0 pointer="free" relative_events=0 relative_total=0.0,0.0 error=""
+```
+
+Each extent is the logical size times the device pixel ratio, rounded (657 × 1.5 = 985.5, so
+986), as on Linux. Five swapchains are the first one plus one for each of the four resizes, and
+no run reported an error. Windows reports the swapchain size itself (`currentExtent`), and it
+agreed with ours every time.
+
+**Hand checks**, reported by the owner as passing:
+
+- a. Dragging a window edge back and forth: the triangle stays sharp and undistorted, with no
+  black or garbage frames.
+- b. Moving between displays of different scale: the reply does not say whether two such
+  displays were attached, so this stays unconfirmed and is left to M1-26's acceptance test.
+- c. Walk mode (grab, hidden cursor, warp back to the centre: the prototype's Windows path): the
+  cursor is hidden, the relative-event count climbs, the cursor never escapes or shows at the
+  window edge, and the motion is smooth.
+- d. Esc brings the cursor back; Alt-Tab while walking ends walk mode.
+
+**Validation on Windows is unknown.** `validation=` counts messages from the Khronos validation
+layer, which Windows has only when the LunarG Vulkan SDK is installed. The owner is not sure it
+was. Without the layer the count is 0 because nothing checked. The evidence that the viewport
+code uses Vulkan correctly comes from the Linux runs, where the layer was on (RADV and lavapipe,
+0 messages). Point 8 below makes sure M1-26 cannot be misread the same way.
+
+Not reported: the screenshots and the driver version. The status lines carry what the
+screenshots were to show (device, scale, viewport and swapchain sizes).
 
 ## CI: an offscreen QTest with a screenshot
 
@@ -151,7 +191,8 @@ In GitHub Actions, workflow `Spike Qt Vulkan` on the spike branch,
   [offscreen-ci](0011-qt-vulkan-viewport/offscreen-ci.png).
 - **Windows (`windows-2022`)**: builds with MSVC 2022 and bundles the program with `windeployqt`
   (artifact `qt-vulkan-spike-windows`, 23 MB, for the owner's run). The hosted runner has no
-  Vulkan loader, so the test skips there.
+  Vulkan loader, so the test skips there; [ADR 0010](0010-gpu-tests-in-ci.md) shows how to
+  register lavapipe on that runner, which M1-31 needs for the app's UI tests.
 
 **How Qt is installed**: [`jurplel/install-qt-action@v4`](https://github.com/jurplel/install-qt-action)
 (v4.5.0, which runs aqtinstall 3.3) with `cache: true`. No Qt account is needed, and no modules
@@ -174,8 +215,8 @@ Four things went wrong on the way, and M1-26 and M1-31 should not repeat them:
   `/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`, which does not exist on Ubuntu 24.04. The file
   is `lvp_icd.json` there, and on Arch too. The loader found no driver, and the test's
   no-device skip hid it. CI now sets `SPIKE_REQUIRE_VULKAN=1`, which turns that skip into a
-  failure. The same wrong path is in the GPU-test command in `CLAUDE.md`, to be corrected by the
-  task that sets up GPU CI (M1-29).
+  failure. [ADR 0010](0010-gpu-tests-in-ci.md) hit the same path, and `CLAUDE.md` now names
+  `lvp_icd.json`.
 - aqtinstall cannot install Qt 6.11 or later on Windows (see point 1 below).
 - The Wayland code was silently left out of the Linux build until `libwayland-dev` was
   installed; the CMake now says which Qt package was missing.
@@ -184,14 +225,16 @@ Four things went wrong on the way, and M1-26 and M1-31 should not repeat them:
 
 ## Conclusion: keep Qt Widgets
 
-Everything ADR 0006 asked of the spike works on Linux: the dock and menus beside a viewport whose
-instance, device and swapchain our code owns; resize; scales 1.0, 1.5 and 2.0 on Wayland and X11,
-and the panel's fractional 1.25 on Wayland; walking with a locked pointer on Wayland; and a headless
-UI test with a screenshot in CI. No validation message was reported in any run. The one failure,
+Everything ADR 0006 asked of the spike works on Linux and Windows: the dock and menus beside a
+viewport whose instance, device and swapchain our code owns; resize; scales 1.0, 1.5 and 2.0 on
+Wayland, X11 and Windows, and the panel's fractional 1.25 on Wayland; walking with a locked
+pointer on Wayland and with grab and warp on Windows; and a headless UI test with a screenshot in
+CI. The validation layer reported nothing in any Linux run; on Windows it may not have been
+installed. Moving between displays of different scale is unconfirmed on both. The one failure,
 warp-based mouse capture on Xwayland, is a choice of input mechanism, and the fallbacks would not
 avoid it: Qt Quick has the same input layer, and Dear ImGui's backends (SDL or GLFW) solve it with
-the same protocols and raw input that M1-27 can use here. Neither fallback is needed. ADR 0006's
-toolkit stands, and its status can move to accepted once the Windows result agrees.
+the same protocols and raw input that M1-27 can use here. Neither fallback is needed: this
+record confirms ADR 0006's toolkit.
 
 ## What M1-26 and M1-27 must do differently
 
@@ -237,10 +280,15 @@ For **M1-26** (application shell):
 7. Under a tiling compositor (niri, Hyprland, Sway) `QWidget::resize` is only a request: UI tests
    must not assume the window has the size they asked for, which is one more reason they run on
    `offscreen`.
+8. **Report whether the validation layer is active, next to its message count.** The prototype
+   printed "validation layer not installed" once to the console and then `validation=0` in every
+   status line, so a Windows run without the SDK reads like a clean one. The app's debug
+   overlay, UI tests and logs should show "validation: off" instead of a count when the layer
+   did not load, and UI tests that claim zero messages should fail when it is off.
 
 For **M1-27** (walking, `camera_input.cpp`):
 
-8. **Relative mouse mode needs one backend per platform**, and never warp-to-centre on Wayland
+9. **Relative mouse mode needs one backend per platform**, and never warp-to-centre on Wayland
    or Xwayland:
    - Wayland: the pointer-constraints and relative-pointer protocols, as in the prototype; use the
      unaccelerated deltas.
@@ -253,15 +301,15 @@ For **M1-27** (walking, `camera_input.cpp`):
      session is running, so this backend matters mostly for Xorg users.
    - A last resort on every platform: drag-to-look (hold a button; deltas from absolute motion
      while the button is down), which needs no capture.
-9. Leave walk mode on Esc, on focus loss and on the compositor's `unlocked` event, and say so
-   in the viewport ("Esc to stop walking"). The prototype handles Esc and focus loss but only
-   records `unlocked`, which leaves the cursor hidden and walking still on after an Alt-Tab on
-   Wayland.
+10. Leave walk mode on Esc, on focus loss and on the compositor's `unlocked` event, and say so
+    in the viewport ("Esc to stop walking"). The prototype handles Esc and focus loss but only
+    records `unlocked`, which leaves the cursor hidden and walking still on after an Alt-Tab on
+    Wayland.
 
 ## Revisit
 
-When the owner's Windows result is in (this record's status), when Qt is upgraded (the private
-surface lookup), and if a later Qt adds a public relative-pointer API.
+When Qt is upgraded (the private surface lookup), and if a later Qt adds a public
+relative-pointer API.
 
 ## Sources
 
