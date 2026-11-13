@@ -115,12 +115,18 @@ bool gpu_required() {
     return value && !value->empty() && *value != "0";
 }
 
-// The options every test starts from: in a debug build under CS_REQUIRE_GPU=1 the validation
-// layer must load (ADR 0011); otherwise it is used when installed.
+// In a debug build under CS_REQUIRE_GPU=1 the validation layer must load (ADR 0011). A
+// function, not an `if` on debug_build: MSVC warns (C4127) on a constant in a condition.
+bool validation_layer_required() {
+    return debug_build && gpu_required();
+}
+
+// The options every test starts from: the layer required as above, otherwise used when
+// installed.
 DeviceOptions test_options() {
     DeviceOptions options;
     options.validation =
-        gpu_required() && debug_build ? Validation::required : Validation::if_available;
+        validation_layer_required() ? Validation::required : Validation::if_available;
     return options;
 }
 
@@ -587,7 +593,7 @@ TEST_CASE("device: the report gives name, driver, API version, ray query and val
     // Only a debug build with CS_REQUIRE_GPU=1 requires the layer. Elsewhere this checks nothing,
     // but does not SKIP: a skipped section would mark the whole report test skipped, and the
     // report is what says "validation: off" when the layer is missing.
-    if (debug_build && gpu_required()) {
+    if (validation_layer_required()) {
         SECTION("in a debug build with CS_REQUIRE_GPU=1 the validation layer is active") {
             CHECK(report.validation);
         }
