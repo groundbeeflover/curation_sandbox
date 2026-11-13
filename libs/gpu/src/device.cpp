@@ -217,6 +217,9 @@ ValidationHandler set_validation_handler(ValidationHandler handler) {
 }
 
 Device::Device(const DeviceOptions& options) {
+    // Checked first, so a mistaken name creates nothing and is not mistaken for "another Device
+    // is alive" (std::invalid_argument is a std::logic_error too).
+    const std::string name_filter = device_name_filter(options);
     if (device_alive.exchange(true))
         throw std::logic_error("cs::gpu::Device: another Device is alive; volk loads Vulkan "
                                "functions process-wide, so there is one at a time");
@@ -315,8 +318,7 @@ Device::Device(const DeviceOptions& options) {
                 "buffer device address" +
                 std::string(options.presentation ? " and VK_KHR_swapchain" : "") + ": " +
                 (devices ? std::string("none found") : devices.error().message()));
-        const vkb::PhysicalDevice chosen =
-            choose_device(devices.value(), device_name_filter(options));
+        const vkb::PhysicalDevice chosen = choose_device(devices.value(), name_filter);
         physical_device_ = chosen.physical_device;
 
         auto built_device = vkb::DeviceBuilder(chosen).build();
