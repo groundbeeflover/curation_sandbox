@@ -1666,6 +1666,35 @@ verification = [
 # =============================================================================================
 
 [[tasks]]
+id = "M1-42"
+epic = "E1.3"
+title = "Defaulted equality for meshes, materials and spots"
+area = "world"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-13"]
+touches = ["libs/geom/include/cs/geom/mesh.hpp", "libs/material/include/cs/material/painting_material.hpp", "libs/light/include/cs/light/distribution.hpp", "libs/world/include/cs/world/world.hpp", "libs/world/src/world.cpp", "libs/world/tests/test_determinism.cpp"]
+goal = "Comparing two render worlds compares every field, now and after fields are added. M1-13's world::operator== is written by hand because geom::Mesh, material::PaintingMaterial and light::GenericSpot have no equality of their own, so a field added to any of them later would be skipped silently, and \"compiling twice gives identical worlds\" (and later, renders identical across thread counts) could pass while something differs. Found in M1-13 (#137), Follow-ups."
+context = [
+  "M1-13 (#137): libs/world/src/world.cpp, the hand-written operator==, and its Follow-ups",
+  "C++20 defaulted comparison: `bool operator==(const T&) const = default;` compares every member in declaration order, including members added later",
+  "light::Distribution is an abstract interface; Luminaire holds a shared_ptr<const Distribution>, so worlds compare distributions by value, not by pointer",
+]
+acceptance = [
+  "geom::Mesh, material::PaintingMaterial and each of its layer structs, and light::GenericSpot define `operator==` as `= default`",
+  "world::operator== compares meshes, materials and spots through those operators (spots by value, through the shared distribution), and World's own structs use `= default` wherever their members allow, so no field of these types is listed by hand",
+  "test_determinism.cpp: changing any one of a mesh's positions, normals, UVs or indices, any PaintingMaterial parameter, or a spot's lumens, beam or field angle makes two otherwise equal worlds unequal (one section each)",
+  "`ctest --preset debug -L world`, `-L geom`, `-L material` and `-L light` pass, and so does `ctest --preset release`",
+]
+out_of_scope = ["Sharing identical meshes and materials between instances (M2-24)", "Equality for other modules' types"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L world && ctest --preset debug -L geom && ctest --preset debug -L material && ctest --preset debug -L light",
+  "cmake --preset release && cmake --build --preset release && ctest --preset release",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
 id = "M2-01"
 epic = "E2.1"
 title = "Walls with thickness, joined corners and openings"
@@ -2712,5 +2741,36 @@ out_of_scope = [
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
   "cmake --preset release && cmake --build --preset release && ctest --preset release -L doc",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-39"
+epic = "E2.6"
+title = "Automatic exposure in the viewport"
+area = "gpu"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-22", "M1-27"]
+touches = ["libs/gpu/include/cs/gpu/auto_exposure.hpp", "libs/gpu/src/auto_exposure.cpp", "libs/gpu/shaders/auto_exposure.slang", "libs/gpu/tests/test_auto_exposure.cpp", "libs/ui/src/features/auto_exposure.cpp", "libs/ui/tests/test_auto_exposure_ui.cpp"]
+goal = "Walking away from a saved viewpoint keeps the picture readable: the viewport sets its exposure from what it sees, as a camera's automatic mode does. ADR 0002 asks for an automatic mode, but no task delivers it; in milestone 1 the viewport keeps the last viewpoint's EV100 (owner's comment on M1-26, #82). M1-06 (#136) found that the standard formula, ev100_from_average_luminance, leaves a scene about 0.8 stop darker than middle grey, so how much to compensate is decided here."
+context = [
+  "docs/adr/0002-rendering-tiers.md: Colour and exposure (EV100 with an automatic mode, PBR Neutral)",
+  "M1-06 (#136): core::ev100_from_average_luminance, the exposure constants, and the follow-up on compensation; the physics review's test: a uniform 50-nit frame, auto-exposed and tone mapped without compensation, gives 50 / (1.2 * 400) - 0.04 = 0.064167",
+  "M1-22: the Standard tier's linear HDR target and its tone-mapping pass, which takes an EV100",
+  "M1-26 and M1-27: the viewport, its status bar showing EV100, and the active viewpoint",
+]
+acceptance = [
+  "A GPU pass computes the log-average luminance of the Standard tier's HDR target by reduction, and EV100 through core::ev100_from_average_luminance: [gpu][accuracy] a uniform 50-nit target gives the CPU function's EV100 within 0.01, and a target half 10 nits and half 1000 nits gives a log-average of 100 nits within 1%",
+  "Compensation is one named constant in stops, applied after the formula. The pull request proposes its value with reasons (none, or about +0.8 stop so a uniform scene lands on middle grey) and the owner decides; a test pins the display value of a uniform 50-nit frame for the chosen value (0.064167 with none)",
+  "The exposure moves towards its target with a time constant (default 0.5 s), independent of frame rate: after 1 s, 30 fps and 120 fps give the same EV100 within 1%",
+  "In the app, the viewport uses automatic exposure when no viewpoint is active, and the status bar reads \"EV100 <n> (auto)\"; choosing a viewpoint restores that viewpoint's EV100 at once. [ui] An offscreen test covers both",
+  "Validation clean on lavapipe; `ctest --preset debug -L gpu` and `QT_QPA_PLATFORM=offscreen ctest --preset app -L ui` pass",
+]
+out_of_scope = ["Metering modes (centre-weighted, spot, histogram percentiles)", "Exposure for stills (M3)", "Lux readings, which never depend on exposure"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
   "python3 scripts/format.py --check",
 ]
