@@ -16,8 +16,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/vec4.hpp>
 
+#include <algorithm>
 #include <cmath>
-#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -176,6 +176,15 @@ class Compiler {
         }
     }
 
+    // The transform of a thing hung on a wall: its own coordinates to the world. Throws
+    // std::invalid_argument for a wall or placement geom refuses.
+    static glm::dmat4 hang(const doc::Wall& wall, const doc::OnWall& on_wall) {
+        const geom::FaceFrame face = geom::wall_face_frame(to_glm(wall.start_m), to_glm(wall.end_m),
+                                                           wall.thickness_m, to_geom(on_wall.face));
+        return geom::on_wall_transform(
+            face, {on_wall.distance_m, on_wall.centre_height_m, on_wall.stand_off_m});
+    }
+
     void add_exhibit(const doc::Uuid& id, const doc::Entity& entity) {
         if (!entity.placement) {
             return; // on the checklist, not hung
@@ -191,22 +200,16 @@ class Compiler {
             problem(id, "the exhibit's work or wall is not in the document");
             return;
         }
-        const doc::Wall& wall = *wall_entity->wall;
         const geom::FlatWork flat{work->form.width_m, work->form.height_m,
                                   work->form.depth_m.value_or(0.0)};
-
         glm::dmat4 transform;
-        geom::Mesh face_mesh;
         try {
-            const geom::FaceFrame face = geom::wall_face_frame(
-                to_glm(wall.start_m), to_glm(wall.end_m), wall.thickness_m, to_geom(on_wall->face));
-            transform = geom::on_wall_transform(
-                face, {on_wall->distance_m, on_wall->centre_height_m, on_wall->stand_off_m});
-            face_mesh = geom::painting_quad(own_coordinates(), flat, {});
+            transform = hang(*wall_entity->wall, *on_wall);
         } catch (const std::logic_error& error) {
             problem(id, std::string("the work cannot be hung: ") + error.what());
             return;
         }
+        geom::Mesh face_mesh = geom::painting_quad(own_coordinates(), flat, {});
 
         Exhibit exhibit;
         exhibit.entity = to_id(id);
@@ -223,8 +226,7 @@ class Compiler {
         if (entity.framing) {
             add_frame(id, *entity.framing, flat, transform, exhibit);
         }
-        exhibit_faces_.emplace(id, exhibit.face_centre_m);
-        world_.exhibits.push_back(exhibit);
+        world_.exhibits.push_back(std::move(exhibit));
     }
 
     static PaintingSurface painting_surface(const doc::Work& work) {
@@ -263,59 +265,74 @@ class Compiler {
         exhibit.visible = {-sight_m / 2.0, sight_m / 2.0};
     }
 
-    // Where a luminaire, viewpoint or lux sensor is. Problems are added by the caller.
-    std::optional<glm::dvec3> position_of(const doc::Entity& entity, bool& beyond_track) const {
-        beyond_track = false;
-        if (!entity.luminaire || !entity.placement) {
-            if (entity.viewpoint) {
-                return to_glm(entity.viewpoint->position_m);
-            }
-            if (entity.lux_sensor) {
-                return to_glm(entity.lux_sensor->position_m);
-            }
-            return std::nullopt;
-        }
-        const doc::Placement& placement = *entity.placement;
+    struct FixturePosition {
+        glm::dvec3 point_m;
+        bool beyond_track = false; // placed at the end of a track it runs past
+    };
+
+    // Where a luminaire's placement puts it; nullopt for placements luminaires cannot have yet
+    // (on the floor, on a host). Throws std::invalid_argument for a wall geom refuses.
+    std::optional<FixturePosition> fixture_position(const doc::Placement& placement) const {
         if (const auto* on_track = std::get_if<doc::OnTrack>(&placement)) {
             const doc::Entity* track = document_.find_entity(on_track->track);
             if (track == nullptr || !track->track || track->track->points_m.empty()) {
                 return std::nullopt;
             }
             const auto [point, on] = along_polyline(track->track->points_m, on_track->distance_m);
-            beyond_track = !on;
-            return glm::dvec3(point, track->track->height_m);
+            return FixturePosition{glm::dvec3(point, track->track->height_m), !on};
         }
         if (const auto* on_ceiling = std::get_if<doc::OnCeiling>(&placement)) {
             const doc::Entity* room = document_.find_entity(on_ceiling->room);
             if (room == nullptr || !room->room) {
                 return std::nullopt;
             }
-            return glm::dvec3(to_glm(on_ceiling->position_m), room->room->ceiling_height_m);
+            return FixturePosition{
+                glm::dvec3(to_glm(on_ceiling->position_m), room->room->ceiling_height_m)};
         }
         if (const auto* on_wall = std::get_if<doc::OnWall>(&placement)) {
             const doc::Entity* wall = document_.find_entity(on_wall->wall);
             if (wall == nullptr || !wall->wall) {
                 return std::nullopt;
             }
-            const geom::FaceFrame face =
-                geom::wall_face_frame(to_glm(wall->wall->start_m), to_glm(wall->wall->end_m),
-                                      wall->wall->thickness_m, to_geom(on_wall->face));
-            return face.point(on_wall->distance_m, on_wall->centre_height_m, on_wall->stand_off_m);
+            // The origin of the thing's own coordinates: the centre of its back.
+            return FixturePosition{glm::dvec3(hang(*wall->wall, *on_wall)[3])};
         }
-        return std::nullopt; // on the floor or on a host: not for luminaires yet
+        return std::nullopt;
+    }
+
+    // The point a luminaire aimed at the entity points to: the centre of a hung exhibit's face,
+    // or the position of a luminaire, viewpoint or lux sensor.
+    std::optional<glm::dvec3> target_point(const doc::Uuid& target) const {
+        const Id target_id = to_id(target);
+        // Exhibits are in id order.
+        const auto exhibit =
+            std::ranges::lower_bound(world_.exhibits, target_id, {}, &Exhibit::entity);
+        if (exhibit != world_.exhibits.end() && exhibit->entity == target_id) {
+            return exhibit->face_centre_m;
+        }
+        const doc::Entity* entity = document_.find_entity(target);
+        if (entity == nullptr) {
+            return std::nullopt;
+        }
+        if (entity->luminaire && entity->placement) {
+            if (const auto position = fixture_position(*entity->placement)) {
+                return position->point_m;
+            }
+        }
+        if (entity->viewpoint) {
+            return to_glm(entity->viewpoint->position_m);
+        }
+        if (entity->lux_sensor) {
+            return to_glm(entity->lux_sensor->position_m);
+        }
+        return std::nullopt;
     }
 
     std::optional<glm::dvec3> aim_point(const doc::Aim& aim) const {
         if (const auto* point = std::get_if<doc::AimAtPoint>(&aim)) {
             return to_glm(point->point_m);
         }
-        const doc::Uuid& target = std::get<doc::AimAtEntity>(aim).target;
-        if (const auto face = exhibit_faces_.find(target); face != exhibit_faces_.end()) {
-            return face->second;
-        }
-        const doc::Entity* entity = document_.find_entity(target);
-        bool beyond_track = false;
-        return entity == nullptr ? std::nullopt : position_of(*entity, beyond_track);
+        return target_point(std::get<doc::AimAtEntity>(aim).target);
     }
 
     void add_light(const doc::Uuid& id, const doc::Entity& entity) {
@@ -330,8 +347,8 @@ class Compiler {
             return; // switched off: it emits nothing
         }
         try {
-            bool beyond_track = false;
-            const auto position = position_of(entity, beyond_track);
+            const auto position =
+                entity.placement ? fixture_position(*entity.placement) : std::nullopt;
             if (!position) {
                 problem(id, "only luminaires on a track, on a wall or in a ceiling are shown yet");
                 return;
@@ -344,9 +361,9 @@ class Compiler {
             auto spot = std::make_shared<const light::GenericSpot>(
                 type->flux_lm * luminaire.dimming, type->beam_angle_rad, type->field_angle_rad);
             world_.lights.push_back(
-                {to_id(id), light::Luminaire(*position, *aim, spot), spot,
+                {to_id(id), light::Luminaire(position->point_m, *aim, spot), spot,
                  luminaire.colour_temperature_k.value_or(type->colour_temperature_k)});
-            if (beyond_track) {
+            if (position->beyond_track) {
                 problem(id, "the luminaire is beyond its track's end; it is shown at the end");
             }
         } catch (const std::logic_error& error) {
@@ -372,7 +389,6 @@ class Compiler {
 
     const doc::Document& document_;
     World world_;
-    std::map<doc::Uuid, glm::dvec3> exhibit_faces_; // each hung exhibit's face centre, for aims
 };
 
 } // namespace

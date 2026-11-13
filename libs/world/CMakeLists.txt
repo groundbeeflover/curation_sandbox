@@ -20,5 +20,5 @@ if(CS_BUILD_TESTS)
         PRIVATE cs::world cs::core cs::light cs::material cs_options)
     add_test(NAME "world: public headers compile without doc"
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
-                --target cs_world_headers_without_doc)
+                --target cs_world_headers_without_doc --config $<CONFIG>)
 endif()
