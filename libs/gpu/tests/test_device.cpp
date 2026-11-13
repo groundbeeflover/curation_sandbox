@@ -3,14 +3,14 @@
 // The Vulkan 1.3 device (device.hpp, issue M1-19): headless or ready to present, chosen by name,
 // with a report for logs and CI, and every validation message routed to a handler.
 //
-// Every test that needs a device starts with make_device(): with no Vulkan device each one skips,
-// and with CS_REQUIRE_GPU=1 each one fails saying no device was found (ADR 0010). In a debug build
-// with CS_REQUIRE_GPU=1 the validation layer is required, so a layer that fails to load fails the
-// test with ValidationUnavailableError's message instead of running unchecked (ADR 0011).
-//
-// Only one cs::gpu::Device may be alive at a time, so every test scopes its devices so that they
-// never overlap. The harness (main.cpp) fails the running test on any validation warning or
-// error, so these tests also check that the device itself is validation-clean.
+// Every test that needs a device starts with make_device() (gpu_test.hpp): with no Vulkan device
+// each one skips, and with CS_REQUIRE_GPU=1 each one fails saying no device was found (ADR 0010).
+// In a debug build with CS_REQUIRE_GPU=1 the validation layer is required, so a layer that fails
+// to load fails the test with ValidationUnavailableError's message instead of running unchecked
+// (ADR 0011). The harness (main.cpp) fails the running test on any validation warning or error,
+// so these tests also check that the device itself is validation-clean.
+
+#include "gpu_test.hpp"
 
 #include <cs/gpu/device.hpp>
 
@@ -41,144 +41,17 @@ using cs::gpu::NoDeviceError;
 using cs::gpu::Validation;
 using cs::gpu::ValidationMessage;
 using cs::gpu::ValidationUnavailableError;
+using cs::gpu::test::Cleanup;
+using cs::gpu::test::HandlerGuard;
+using cs::gpu::test::make_device;
+using cs::gpu::test::ScopedEnv;
+using cs::gpu::test::test_options;
+using cs::gpu::test::validation_layer_required;
 
 namespace {
 
-#ifdef NDEBUG
-constexpr bool debug_build = false;
-#else
-constexpr bool debug_build = true;
-#endif
-
 // A name no real device has, for the "no matching device" cases.
 constexpr const char* no_such_device = "no such device 7f3a";
-
-// ---- Environment -------------------------------------------------------------------------------
-
-// The value of an environment variable, or nothing when it is unset. MSVC deprecates getenv
-// (a warning, an error under /WX), so Windows reads through _dupenv_s.
-std::optional<std::string> read_env(const char* name) {
-#ifdef _WIN32
-    char* value = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&value, &size, name) != 0 || value == nullptr) {
-        return std::nullopt;
-    }
-    std::string result(value);
-    std::free(value);
-    return result;
-#else
-    const char* value = std::getenv(name);
-    if (value == nullptr) {
-        return std::nullopt;
-    }
-    return std::string(value);
-#endif
-}
-
-// Sets (or, with nothing, unsets) an environment variable. On Windows an empty value unsets it.
-void write_env(const char* name, const std::optional<std::string>& value) {
-#ifdef _WIN32
-    _putenv_s(name, value ? value->c_str() : "");
-#else
-    if (value) {
-        setenv(name, value->c_str(), 1);
-    } else {
-        unsetenv(name);
-    }
-#endif
-}
-
-// Sets an environment variable for one scope and restores its previous value (or its absence)
-// on the way out, also when an assertion throws.
-class ScopedEnv {
-  public:
-    ScopedEnv(std::string name, const std::optional<std::string>& value)
-        : name_(std::move(name)), previous_(read_env(name_.c_str())) {
-        write_env(name_.c_str(), value);
-    }
-    ~ScopedEnv() { write_env(name_.c_str(), previous_); }
-    ScopedEnv(const ScopedEnv&) = delete;
-    ScopedEnv& operator=(const ScopedEnv&) = delete;
-
-  private:
-    std::string name_;
-    std::optional<std::string> previous_;
-};
-
-// ---- Devices -----------------------------------------------------------------------------------
-
-// CI and /ship set CS_REQUIRE_GPU=1: then no device (or, in debug, no validation layer) is a
-// failure rather than a skip.
-bool gpu_required() {
-    const std::optional<std::string> value = read_env("CS_REQUIRE_GPU");
-    return value && !value->empty() && *value != "0";
-}
-
-// In a debug build under CS_REQUIRE_GPU=1 the validation layer must load (ADR 0011). A
-// function, not an `if` on debug_build: MSVC warns (C4127) on a constant in a condition.
-bool validation_layer_required() {
-    return debug_build && gpu_required();
-}
-
-// The options every test starts from: the layer required as above, otherwise used when
-// installed.
-DeviceOptions test_options() {
-    DeviceOptions options;
-    options.validation =
-        validation_layer_required() ? Validation::required : Validation::if_available;
-    return options;
-}
-
-// A device, or the test skips (no device) or fails (no device under CS_REQUIRE_GPU=1).
-// ValidationUnavailableError is not caught: it fails the test with its own message.
-std::unique_ptr<Device> make_device(const DeviceOptions& options = test_options()) {
-    try {
-        return std::make_unique<Device>(options);
-    } catch (const NoDeviceError& e) {
-        if (gpu_required()) {
-            FAIL("no Vulkan device was found, and CS_REQUIRE_GPU=1 requires one: " << e.what());
-        } else {
-            SKIP("no Vulkan device was found: " << e.what());
-        }
-    }
-    return nullptr;
-}
-
-// Runs a function when the scope ends, so that Vulkan objects are destroyed before the device
-// even when an assertion throws: a leaked object is a validation error at device destruction.
-template <typename F> class Cleanup {
-  public:
-    explicit Cleanup(F f) : f_(std::move(f)) {}
-    ~Cleanup() { f_(); }
-    Cleanup(const Cleanup&) = delete;
-    Cleanup& operator=(const Cleanup&) = delete;
-
-  private:
-    F f_;
-};
-
-// Installs a validation handler for one scope and puts the previous one back, on restore() or
-// on the way out, whichever comes first.
-class HandlerGuard {
-  public:
-    explicit HandlerGuard(cs::gpu::ValidationHandler handler)
-        : previous_(cs::gpu::set_validation_handler(std::move(handler))) {}
-    ~HandlerGuard() { restore(); }
-    HandlerGuard(const HandlerGuard&) = delete;
-    HandlerGuard& operator=(const HandlerGuard&) = delete;
-
-    void restore() {
-        if (!restored_) {
-            cs::gpu::set_validation_handler(std::move(previous_));
-            restored_ = true;
-        }
-    }
-
-  private:
-    cs::gpu::ValidationHandler previous_;
-    bool restored_ = false;
-};
 
 std::string to_upper(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](char c) {

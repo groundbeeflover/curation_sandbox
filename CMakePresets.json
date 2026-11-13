@@ -85,7 +85,8 @@
       "hidden": true,
       "inherits": "base",
       "environment": {
-        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/sanitizers/lsan.supp"
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/sanitizers/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
       }
     },
     { "name": "debug", "configurePreset": "debug", "inherits": "sanitized" },
