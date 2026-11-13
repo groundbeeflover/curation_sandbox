@@ -85,8 +85,8 @@ glm::dvec2 uv_from_xyz(const glm::dvec3& xyz) {
     return {4.0 * xyz.x / d, 6.0 * xyz.y / d};
 }
 
-// Linear Rec. 709 (sRGB primaries, D65 white) to CIE XYZ, the standard matrix (IEC 61966-2-1 as
-// tabulated by Lindbloom).
+// Linear Rec. 709 (sRGB primaries, D65 white) to CIE XYZ, the matrix derived from the primaries
+// (Lindbloom).
 glm::dvec3 xyz_from_linear_rec709(const glm::dvec3& rgb) {
     return {
         0.4124564 * rgb.r + 0.3575761 * rgb.g + 0.1804375 * rgb.b,
@@ -150,8 +150,8 @@ TEST_CASE("the test's own Planckian locus reproduces CIE Illuminant A",
     // CIE Illuminant A is a blackbody at 2856 K (with c2 = 1.4388e-2 m K); its published
     // chromaticity, from the 5 nm (or 1 nm) observer, is (0.44757, 0.40745). The 10 nm table here
     // gives (0.447567, 0.407526): summing at a coarser step moves y by ~8e-5. 2e-4 in x and y
-    // allows that step error and is still ten times tighter than the delta-uv 0.001 the locus is
-    // used to check against below (2e-4 in xy is under 1.5e-4 in uv here).
+    // allows that step error and is still five times tighter than the delta-uv 0.001 the locus is
+    // used to check against below (2e-4 in each of x and y is at most 2.2e-4 in uv here).
     const glm::dvec2 xy = xy_from_xyz(blackbody_xyz(2856.0));
     CHECK_THAT(xy.x, WithinAbs(0.44757, 2e-4));
     CHECK_THAT(xy.y, WithinAbs(0.40745, 2e-4));
@@ -160,7 +160,7 @@ TEST_CASE("the test's own Planckian locus reproduces CIE Illuminant A",
 TEST_CASE("cct_to_linear_rgb lies within delta-uv 0.001 of the Planckian locus",
           "[core][colour][accuracy]") {
     // The tolerance is the acceptance criterion's. The header's cubic fit (Kim et al.) is within
-    // 0.0004 of the locus; the locus computed here from the 10 nm table is within ~1.5e-4 of the
+    // 0.0004 of the locus; the locus computed here from the 10 nm table is within ~2e-4 of the
     // 1 nm one (see the Illuminant A test); and the RGB to XYZ matrix is the inverse of the one
     // the implementation should use to within its 7 printed digits. Together well under 0.001.
     for (const double kelvin : {2700.0, 3000.0, 4000.0, 6500.0}) {
@@ -305,7 +305,7 @@ TEST_CASE("EV100 and exposure scale at 1 nit and 1000 nits", "[core][colour][acc
     CHECK_THAT(307.2 * cs::exposure_scale(8.0), WithinRel(1.0, 1e-12));
 
     // Metering then exposing puts the average luminance at L * H = L / (1.2 * 8 L) = 1 / 9.6,
-    // whatever L is: the meter's middle grey.
+    // whatever L is: the meter's calibration point, about 0.8 stop below 18 % grey.
     for (const double nits : {1e-3, 0.5, 1.0, 50.0, 1000.0, 1e6}) {
         INFO(nits << " nits");
         const double ev100 = cs::ev100_from_average_luminance(nits);

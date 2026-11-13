@@ -29,8 +29,8 @@ glm::dvec2 planckian_xy(double kelvin) {
     return {x, ((3.0817580 * x - 5.87338670) * x + 3.75112997) * x - 0.37001483};
 }
 
-// CIE XYZ to linear Rec. 709, the sRGB (D65) matrix of IEC 61966-2-1, written row by row; glm is
-// column-major, hence the transpose.
+// CIE XYZ to linear Rec. 709, the sRGB (D65) matrix derived from the primaries (Lindbloom),
+// written row by row; glm is column-major, hence the transpose.
 const glm::dmat3 xyz_to_linear_rec709 =
     glm::transpose(glm::dmat3{3.2404542, -1.5371385, -0.4985314,  //
                               -0.9692660, 1.8760108, 0.0415560,   //

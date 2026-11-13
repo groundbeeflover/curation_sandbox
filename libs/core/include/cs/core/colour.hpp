@@ -12,9 +12,9 @@
 //                         --linear_to_srgb8-->        8-bit sRGB (image.hpp)
 //
 // The exposure is that of a physical camera (EV100), set by the viewpoint or found from the
-// frame's average luminance. Khronos PBR Neutral tone mapping leaves colours alone below about
-// 0.76 and rolls the highlights off to white, so an artwork keeps its hues (ADR 0002, Colour and
-// exposure). Lux is never read from these pixels; the engine calculates it.
+// frame's average luminance. Khronos PBR Neutral tone mapping only lowers every channel by a
+// small offset below about 0.76 and rolls the highlights off to white, so an artwork keeps its hues
+// (ADR 0002, Colour and exposure). Lux is never read from these pixels; the engine calculates it.
 
 #include <glm/vec3.hpp>
 
@@ -36,11 +36,12 @@ template <typename T> constexpr T luminance(const glm::vec<3, T>& rgb) {
 // incandescent orange, 6500 K is close to white but slightly magenta of D65, with green the
 // smallest channel (a blackbody is not a daylight illuminant), 25000 K is a pale blue.
 //
-// The chromaticity comes from Kim, Kim, Lee, Kim and Kim's cubic fit of the Planckian locus in
-// CIE 1931 xy (US patent 7,024,034, 2006), within delta-uv 0.0004 of the locus from 1667 K to
-// 25000 K; kelvin is clamped to that range, and NaN gives 1667 K. Below about 1900 K the locus
-// lies outside the Rec. 709 gamut, so a negative blue is clipped to zero before normalising:
-// light is never negative, and the colour stays continuous in temperature.
+// The chromaticity comes from Kim et al.'s cubic fit of the Planckian locus in CIE 1931 xy (US
+// patent 7,024,034, 2006), within delta-uv 0.0004 of the locus from 1667 K to 25000 K; kelvin is
+// clamped to that range, and NaN gives 1667 K. Below about 1900 K the locus lies outside the
+// Rec. 709 gamut, so a negative blue is clipped to zero before normalising: light is never
+// negative, and the colour stays continuous in temperature. The clip moves the colour off the
+// locus there, by up to delta-uv 0.003 at 1667 K.
 glm::dvec3 cct_to_linear_rgb(double kelvin);
 
 // The range cct_to_linear_rgb follows the locus over.
@@ -58,9 +59,11 @@ inline constexpr double ev100_saturation_factor = 78.0 / (ev100_iso * 0.65);
 // (EV100 -10.3). A black frame, an empty room with the lights off, thus gets a finite exposure.
 inline constexpr double ev100_min_luminance_nits = 1e-4;
 
-// The exposure, as EV100, at which the light meter puts an average scene luminance in nits at
-// middle grey: EV100 = log2(L * S / K). Luminances below ev100_min_luminance_nits, and NaN, meter
-// as that minimum.
+// The exposure, as EV100, that a reflected-light meter gives for an average scene luminance in
+// nits: EV100 = log2(L * S / K). Exposed with exposure_scale, that average lands at
+// K / (S * 1.2) = 1 / 9.6 of saturation, the meter's calibration point, about 0.8 stop below 18 %
+// grey; any exposure compensation belongs to the caller. Luminances below ev100_min_luminance_nits,
+// and NaN, meter as that minimum.
 inline double ev100_from_average_luminance(double average_luminance_nits) {
     const double nits = std::max(ev100_min_luminance_nits, average_luminance_nits);
     return std::log2(nits * ev100_iso / ev100_meter_calibration);
@@ -75,8 +78,9 @@ inline double exposure_scale(double ev100) {
 
 // Khronos PBR Neutral tone mapping (github.com/KhronosGroup/ToneMapping, version of 2024):
 // exposed linear RGB (any non-negative values) to display-referred linear RGB in [0, 1]. Below a
-// peak channel of 0.76 it only lifts or lowers the colour by a small offset; above, it compresses
-// the peak towards 1 and desaturates towards white. The GPU tiers run the same function in Slang.
+// peak channel of 0.76 it only lowers every channel by the same offset (at most 0.04); above, it
+// compresses the peak towards 1 and desaturates towards white. The GPU tiers run the same function
+// in Slang.
 template <typename T> glm::vec<3, T> pbr_neutral(glm::vec<3, T> rgb) {
     constexpr T start_compression = T(0.8) - T(0.04);
     constexpr T desaturation = T(0.15);
