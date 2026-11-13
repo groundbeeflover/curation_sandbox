@@ -16,6 +16,7 @@
 #include <cs/geom/painting.hpp>
 #include <cs/geom/wall_face.hpp>
 #include <cs/light/distribution.hpp>
+#include <cs/light/luminaire.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -193,10 +194,11 @@ TEST_CASE("compile exhibits: a deep work's face stands out by its depth, and the
                VecWithin(glm::normalize(face_centre - spot_position), unit_tolerance));
 }
 
-TEST_CASE("compile exhibits: a work deeper than the default frame gets a frame as deep as itself",
+TEST_CASE("compile exhibits: a work deeper than the default frame stays 5 mm behind its front",
           "[world][accuracy]") {
     // A panel 6 cm deep, its back at the 4 cm stand-off and its face at y = 0.10: the frame runs
-    // from the stand-off to the face, not to the default 4 cm, so the face is not in front of it.
+    // from the stand-off to 5 mm in front of the face (front_lip_m), not to the default 4 cm, so
+    // the face and the frame's front never share a plane (the physics review of #61).
     auto data = skeleton_data();
     work(data, chart_work_text).form.depth_m = 0.06;
     const World world = compile(accepted(data));
@@ -205,8 +207,40 @@ TEST_CASE("compile exhibits: a work deeper than the default frame gets a frame a
 
     const Box box = bounds(in_world(world, the_instance(world, id(chart_text), Part::frame)));
     CHECK_THAT(box.min.y, WithinAbs(0.04, tolerance_m));
-    CHECK_THAT(box.max.y, WithinAbs(0.10, tolerance_m));
+    CHECK_THAT(box.max.y, WithinAbs(0.105, tolerance_m));
     CHECK_THAT(the_exhibit(world, id(chart_text)).face_centre_m.y, WithinAbs(0.10, tolerance_m));
+}
+
+TEST_CASE("compile exhibits: paper flat on the wall stands 1 mm out of the wall's plane",
+          "[world][accuracy]") {
+    // No stand-off and no depth would put the work's face in the wall's plane (face A of wall A,
+    // y = 0), where the renderers would pick either surface; it is shown min_face_offset_m out.
+    auto data = skeleton_data();
+    std::get<doc::OnWall>(*entity(data, chart_text).placement).stand_off_m = 0.0;
+    const World world = compile(accepted(data));
+    check_well_formed(world);
+    CHECK(world.problems.empty());
+
+    const Exhibit& exhibit = the_exhibit(world, id(chart_text));
+    CHECK_THAT(exhibit.face_centre_m.y, WithinAbs(min_face_offset_m, tolerance_m));
+    const Box face = bounds(in_world(world, the_instance(world, id(chart_text), Part::painting)));
+    CHECK_THAT(face.min.y, WithinAbs(min_face_offset_m, tolerance_m));
+    // The frame's front is still in front of the face.
+    const Box frame = bounds(in_world(world, the_instance(world, id(chart_text), Part::frame)));
+    CHECK(frame.max.y > exhibit.face_centre_m.y + 1e-4);
+}
+
+TEST_CASE("compile exhibits: a varnished work's paint has no highlight of its own", "[world]") {
+    // painting_material.hpp: under a coat the paint/varnish boundary is index-matched, so the
+    // base's specular weight is 0, or a false second highlight appears.
+    auto data = skeleton_data();
+    work(data, chart_work_text).material.coat_weight = 0.8;
+    const World world = compile(accepted(data));
+    const Instance& painting = the_instance(world, id(chart_text), Part::painting);
+    const auto* surface = std::get_if<PaintingSurface>(&material_of(world, painting));
+    REQUIRE(surface != nullptr);
+    CHECK(surface->parameters.coat.weight == 0.8);
+    CHECK(surface->parameters.base.specular_weight == 0.0);
 }
 
 TEST_CASE("compile exhibits: a work without an image is a placeholder with no image", "[world]") {
@@ -397,4 +431,46 @@ TEST_CASE("compile viewpoints: yaw pi/2 looks along +y", "[world]") {
     REQUIRE(world.cameras.size() == 1);
     CHECK_THAT(world.cameras.front().forward, VecWithin(dvec3(0.0, 1.0, 0.0), unit_tolerance));
     CHECK_THAT(world.cameras.front().up, VecWithin(dvec3(0.0, 0.0, 1.0), unit_tolerance));
+}
+
+TEST_CASE("compile viewpoints: any yaw and pitch give a unit, upright, perpendicular basis",
+          "[world][accuracy]") {
+    // Yaw 2.0 rad and pitch -0.4 rad together, which neither test above combines: forward is
+    // (cos p cos y, cos p sin y, sin p), up is unit, perpendicular to it and upright. To 1e-12,
+    // a few ulps of these sums of products.
+    auto data = skeleton_data();
+    auto& viewpoint = *entity(data, viewpoint_text).viewpoint;
+    viewpoint.yaw_rad = 2.0;
+    viewpoint.pitch_rad = -0.4;
+    const World world = compile(accepted(data));
+    REQUIRE(world.cameras.size() == 1);
+    const Camera& camera = world.cameras.front();
+    const dvec3 forward(std::cos(-0.4) * std::cos(2.0), std::cos(-0.4) * std::sin(2.0),
+                        std::sin(-0.4));
+    CHECK_THAT(camera.forward, VecWithin(forward, unit_tolerance));
+    CHECK_THAT(glm::length(camera.forward), WithinAbs(1.0, unit_tolerance));
+    CHECK_THAT(glm::length(camera.up), WithinAbs(1.0, unit_tolerance));
+    CHECK_THAT(glm::dot(camera.forward, camera.up), WithinAbs(0.0, unit_tolerance));
+    CHECK(camera.up.z > 0.0);
+}
+
+TEST_CASE("compile luminaires: the skeleton's spot gives 50% of its peak at half the beam angle "
+          "and 10% at half the field angle",
+          "[world][accuracy]") {
+    // Off the compiled luminaire's axis by 7.5 and 12.5 degrees: the IES definitions of the 15
+    // degree beam and 25 degree field angles, which GenericSpot meets exactly. This would catch
+    // degrees passed as radians, or half angles passed as full ones. 1e-9 relative: the angles
+    // round-trip through the document's doubles.
+    const World world = compile(accepted(skeleton_data()));
+    const Light& light = the_light(world, id(spot_text));
+    const dvec3 axis = light.luminaire.axis();
+    const dvec3 across = glm::normalize(glm::cross(axis, dvec3(0.0, 0.0, 1.0)));
+    const auto off_axis = [&](double angle_rad) {
+        return std::cos(angle_rad) * axis + std::sin(angle_rad) * across;
+    };
+    const double peak_cd = light.spot->peak_intensity_cd();
+    CHECK_THAT(light.luminaire.intensity_cd(off_axis(7.5 * degrees)),
+               WithinRel(0.5 * peak_cd, 1e-9));
+    CHECK_THAT(light.luminaire.intensity_cd(off_axis(12.5 * degrees)),
+               WithinRel(0.1 * peak_cd, 1e-9));
 }

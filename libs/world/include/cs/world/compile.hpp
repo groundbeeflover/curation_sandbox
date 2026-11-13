@@ -38,16 +38,24 @@ namespace cs::world {
 
 // The box frame that stands in for every frame style until M2-08, with the skeleton scene's
 // numbers (M1-10): members 6 cm wide and 4 cm deep, overlapping the work by 5 mm, the low end of
-// ADR 0003's 5 to 10 mm. A work deeper than 4 cm gets a frame as deep as itself, so that its
-// face is never in front of the frame's. The colour is a dark stained wood, and a framing's
-// colour is clamped to at most 1 in each channel, with a problem. [C]
+// ADR 0003's 5 to 10 mm. A work deeper than that leaves the frame's front at least 5 mm in
+// front of its face (front_lip_m), so that the two never lie in one plane and the tiers agree
+// on which is seen. The colour is a dark stained wood, and a framing's colour is clamped to at
+// most 1 in each channel, with a problem. [C]
 struct DefaultFrame {
     double member_width_m = 0.06;
     double depth_m = 0.04;
     double rebate_m = 0.005;
+    double front_lip_m = 0.005;
     double albedo = 0.1;
 };
 inline constexpr DefaultFrame default_frame{};
+
+// The least distance from a wall's face to the face of a work hung on it. A sheet of paper hung
+// flat on the wall (no stand-off, no depth) is shown this far out, about a thick paper's
+// thickness, so that its face does not lie in the wall's plane, where the renderers would pick
+// either surface. [C]
+inline constexpr double min_face_offset_m = 0.001;
 
 // Takes a document, which the caller keeps; the world copies what it needs.
 World compile(const doc::Document& document);

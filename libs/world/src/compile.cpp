@@ -202,8 +202,10 @@ class Compiler {
             problem(id, "the exhibit's work or wall is not in the document");
             return;
         }
-        const geom::FlatWork flat{work->form.width_m, work->form.height_m,
-                                  work->form.depth_m.value_or(0.0)};
+        // A work flat on its wall stands out by min_face_offset_m, out of the wall's plane.
+        const double depth_m =
+            std::max(work->form.depth_m.value_or(0.0), min_face_offset_m - on_wall->stand_off_m);
+        const geom::FlatWork flat{work->form.width_m, work->form.height_m, depth_m};
         glm::dmat4 transform;
         geom::Mesh face_mesh;
         try {
@@ -239,6 +241,10 @@ class Compiler {
         parameters.base.roughness =
             work.material.base_roughness.value_or(parameters.base.roughness);
         parameters.coat.weight = work.material.coat_weight.value_or(parameters.coat.weight);
+        if (parameters.coat.weight > 0.0) {
+            // Under varnish the paint's own highlight is off (painting_material.hpp).
+            parameters.base.specular_weight = 0.0;
+        }
         parameters.coat.roughness =
             work.material.coat_roughness.value_or(parameters.coat.roughness);
         if (work.image) {
@@ -251,9 +257,8 @@ class Compiler {
                    const glm::dmat4& transform, Exhibit& exhibit) {
         const geom::BoxFrame frame{
             work.width_m, work.height_m, framing.width_m.value_or(default_frame.member_width_m),
-            // At least as deep as the work, whose face it must not
-            // stand behind.
-            std::max(default_frame.depth_m, work.depth_m), default_frame.rebate_m};
+            std::max(default_frame.depth_m, work.depth_m + default_frame.front_lip_m),
+            default_frame.rebate_m};
         geom::Mesh mesh;
         glm::dvec2 sight_m;
         try {
