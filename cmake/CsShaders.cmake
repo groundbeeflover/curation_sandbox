@@ -7,6 +7,10 @@
 # cs::gpu::embedded_shaders() (cs/gpu/pipeline.hpp). Shaders are never compiled at run time, and
 # a shader that does not compile fails the build (ADR 0001).
 #
+# Each <directory>/*.slang has entry points; slangc refuses a file without any. Slang modules
+# that only other shaders import go in <directory>/modules/, which is not compiled on its own
+# but searched by `import` (-I): `import tonemap;` finds modules/tonemap.slang.
+#
 # slangc writes each shader as a C++ array itself (-source-embed-style u32), into <stem>.spv.h in
 # the build tree, with every [shader(...)] entry point of the file kept under its own name
 # (-fvk-use-entrypoint-name). Warnings are errors. A generated embedded_shaders.cpp includes
@@ -32,7 +36,8 @@ function(cs_add_shaders target directory)
     set(entries "")
     set(count 0)
     foreach(shader IN LISTS shaders)
-        get_filename_component(stem "${shader}" NAME_WE)
+        # NAME_WLE: only the last extension, so "a.b.slang" is refused below, not taken as "a".
+        get_filename_component(stem "${shader}" NAME_WLE)
         # The stem names a C++ variable and is looked up by name at run time.
         if(NOT stem MATCHES "^[a-z][a-z0-9_]*$")
             message(FATAL_ERROR "cs_add_shaders(${target}): ${shader}: a shader's file name is "
@@ -42,7 +47,7 @@ function(cs_add_shaders target directory)
         set(array "cs_shader_${stem}")
         add_custom_command(
             OUTPUT "${header}"
-            COMMAND slang::slangc "${shader}"
+            COMMAND slang::slangc "${shader}" -I "${directory}/modules"
                 -target spirv -profile spirv_1_6 -fvk-use-entrypoint-name
                 -warnings-as-errors all
                 -source-embed-style u32 -source-embed-name "${array}"

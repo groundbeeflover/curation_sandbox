@@ -41,6 +41,12 @@ bool supports(VkPhysicalDevice physical_device, VkFormat format, VkFormatFeature
     return (properties.optimalTilingFeatures & features) == features;
 }
 
+// At most 2^62 for sides below 2^31, so it cannot overflow; byte counts are compared by dividing
+// the limit instead of multiplying this.
+VkDeviceSize pixels(std::uint32_t width, std::uint32_t height) {
+    return VkDeviceSize{width} * height;
+}
+
 // Whether the device can make an image this large in this format and use: maxImageDimension2D
 // alone is not enough, as a format's maxExtent and maxResourceSize may be smaller.
 bool image_fits(VkPhysicalDevice physical_device, VkFormat format, VkImageUsageFlags usage,
@@ -51,7 +57,7 @@ bool image_fits(VkPhysicalDevice physical_device, VkFormat format, VkImageUsageF
                                                  &properties) != VK_SUCCESS)
         return false;
     return width <= properties.maxExtent.width && height <= properties.maxExtent.height &&
-           VkDeviceSize{width} * height * texel_size <= properties.maxResourceSize;
+           pixels(width, height) <= properties.maxResourceSize / texel_size;
 }
 
 VkImageView create_view(VkDevice device, VkImage image, VkFormat format,
@@ -82,18 +88,22 @@ VkImageMemoryBarrier2 image_barrier(VkImage image, const VkImageSubresourceRange
 OffscreenTarget::OffscreenTarget(const Device& device, std::uint32_t width, std::uint32_t height)
     : device_(device.device()), queue_(device.queue()), allocator_(device.allocator()),
       width_(width), height_(height) {
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(device.physical_device(), &properties);
+    const VkPhysicalDevice physical_device = device.physical_device();
+    VkPhysicalDeviceVulkan11Properties properties_11{};
+    properties_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+    VkPhysicalDeviceProperties2 properties{};
+    properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties.pNext = &properties_11;
+    vkGetPhysicalDeviceProperties2(physical_device, &properties);
     // cs::Image counts pixels in int, so no side may exceed INT_MAX either.
     const std::uint32_t max_side =
-        std::min<std::uint32_t>(properties.limits.maxImageDimension2D,
+        std::min<std::uint32_t>(properties.properties.limits.maxImageDimension2D,
                                 static_cast<std::uint32_t>(std::numeric_limits<int>::max()));
     if (width == 0 || height == 0 || width > max_side || height > max_side)
         throw std::invalid_argument("OffscreenTarget: " + std::to_string(width) + "x" +
                                     std::to_string(height) + " is not a size from 1x1 to " +
                                     std::to_string(max_side) + "x" + std::to_string(max_side));
 
-    const VkPhysicalDevice physical_device = device.physical_device();
     if (!supports(physical_device, colour_format,
                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
         throw std::runtime_error("OffscreenTarget: the device cannot render to RGBA16F");
@@ -110,17 +120,10 @@ OffscreenTarget::OffscreenTarget(const Device& device, std::uint32_t width, std:
 
     // The images and the readback buffer must also fit the format's and the allocator's limits,
     // so that a large size from outside (cs-render --size) is refused here, not by Vulkan.
-    VkPhysicalDeviceVulkan11Properties properties_11{};
-    properties_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
-    VkPhysicalDeviceProperties2 properties_2{};
-    properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    properties_2.pNext = &properties_11;
-    vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
-    const VkDeviceSize readback_bytes = VkDeviceSize{width} * height * texel_bytes;
     if (!image_fits(physical_device, colour_format, colour_usage, width, height, texel_bytes) ||
         !image_fits(physical_device, depth_format_, depth_usage, width, height,
                     depth_texel_bytes) ||
-        readback_bytes > properties_11.maxMemoryAllocationSize)
+        pixels(width, height) > properties_11.maxMemoryAllocationSize / texel_bytes)
         throw std::invalid_argument("OffscreenTarget: " + std::to_string(width) + "x" +
                                     std::to_string(height) +
                                     " is larger than the device can allocate as one image");
@@ -156,7 +159,7 @@ OffscreenTarget::OffscreenTarget(const Device& device, std::uint32_t width, std:
         // The host reads every texel once, in order, after each frame.
         VkBufferCreateInfo buffer_info{};
         buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_info.size = readback_bytes;
+        buffer_info.size = pixels(width, height) * texel_bytes;
         buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         VmaAllocationCreateInfo buffer_allocation{};
