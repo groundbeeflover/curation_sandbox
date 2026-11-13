@@ -29,13 +29,6 @@ glm::dvec2 planckian_xy(double kelvin) {
     return {x, ((3.0817580 * x - 5.87338670) * x + 3.75112997) * x - 0.37001483};
 }
 
-// CIE XYZ to linear Rec. 709, the sRGB (D65) matrix derived from the primaries (Lindbloom),
-// written row by row; glm is column-major, hence the transpose.
-const glm::dmat3 xyz_to_linear_rec709 =
-    glm::transpose(glm::dmat3{3.2404542, -1.5371385, -0.4985314,  //
-                              -0.9692660, 1.8760108, 0.0415560,   //
-                              0.0556434, -0.2040259, 1.0572252}); //
-
 } // namespace
 
 glm::dvec3 cct_to_linear_rgb(double kelvin) {
@@ -45,6 +38,13 @@ glm::dvec3 cct_to_linear_rgb(double kelvin) {
     // xyY with Y = 1 to XYZ, then to linear Rec. 709.
     const glm::dvec2 xy = planckian_xy(kelvin);
     const glm::dvec3 xyz{xy.x / xy.y, 1.0, (1.0 - xy.x - xy.y) / xy.y};
+    // CIE XYZ to linear Rec. 709, the sRGB (D65) matrix derived from the primaries (Lindbloom),
+    // written row by row; glm is column-major, hence the transpose. A local rather than a
+    // namespace-scope constant, so a caller during static initialisation never sees it unset.
+    const glm::dmat3 xyz_to_linear_rec709 =
+        glm::transpose(glm::dmat3{3.2404542, -1.5371385, -0.4985314,  //
+                                  -0.9692660, 1.8760108, 0.0415560,   //
+                                  0.0556434, -0.2040259, 1.0572252}); //
     const glm::dvec3 rgb = xyz_to_linear_rec709 * xyz;
 
     // Clip what lies outside the gamut (over this range only blue, below about 1900 K), then

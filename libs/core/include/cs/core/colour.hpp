@@ -55,17 +55,20 @@ inline constexpr double ev100_iso = 100.0;
 inline constexpr double ev100_meter_calibration = 12.5;
 inline constexpr double ev100_saturation_factor = 78.0 / (ev100_iso * 0.65);
 
-// The darkest average luminance ev100_from_average_luminance meters, about a moonless night sky
-// (EV100 -10.3). A black frame, an empty room with the lights off, thus gets a finite exposure.
+// The range of average luminance ev100_from_average_luminance meters: from about a moonless night
+// sky (EV100 -10.3) to well beyond the sun's disc (EV100 36.2). A black frame, an empty room with
+// the lights off, and a frame poisoned by one infinite sample thus both get a finite exposure.
 inline constexpr double ev100_min_luminance_nits = 1e-4;
+inline constexpr double ev100_max_luminance_nits = 1e10;
 
 // The exposure, as EV100, that a reflected-light meter gives for an average scene luminance in
 // nits: EV100 = log2(L * S / K). Exposed with exposure_scale, that average lands at
 // K / (S * 1.2) = 1 / 9.6 of saturation, the meter's calibration point, about 0.8 stop below 18 %
-// grey; any exposure compensation belongs to the caller. Luminances below ev100_min_luminance_nits,
-// and NaN, meter as that minimum.
+// grey; any exposure compensation belongs to the caller. Luminances outside the metering range are
+// clamped to it, and NaN meters as the minimum.
 inline double ev100_from_average_luminance(double average_luminance_nits) {
-    const double nits = std::max(ev100_min_luminance_nits, average_luminance_nits);
+    const double nits = std::min(std::max(ev100_min_luminance_nits, average_luminance_nits),
+                                 ev100_max_luminance_nits);
     return std::log2(nits * ev100_iso / ev100_meter_calibration);
 }
 
@@ -77,13 +80,17 @@ inline double exposure_scale(double ev100) {
 }
 
 // Khronos PBR Neutral tone mapping (github.com/KhronosGroup/ToneMapping, version of 2024):
-// exposed linear RGB (any non-negative values) to display-referred linear RGB in [0, 1]. Below a
+// exposed linear RGB to display-referred linear RGB in [0, 1]. Negative and NaN channels, which
+// the reference does not define and would brighten the whole colour, are taken as 0. Below a
 // peak channel of 0.76 it only lowers every channel by the same offset (at most 0.04); above, it
 // compresses the peak towards 1 and desaturates towards white. The GPU tiers run the same function
 // in Slang.
 template <typename T> glm::vec<3, T> pbr_neutral(glm::vec<3, T> rgb) {
     constexpr T start_compression = T(0.8) - T(0.04);
     constexpr T desaturation = T(0.15);
+
+    // max(0, c) rather than max(c, 0): the comparison 0 < NaN is false, so NaN becomes 0.
+    rgb = glm::vec<3, T>(std::max(T(0), rgb.r), std::max(T(0), rgb.g), std::max(T(0), rgb.b));
 
     const T x = std::min(rgb.r, std::min(rgb.g, rgb.b));
     const T offset = x < T(0.08) ? x - T(6.25) * x * x : T(0.04);

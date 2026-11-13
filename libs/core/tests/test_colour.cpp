@@ -285,6 +285,12 @@ TEST_CASE("EV100 of a black frame is finite", "[core][colour]") {
         CHECK_THAT(cs::ev100_from_average_luminance(nits), WithinAbs(floor_ev, 1e-12));
         CHECK(std::isfinite(cs::exposure_scale(cs::ev100_from_average_luminance(nits))));
     }
+    // One infinite sample makes the average infinite; the meter reads its ceiling, so the scale
+    // stays positive instead of turning the frame black.
+    const double inf = std::numeric_limits<double>::infinity();
+    CHECK_THAT(cs::ev100_from_average_luminance(inf),
+               WithinAbs(std::log2(cs::ev100_max_luminance_nits * 8.0), 1e-12));
+    CHECK(cs::exposure_scale(cs::ev100_from_average_luminance(inf)) > 0.0);
 }
 
 TEST_CASE("EV100 and exposure scale at 1 nit and 1000 nits", "[core][colour][accuracy]") {
@@ -386,4 +392,16 @@ TEMPLATE_TEST_CASE("pbr_neutral maps non-negative input into [0, 1] and keeps gr
         // mix can round one ulp above it, which is not a meaningful overshoot.
         CHECK(out.r <= T(1) + std::numeric_limits<T>::epsilon());
     }
+}
+
+TEMPLATE_TEST_CASE("pbr_neutral takes negative and NaN channels as 0", "[core][colour]", float,
+                   double) {
+    using T = TestType;
+    using V = glm::vec<3, T>;
+    // The reference is undefined there; a negative minimum would make its offset negative and
+    // brighten the whole colour. Exact equality: both sides run the same arithmetic.
+    const T nan = std::numeric_limits<T>::quiet_NaN();
+    CHECK(cs::pbr_neutral(V(-0.5, 0.2, 0.2)) == cs::pbr_neutral(V(0, 0.2, 0.2)));
+    CHECK(cs::pbr_neutral(V(nan, 0.5, 2.0)) == cs::pbr_neutral(V(0, 0.5, 2.0)));
+    CHECK(cs::pbr_neutral(V(-1, -1, -1)) == V(0));
 }
