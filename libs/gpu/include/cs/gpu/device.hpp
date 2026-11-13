@@ -45,7 +45,9 @@ struct DeviceOptions {
     bool presentation = false;
     // Chooses the device whose name contains this, ignoring case. When unset, the environment
     // variable CS_GPU_DEVICE does the same; when neither is set, a discrete GPU is preferred,
-    // then an integrated one, then any other (lavapipe is a CPU device).
+    // then an integrated one, then any other (lavapipe is a CPU device). An empty string means
+    // no choice, ignoring CS_GPU_DEVICE. A name longer than 256 characters is a mistake, not a
+    // missing device: it throws std::invalid_argument.
     std::optional<std::string> device_name;
     // Instance extensions enabled when the loader offers them, and skipped silently otherwise;
     // has_instance_extension() says which were enabled.
@@ -103,7 +105,8 @@ class ValidationUnavailableError : public std::runtime_error {
 class Device {
   public:
     // Throws NoDeviceError, ValidationUnavailableError, std::logic_error (another Device is
-    // alive) or std::runtime_error (any other Vulkan failure).
+    // alive), std::invalid_argument (an over-long device name) or std::runtime_error (any other
+    // Vulkan failure).
     explicit Device(const DeviceOptions& options = {});
     ~Device();
 

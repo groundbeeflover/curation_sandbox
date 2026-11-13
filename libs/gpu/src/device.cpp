@@ -142,8 +142,8 @@ std::string device_name_filter(const DeviceOptions& options) {
     const std::string filter =
         options.device_name ? *options.device_name : environment_variable("CS_GPU_DEVICE");
     if (filter.size() > max_device_name_length)
-        throw NoDeviceError("the device name to choose (CS_GPU_DEVICE) is longer than " +
-                            std::to_string(max_device_name_length) + " characters");
+        throw std::invalid_argument("the device name to choose (CS_GPU_DEVICE) is longer than " +
+                                    std::to_string(max_device_name_length) + " characters");
     return filter;
 }
 
