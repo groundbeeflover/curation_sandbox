@@ -121,7 +121,7 @@ class Device {
     [[nodiscard]] VmaAllocator allocator() const { return allocator_; }
 
     [[nodiscard]] const DeviceReport& report() const { return report_; }
-    [[nodiscard]] bool presentation() const { return presentation_; }
+    [[nodiscard]] bool presentation() const { return has_extension("VK_KHR_swapchain"); }
     // Whether a device or instance extension was enabled, such as "VK_KHR_swapchain".
     [[nodiscard]] bool has_extension(std::string_view name) const;
     [[nodiscard]] bool has_instance_extension(std::string_view name) const;
@@ -140,7 +140,6 @@ class Device {
     std::uint32_t queue_family_ = 0;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DeviceReport report_;
-    bool presentation_ = false;
     std::vector<std::string> extensions_;
     std::vector<std::string> instance_extensions_;
 

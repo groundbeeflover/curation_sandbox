@@ -121,32 +121,6 @@ bool contains(const std::vector<std::string>& names, std::string_view name) {
     return std::ranges::find(names, name) != names.end();
 }
 
-std::vector<std::string> instance_layers() {
-    std::uint32_t count = 0;
-    if (vkEnumerateInstanceLayerProperties(&count, nullptr) != VK_SUCCESS)
-        return {};
-    std::vector<VkLayerProperties> layers(count);
-    if (vkEnumerateInstanceLayerProperties(&count, layers.data()) != VK_SUCCESS)
-        return {};
-    std::vector<std::string> names;
-    for (std::uint32_t i = 0; i < count; ++i)
-        names.emplace_back(layers[i].layerName);
-    return names;
-}
-
-std::vector<std::string> instance_extensions() {
-    std::uint32_t count = 0;
-    if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS)
-        return {};
-    std::vector<VkExtensionProperties> extensions(count);
-    if (vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data()) != VK_SUCCESS)
-        return {};
-    std::vector<std::string> names;
-    for (std::uint32_t i = 0; i < count; ++i)
-        names.emplace_back(extensions[i].extensionName);
-    return names;
-}
-
 // An environment variable's value, empty when it is not set. MSVC deprecates std::getenv.
 std::string environment_variable(const char* name) {
 #ifdef _WIN32
@@ -247,7 +221,12 @@ Device::Device(const DeviceOptions& options) {
 
         // The validation layer is checked before the instance, so that "not installed" and
         // "disabled by VK_LOADER_LAYERS_DISABLE" are told apart from having no driver.
-        const bool layer_available = contains(instance_layers(), validation_layer);
+        auto system = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
+        if (!system)
+            throw NoDeviceError("the Vulkan loader could not list its layers and extensions: " +
+                                system.error().message());
+        const vkb::SystemInfo& available = system.value();
+        const bool layer_available = available.is_layer_available(validation_layer);
         if (options.validation == Validation::required && !layer_available)
             throw ValidationUnavailableError(
                 std::string("the Khronos validation layer (") + validation_layer +
@@ -263,7 +242,6 @@ Device::Device(const DeviceOptions& options) {
             .set_engine_name("cs")
             .require_api_version(1, 3, 0)
             .set_headless(true);
-        const std::vector<std::string> available = instance_extensions();
         const auto enable_instance_extension = [&](const std::string& name) {
             if (!contains(instance_extensions_, name)) {
                 builder.enable_extension(name);
@@ -271,17 +249,17 @@ Device::Device(const DeviceOptions& options) {
             }
         };
         if (options.presentation) {
-            if (!contains(available, VK_KHR_SURFACE_EXTENSION_NAME))
+            if (!available.is_extension_available(VK_KHR_SURFACE_EXTENSION_NAME))
                 throw NoDeviceError("no Vulkan driver offers VK_KHR_surface, which presentation "
                                     "needs");
             enable_instance_extension(VK_KHR_SURFACE_EXTENSION_NAME);
             for (const char* name : platform_surface_extensions) {
-                if (contains(available, name))
+                if (available.is_extension_available(name))
                     enable_instance_extension(name);
             }
         }
         for (const std::string& name : options.optional_instance_extensions) {
-            if (contains(available, name))
+            if (available.is_extension_available(name.c_str()))
                 enable_instance_extension(name);
         }
         if (validation) {
@@ -353,7 +331,6 @@ Device::Device(const DeviceOptions& options) {
             throw std::runtime_error("cs::gpu::Device: the graphics queue of " + chosen.name +
                                      " cannot run compute work");
         extensions_ = chosen.get_extensions();
-        presentation_ = options.presentation;
 
         VmaVulkanFunctions functions{};
         functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -420,7 +397,7 @@ bool Device::has_instance_extension(std::string_view name) const {
 }
 
 bool Device::can_present(VkSurfaceKHR surface) const {
-    if (!presentation_ || surface == VK_NULL_HANDLE)
+    if (!presentation() || surface == VK_NULL_HANDLE)
         return false;
     VkBool32 supported = VK_FALSE;
     return vkGetPhysicalDeviceSurfaceSupportKHR(physical_device_, queue_family_, surface,

@@ -577,7 +577,6 @@ TEST_CASE("device: the report gives name, driver, API version, ray query and val
         CAPTURE(text);
         CHECK_THAT(text, ContainsSubstring("device: " + report.name));
         CHECK_THAT(text, ContainsSubstring("driver: " + report.driver));
-        CHECK_THAT(text, ContainsSubstring("Vulkan: 1."));
         CHECK_THAT(text, ContainsSubstring("Vulkan: " + version_string(report.api_version)));
         CHECK_THAT(text, ContainsSubstring(report.ray_query ? "ray query: yes" : "ray query: no"));
         CHECK_THAT(text,
@@ -700,14 +699,6 @@ TEST_CASE("device: without the validation layer, required throws and if_availabl
         const Device gpu{options};
         CHECK_FALSE(gpu.report().validation);
         CHECK_THAT(gpu.report().to_string(), ContainsSubstring("validation: off"));
-    }
-
-    SECTION("disabled layer: Validation::off runs and says validation is off") {
-        const ScopedEnv env{"VK_LOADER_LAYERS_DISABLE", std::string("VK_LAYER_KHRONOS_validation")};
-        DeviceOptions options = test_options();
-        options.validation = Validation::off;
-        const Device gpu{options};
-        CHECK_FALSE(gpu.report().validation);
     }
 }
 

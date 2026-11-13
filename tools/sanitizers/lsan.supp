@@ -4,16 +4,9 @@
 # with the reason above it, in the form `leak:<function, library or file name>`. A leak in our
 # own code is fixed, never suppressed.
 
-# Mesa's Vulkan drivers allocate process-wide state once, in pthread_once initialisers, and keep
-# it in the driver's static data. When the Vulkan loader unloads the driver at vkDestroyInstance,
-# that memory is no longer reachable, and the driver's frames have lost their names. The gpu
-# tests' main sets VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1, which keeps drivers loaded:
-# with it, lavapipe and RADV (Mesa 26.2) report nothing. These entries are for a loader that
-# ignores the variable. They match the first named frames, the loader entry points that first
-# call into lavapipe. The only code of ours below those calls is the debug callback in
-# libs/gpu/src/device.cpp, and it keeps nothing.
-#
-# lavapipe's once-only initialisation, reached when the loader creates the driver's instance.
-leak:vkCreateInstance
-# The same initialisation, reached when the loader first lists lavapipe's physical devices.
-leak:vkEnumeratePhysicalDevices
+# Nothing from the Vulkan drivers is listed. Mesa's drivers (lavapipe, RADV) allocate state once
+# per process and keep it in their own static data; when the Vulkan loader unloads a driver at
+# vkDestroyInstance, LeakSanitizer reports that memory, from frames that have lost their names,
+# so no entry could match the driver without also matching our own code. Instead the gpu tests'
+# main sets VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1, which keeps drivers loaded and the
+# memory reachable: with it, lavapipe and RADV (Mesa 26.2) report nothing.
