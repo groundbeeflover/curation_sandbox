@@ -10,8 +10,8 @@
 // parallel_for never deadlock: each caller can always finish its own loop by itself.
 //
 // Which thread runs which index is not fixed, so a result must not depend on it. Code that adds
-// up results (the lux meter) gives each chunk its own slot and adds the slots in index order
-// afterwards, so that its result is the same, bit for bit, whatever the thread count.
+// up results (the engine's lux meter, say) gives each chunk its own slot and adds the slots in
+// index order afterwards, so that its result is the same, bit for bit, whatever the thread count.
 
 #include <atomic>
 #include <condition_variable>
@@ -71,6 +71,7 @@ class ThreadPool {
     struct Loop;
 
     void work();
+    void stop(); // stops and joins the workers
     static void run_chunks(Loop& loop);
 
     std::vector<std::thread> workers_;

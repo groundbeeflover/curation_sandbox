@@ -4,6 +4,7 @@
 
 #include <cs/core/colour.hpp>
 #include <cs/core/math.hpp>
+#include <cs/core/photometry.hpp>
 #include <cs/core/random.hpp>
 #include <cs/core/sampling.hpp>
 #include <cs/core/thread_pool.hpp>
@@ -36,36 +37,37 @@ bool finite(glm::dvec3 v) {
 constexpr std::uint32_t roulette_from_bounce = 3;
 constexpr double roulette_max_survival = 0.95;
 
-// What the paths need of the world, made once per reading.
-struct Lighting {
-    struct Lamp {
-        const light::Luminaire* luminaire;
-        glm::dvec3 colour; // linear RGB of luminance 1: radiance per nit
-    };
-    std::vector<Lamp> lamps;
-    std::vector<std::unique_ptr<material::Brdf>> brdfs; // one per world material
+// A world light as the paths see it.
+struct Lamp {
+    const light::Luminaire* luminaire;
+    glm::dvec3 colour; // linear RGB of luminance 1: radiance per nit
 };
 
-glm::dvec3 clamp_albedo(glm::dvec3 albedo) {
-    // Values outside [0, 1] would create energy or a negative one; NaN becomes 0.
-    return {std::clamp(std::isnan(albedo.r) ? 0.0 : albedo.r, 0.0, 1.0),
-            std::clamp(std::isnan(albedo.g) ? 0.0 : albedo.g, 0.0, 1.0),
-            std::clamp(std::isnan(albedo.b) ? 0.0 : albedo.b, 0.0, 1.0)};
-}
-
-Lighting lighting_of(const world::World& world) {
-    Lighting lighting;
-    lighting.lamps.reserve(world.lights.size());
+std::vector<Lamp> lamps_of(const world::World& world) {
+    std::vector<Lamp> lamps;
+    lamps.reserve(world.lights.size());
     for (const world::Light& light : world.lights) {
         const glm::dvec3 rgb = cct_to_linear_rgb(light.colour_temperature_k);
         const double y = luminance(rgb);
         // cct_to_linear_rgb gives luminance 1; dividing by it makes that exact, so that the
         // indirect light off a grey surface is exactly its albedo times the direct.
-        lighting.lamps.push_back({&light.luminaire, y > 0.0 ? rgb / y : glm::dvec3(1.0)});
+        lamps.push_back({&light.luminaire, y > 0.0 ? rgb / y : glm::dvec3(1.0)});
     }
-    lighting.brdfs.reserve(world.materials.size());
+    return lamps;
+}
+
+// Albedos outside [0, 1] would create energy, or a negative one; NaN becomes 0.
+glm::dvec3 clamp_albedo(glm::dvec3 albedo) {
+    const auto unit = [](double x) { return std::isnan(x) ? 0.0 : std::clamp(x, 0.0, 1.0); };
+    return {unit(albedo.r), unit(albedo.g), unit(albedo.b)};
+}
+
+// One BRDF per world material.
+std::vector<std::unique_ptr<material::Brdf>> brdfs_of(const world::World& world) {
+    std::vector<std::unique_ptr<material::Brdf>> brdfs;
+    brdfs.reserve(world.materials.size());
     for (const world::Material& material : world.materials) {
-        lighting.brdfs.push_back(std::visit(
+        brdfs.push_back(std::visit(
             [](const auto& m) -> std::unique_ptr<material::Brdf> {
                 using M = std::decay_t<decltype(m)>;
                 if constexpr (std::is_same_v<M, world::LambertMaterial>) {
@@ -79,25 +81,23 @@ Lighting lighting_of(const world::World& world) {
             },
             material));
     }
-    return lighting;
+    return brdfs;
 }
 
-// The direct light a point receives from every lamp, as radiance reflected towards wo: the sum
-// of f(wo, wi) * colour * I cos / d^2. With brdf null, the illuminance in lux (the sensor).
-// `side` is the geometric normal on the side the light must come from.
-glm::dvec3 next_event(const Scene& scene, const Lighting& lighting, glm::dvec3 point,
-                      glm::dvec3 side, const Onb<double>& frame, const material::Brdf* brdf,
-                      glm::dvec3 wo_local) {
-    glm::dvec3 sum(0.0);
-    for (const Lighting::Lamp& lamp : lighting.lamps) {
+// Calls add(lamp, wi, illuminance_lux) for every lamp that lights the point: in front of
+// `normal`, emitting towards the point, and visible from it. wi is the unit direction to the
+// lamp; `side` is the geometric normal on the side the light must come from (light_visible).
+template <typename Add>
+void for_each_lamp_lighting(const Scene& scene, const std::vector<Lamp>& lamps, glm::dvec3 point,
+                            glm::dvec3 normal, glm::dvec3 side, Add&& add) {
+    for (const Lamp& lamp : lamps) {
         const glm::dvec3 to_light = lamp.luminaire->position_m() - point;
-        const double d2 = glm::dot(to_light, to_light);
-        if (!(d2 > 0.0)) {
+        const double d = glm::length(to_light);
+        if (!(d > 0.0)) {
             continue;
         }
-        const double d = std::sqrt(d2);
         const glm::dvec3 wi = to_light / d;
-        const double cos_theta = glm::dot(frame.normal, wi);
+        const double cos_theta = glm::dot(normal, wi);
         if (!(cos_theta > 0.0)) {
             continue;
         }
@@ -108,15 +108,24 @@ glm::dvec3 next_event(const Scene& scene, const Lighting& lighting, glm::dvec3 p
         if (!light_visible(scene, point, side, lamp.luminaire->position_m())) {
             continue;
         }
-        const double illuminance = intensity_cd * cos_theta / d2;
-        if (brdf == nullptr) {
-            sum += glm::dvec3(illuminance);
-        } else {
-            sum += brdf->eval(wo_local, frame.to_local(wi)) * lamp.colour * illuminance;
-        }
+        add(lamp, wi, photometry::point_illuminance(intensity_cd, d, cos_theta));
     }
+}
+
+// The direct illuminance on a sensor, in lux.
+double sensor_direct_lux(const Scene& scene, const std::vector<Lamp>& lamps, glm::dvec3 point,
+                         glm::dvec3 normal) {
+    double sum = 0.0;
+    for_each_lamp_lighting(scene, lamps, point, normal, normal,
+                           [&](const Lamp&, glm::dvec3, double lux) { sum += lux; });
     return sum;
 }
+
+// What the indirect paths need of the world, made once per reading.
+struct Lighting {
+    std::vector<Lamp> lamps;
+    std::vector<std::unique_ptr<material::Brdf>> brdfs; // one per world material
+};
 
 // One indirect path from the sensor: pi times the luminance found in a cosine-distributed
 // direction, the light that has bounced at least once.
@@ -148,8 +157,13 @@ double indirect_sample(const Scene& scene, const Lighting& lighting, glm::dvec3 
         const material::Brdf& brdf =
             *lighting.brdfs[scene.world().instances[hit->instance].material];
 
-        radiance +=
-            throughput * next_event(scene, lighting, hit->position_m, side, frame, &brdf, wo_local);
+        // Next-event estimation: the lamps' direct light, reflected towards wo.
+        for_each_lamp_lighting(scene, lighting.lamps, hit->position_m, shading, side,
+                               [&](const Lamp& lamp, glm::dvec3 wi, double lux) {
+                                   radiance += throughput *
+                                               brdf.eval(wo_local, frame.to_local(wi)) *
+                                               lamp.colour * lux;
+                               });
 
         if (bounce >= max_bounces) {
             break;
@@ -225,8 +239,7 @@ bool light_visible(const Scene& scene, glm::dvec3 from_m, glm::dvec3 side, glm::
 }
 
 double direct_lux(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal) {
-    const Lighting lighting = lighting_of(scene.world());
-    return next_event(scene, lighting, point_m, normal, onb_from_normal(normal), nullptr, {}).x;
+    return sensor_direct_lux(scene, lamps_of(scene.world()), point_m, normal);
 }
 
 LuxReading lux_at(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal,
@@ -243,11 +256,10 @@ LuxReading lux_at(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal,
     }
     const glm::dvec3 n = normal / length;
     const Onb<double> sensor = onb_from_normal(n);
-    const Lighting lighting = lighting_of(scene.world());
+    const Lighting lighting{lamps_of(scene.world()), brdfs_of(scene.world())};
 
     LuxReading reading;
-    reading.direct_lux.value = next_event(scene, lighting, point_m, n, sensor, nullptr, {}).x;
-    reading.direct_lux.standard_error = 0.0;
+    reading.direct_lux.value = sensor_direct_lux(scene, lighting.lamps, point_m, n);
 
     const std::size_t samples = options.samples;
     const std::size_t chunks = (samples + lux_chunk_samples - 1) / lux_chunk_samples;
@@ -263,9 +275,7 @@ LuxReading lux_at(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal,
     if (options.pool != nullptr) {
         options.pool->parallel_for(samples, lux_chunk_samples, run);
     } else {
-        for (std::size_t begin = 0; begin < samples; begin += lux_chunk_samples) {
-            run(begin, std::min(samples, begin + lux_chunk_samples));
-        }
+        ThreadPool(1).parallel_for(samples, lux_chunk_samples, run); // on this thread, in order
     }
 
     Moments indirect;

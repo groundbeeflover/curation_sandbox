@@ -25,12 +25,11 @@ bool finite(glm::dvec3 v) {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 
-// A mesh of one instance, in world coordinates.
+// The positions and normals of one instance's mesh, in world coordinates; its indices and uvs
+// are the world mesh's own.
 struct WorldMesh {
     std::vector<glm::dvec3> positions;
     std::vector<glm::dvec3> normals;
-    std::vector<glm::dvec2> uvs;
-    std::vector<std::uint32_t> indices;
 };
 
 WorldMesh to_world(const world::World& world, std::size_t instance_index) {
@@ -72,8 +71,6 @@ WorldMesh to_world(const world::World& world, std::size_t instance_index) {
         const double length = glm::length(n);
         out.normals.push_back(length > 0.0 && std::isfinite(length) ? n / length : glm::dvec3(0.0));
     }
-    out.uvs = mesh.uvs;
-    out.indices = mesh.indices;
     return out;
 }
 
@@ -148,7 +145,8 @@ Scene::Scene(const world::World& world) : impl_(std::make_unique<Impl>()) {
 
     for (std::size_t i = 0; i < impl.meshes.size(); ++i) {
         const WorldMesh& mesh = impl.meshes[i];
-        if (mesh.indices.empty()) {
+        const std::vector<std::uint32_t>& indices = world.meshes[world.instances[i].mesh].indices;
+        if (indices.empty()) {
             continue; // Embree refuses a geometry without triangles; nothing to hit anyway
         }
         RTCGeometry geometry = rtcNewGeometry(impl.device, RTC_GEOMETRY_TYPE_TRIANGLE);
@@ -157,7 +155,7 @@ Scene::Scene(const world::World& world) : impl_(std::make_unique<Impl>()) {
                                     3 * sizeof(float), mesh.positions.size()));
         auto* triangles = static_cast<std::uint32_t*>(
             rtcSetNewGeometryBuffer(geometry, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3,
-                                    3 * sizeof(std::uint32_t), mesh.indices.size() / 3));
+                                    3 * sizeof(std::uint32_t), indices.size() / 3));
         if (vertices == nullptr || triangles == nullptr) {
             rtcReleaseGeometry(geometry);
             throw_on_device_error(impl.device, "allocate a geometry's buffers");
@@ -168,7 +166,7 @@ Scene::Scene(const world::World& world) : impl_(std::make_unique<Impl>()) {
             vertices[3 * v + 1] = static_cast<float>(mesh.positions[v].y);
             vertices[3 * v + 2] = static_cast<float>(mesh.positions[v].z);
         }
-        std::copy(mesh.indices.begin(), mesh.indices.end(), triangles);
+        std::copy(indices.begin(), indices.end(), triangles);
         rtcCommitGeometry(geometry);
         // The geometry's id is the instance's index, so a hit names its instance.
         rtcAttachGeometryByID(impl.scene, geometry, static_cast<unsigned>(i));
@@ -209,9 +207,10 @@ std::optional<Hit> Scene::intersect(glm::dvec3 origin_m, glm::dvec3 direction, d
     hit.position_m = origin_m + hit.distance_m * direction;
 
     const WorldMesh& mesh = impl_->meshes[hit.instance];
-    const std::uint32_t i0 = mesh.indices[3 * std::size_t{hit.triangle} + 0];
-    const std::uint32_t i1 = mesh.indices[3 * std::size_t{hit.triangle} + 1];
-    const std::uint32_t i2 = mesh.indices[3 * std::size_t{hit.triangle} + 2];
+    const geom::Mesh& source = impl_->world.meshes[impl_->world.instances[hit.instance].mesh];
+    const std::uint32_t i0 = source.indices[3 * std::size_t{hit.triangle} + 0];
+    const std::uint32_t i1 = source.indices[3 * std::size_t{hit.triangle} + 1];
+    const std::uint32_t i2 = source.indices[3 * std::size_t{hit.triangle} + 2];
 
     const glm::dvec3 ng = glm::cross(mesh.positions[i1] - mesh.positions[i0],
                                      mesh.positions[i2] - mesh.positions[i0]);
@@ -227,7 +226,7 @@ std::optional<Hit> Scene::intersect(glm::dvec3 origin_m, glm::dvec3 direction, d
     const glm::dvec3 n = w * mesh.normals[i0] + u * mesh.normals[i1] + v * mesh.normals[i2];
     const double n_length = glm::length(n);
     hit.normal = n_length > 0.0 ? n / n_length : hit.geometric_normal;
-    hit.uv = w * mesh.uvs[i0] + u * mesh.uvs[i1] + v * mesh.uvs[i2];
+    hit.uv = w * source.uvs[i0] + u * source.uvs[i1] + v * source.uvs[i2];
     return hit;
 }
 

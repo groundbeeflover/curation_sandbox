@@ -39,19 +39,16 @@ ThreadPool::ThreadPool(std::size_t thread_count) {
             workers_.emplace_back([this] { work(); });
         }
     } catch (...) {
-        {
-            const std::lock_guard lock(mutex_);
-            stopping_ = true;
-        }
-        wake_.notify_all();
-        for (auto& worker : workers_) {
-            worker.join();
-        }
+        stop();
         throw;
     }
 }
 
 ThreadPool::~ThreadPool() {
+    stop();
+}
+
+void ThreadPool::stop() {
     {
         const std::lock_guard lock(mutex_);
         stopping_ = true;
