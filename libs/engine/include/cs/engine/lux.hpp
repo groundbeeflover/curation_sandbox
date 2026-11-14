@@ -52,11 +52,14 @@ class ThreadPool;
 
 namespace cs::engine {
 
-// The gap a shadow ray leaves before a light d metres away: 1e-4 of d plus 1e-5 m, so 0.35 mm
+// The gap a shadow ray leaves before a light d metres away: 1e-4 of d plus 1e-5 m, so 0.36 mm
 // over the 3.5 m from the skeleton's ceiling spot to the floor. The relative part covers
 // Embree's single-precision hit distances, which are good to about 1e-6 of d; the absolute part
 // covers points near the origin, where a relative gap would shrink below a float's resolution at
 // the light's coordinates. A blocker this close to a point light could only be its own housing.
+// The other side of the rule: a light up to shadow_gap_m(d) behind a surface is seen through it
+// from points d away (0.7 mm from 7 m), though not from near ones. World never puts a light
+// there: a luminaire sits in the surface it hangs from, or in front of it.
 constexpr double shadow_gap_m(double distance_m) {
     return 1e-4 * distance_m + 1e-5;
 }
@@ -82,10 +85,11 @@ inline constexpr std::size_t lux_chunk_samples = 64;
 struct LuxOptions {
     std::uint32_t samples = 1024; // indirect paths; at least 1
     std::uint64_t seed = 1;
-    // Bounces after the first hit at most; with Russian roulette from the fourth, a path rarely
-    // gets near it. 64 bounces in a white room of albedo 0.8 leave 0.8^64, about 1e-6, of the
-    // indirect light uncounted.
-    std::uint32_t max_bounces = 64;
+    // Bounces after the first hit at most. In a closed room of albedo rho, rho^(max_bounces + 1)
+    // of the indirect light is left uncounted: 1e-47 at 0.9 and 1e-23 at 0.95 with 1024, where
+    // 64 would leave 0.1% and 3.5%. Russian roulette from the fourth bounce keeps paths short,
+    // so the cap costs nothing until albedos near 1, whose indirect light diverges.
+    std::uint32_t max_bounces = 1024;
     ThreadPool* pool = nullptr; // runs the samples; none: all on the calling thread
 };
 

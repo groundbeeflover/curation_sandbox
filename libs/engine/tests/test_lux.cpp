@@ -14,6 +14,7 @@
 #include <cs/engine/lux.hpp>
 #include <cs/engine/scene.hpp>
 
+#include <cs/core/colour.hpp>
 #include <cs/core/photometry.hpp>
 #include <cs/core/thread_pool.hpp>
 #include <cs/geom/box_frame.hpp>
@@ -233,9 +234,8 @@ world::World room_with_ceiling_spot() {
 
 // |actual - expected| within the issue's 1%, and within 3 standard errors of the reading plus a
 // rounding allowance. Direct readings from point lights are sums, not estimates (lux.hpp), so
-// their standard error is 0 and the second check asks that they be right to 1e-4: about the
-// effect of computing the distance from the sensor's offset start (ray_offset_m, 1e-5 m over
-// 2 m is 5e-6) and of float coordinates, and far tighter than the 1%.
+// their standard error is 0 and the second check asks that they be right to 1e-4, far tighter
+// than the 1% and far looser than double rounding.
 void check_reading(const cs::engine::Estimate& reading, double expected) {
     INFO("reading " << reading.value << " +- " << reading.standard_error << ", expected "
                     << expected);
@@ -702,69 +702,133 @@ TEST_CASE("lux_at: in a closed room the total adds indirect light, with a finite
     CHECK(indirect < sphere_estimate * 4.0);
 }
 
-TEST_CASE("lux_at: inside a closed sphere, the indirect illuminance is rho Phi / (A "
-          "(1 - rho))",
-          "[engine][lux][accuracy]") {
-    // The integrating sphere. In a sphere every patch of Lambertian wall irradiates every point
-    // of the wall equally (the form factor cos cos / (pi r^2) is 1 / (4 pi R^2) everywhere), so
-    // whatever the source, the light that has bounced at least once is the same everywhere:
-    // E_ind = rho (Phi / A + E_ind), E_ind = rho Phi / ((1 - rho) A). With an isotropic 1000 cd
-    // source at the centre (Phi = 4000 pi lm) and rho = 0.5, E_ind = Phi / A, about 1000 lux for
-    // R = 1 m.
-    //
-    // The sphere here is a polyhedron of 96 x 48 flat facets, so A is the mesh's area, and its
-    // light is uniform only nearly: across a facet, at most 2.7 degrees across from its centre,
-    // the direct light changes by about 3 (1 - cos 2.7 deg) = 0.3%. Since, wherever the radiance
-    // of an enclosure is uniform, the irradiance it gives is pi times it whatever the shape,
-    // the indirect light at one facet differs from the average by about that 0.3%. The check
-    // allows 1% for it plus 4 standard errors for the Monte Carlo; Russian roulette is unbiased
-    // and 64 bounces at rho = 0.5 leave 0.5^64 of the light uncounted.
-    constexpr double rho = 0.5;
-    constexpr double intensity_cd = 1000.0;
+namespace {
+
+// The integrating sphere. In a sphere every patch of Lambertian wall irradiates every point of
+// the wall equally (the form factor cos cos / (pi r^2) is 1 / (4 pi R^2) everywhere), so the
+// light that has bounced at least once is the same everywhere. With a source of Phi lumens:
+// E_ind = rho (Phi / A + E_ind), so E_ind = rho Phi / ((1 - rho) A), per colour channel.
+//
+// The sphere here is a polyhedron of 96 x 48 flat facets, so A is the mesh's area, and its light
+// is uniform only nearly. Across a facet, at most 2.7 degrees from its centre, the direct light
+// changes by about 3 (1 - cos 2.7 deg) = 0.3%. Wherever the radiance of an enclosure is uniform,
+// the irradiance it gives is pi times it, whatever the shape, so the indirect light at one facet
+// differs from the average by about that 0.3%. That holds for a source at the centre only: an
+// off-centre source lights the tilted facets unevenly, by up to 2% (physics review of #68).
+// The checks allow the 0.3% plus 3 standard errors, inside ADR 0002's 1%.
+constexpr double sphere_intensity_cd = 1000.0;
+constexpr double sphere_flux_lm = 4.0 * pi * sphere_intensity_cd;
+constexpr double sphere_tolerance = 0.003;
+
+struct SphereReading {
+    double area_m2 = 0.0;
+    double direct = 0.0;
+    double direct_expected = 0.0;
+    double indirect = 0.0;
+    double standard_error = 0.0;
+};
+
+// The sphere of radius 1 m, of one material, lit by the isotropic 1000 cd source at its centre,
+// read at the centroid of the facet nearest the equator at longitude 0, facing in.
+SphereReading read_sphere(const world::Material& material, LuxOptions options) {
     const geom::Mesh sphere = faceted_sphere(1.0, 96, 48);
-    const double area = geom::area(sphere);
     REQUIRE(geom::is_closed(sphere));
-    CHECK_THAT(area, WithinRel(4.0 * pi, 0.01)); // the polyhedron is close to the sphere
 
     world::World w;
-    add_lambert(w, sphere, rho);
-    w.lights.push_back(isotropic_light({0.0, 0.0, 0.0}, intensity_cd));
+    add_lambert(w, sphere, 0.5);
+    w.materials.front() = material;
+    w.lights.push_back(isotropic_light({0.0, 0.0, 0.0}, sphere_intensity_cd));
     const Scene scene(w);
 
-    // The sensor: on the facet nearest the equator at longitude 0, at its centroid, facing in.
+    const auto centroid = [&](std::size_t t) {
+        return (sphere.positions[sphere.indices[3 * t]] +
+                sphere.positions[sphere.indices[3 * t + 1]] +
+                sphere.positions[sphere.indices[3 * t + 2]]) /
+               3.0;
+    };
     std::size_t best = 0;
-    double best_x = -inf;
-    for (std::size_t t = 0; t < sphere.indices.size() / 3; ++t) {
-        const dvec3 c =
-            (sphere.positions[sphere.indices[3 * t]] + sphere.positions[sphere.indices[3 * t + 1]] +
-             sphere.positions[sphere.indices[3 * t + 2]]) /
-            3.0;
-        if (c.x > best_x) {
-            best_x = c.x;
+    for (std::size_t t = 1; t < sphere.indices.size() / 3; ++t) {
+        if (centroid(t).x > centroid(best).x) {
             best = t;
         }
     }
-    const dvec3 point = (sphere.positions[sphere.indices[3 * best]] +
-                         sphere.positions[sphere.indices[3 * best + 1]] +
-                         sphere.positions[sphere.indices[3 * best + 2]]) /
-                        3.0;
+    const dvec3 point = centroid(best);
     const dvec3 normal = sphere.normals[sphere.indices[3 * best]];
 
-    const LuxReading reading = lux_at(scene, point, normal, LuxOptions{.samples = 4096, .seed = 1});
-
-    // Direct: I cos / d^2 from the centre.
+    const LuxReading reading = lux_at(scene, point, normal, options);
     const double d = glm::length(point);
-    const double direct_expected = intensity_cd * glm::dot(normal, -point / d) / (d * d);
-    check_reading(reading.direct_lux, direct_expected);
+    return {.area_m2 = geom::area(sphere),
+            .direct = reading.direct_lux.value,
+            .direct_expected = sphere_intensity_cd * glm::dot(normal, -point / d) / (d * d),
+            .indirect = reading.total_lux.value - reading.direct_lux.value,
+            .standard_error = reading.total_lux.standard_error};
+}
 
-    const double flux = 4.0 * pi * intensity_cd;
-    const double indirect_expected = rho * flux / ((1.0 - rho) * area);
-    const double indirect = reading.total_lux.value - reading.direct_lux.value;
-    const double se = reading.total_lux.standard_error;
-    INFO("indirect " << indirect << " +- " << se << ", expected " << indirect_expected);
-    CHECK(se > 0.0);
-    CHECK(se < 0.02 * indirect_expected); // enough samples for the check to mean something
-    CHECK(std::abs(indirect - indirect_expected) <= 0.01 * indirect_expected + 4.0 * se);
+void check_indirect(const SphereReading& r, double expected) {
+    INFO("indirect " << r.indirect << " +- " << r.standard_error << ", expected " << expected);
+    CHECK(r.standard_error < 0.005 * expected); // enough samples for the check to mean something
+    CHECK(std::abs(r.indirect - expected) <= sphere_tolerance * expected + 3.0 * r.standard_error);
+}
+
+} // namespace
+
+TEST_CASE("lux_at: inside a closed sphere, the indirect illuminance is rho Phi / (A "
+          "(1 - rho))",
+          "[engine][lux][accuracy]") {
+    // rho = 0.5: E_ind = Phi / A, about 1000 lux.
+    constexpr double rho = 0.5;
+    const SphereReading r =
+        read_sphere(world::LambertMaterial{dvec3(rho)}, {.samples = 65536, .seed = 1});
+    CHECK_THAT(r.area_m2, WithinRel(4.0 * pi, 0.01)); // the polyhedron is close to the sphere
+    CHECK_THAT(r.direct, WithinRel(r.direct_expected, 1e-4));
+    CHECK(r.standard_error > 0.0);
+    check_indirect(r, rho * sphere_flux_lm / ((1.0 - rho) * r.area_m2));
+}
+
+TEST_CASE("lux_at: inside a closed sphere, the first bounce alone is rho Phi / A",
+          "[engine][lux][accuracy]") {
+    // With max_bounces 0 each path takes the direct light of the one surface it meets: rho Phi /
+    // A, with no Monte Carlo spread in a sphere lit from its centre (every facet reflects the
+    // same radiance, but for the 0.3% across facets). It pins the factor pi and the next-event
+    // estimate without statistical slack.
+    constexpr double rho = 0.5;
+    const SphereReading r = read_sphere(world::LambertMaterial{dvec3(rho)},
+                                        {.samples = 1024, .seed = 1, .max_bounces = 0});
+    const double expected = rho * sphere_flux_lm / r.area_m2;
+    INFO("indirect " << r.indirect << ", expected " << expected);
+    CHECK_THAT(r.indirect, WithinRel(expected, sphere_tolerance));
+}
+
+TEST_CASE("lux_at: inside a closed sphere of albedo 0.9, Russian roulette still counts all the "
+          "light",
+          "[engine][lux][accuracy]") {
+    // E_ind = 9 Phi / A: 90% of it has bounced more than once, and 0.9^65 = 0.1% of it more than
+    // 64 times, which the old cap of 64 bounces lost (physics review of #68).
+    constexpr double rho = 0.9;
+    const SphereReading r =
+        read_sphere(world::LambertMaterial{dvec3(rho)}, {.samples = 65536, .seed = 2});
+    check_indirect(r, rho * sphere_flux_lm / ((1.0 - rho) * r.area_m2));
+}
+
+TEST_CASE("lux_at: inside a closed coloured sphere, the indirect light is the luminance of each "
+          "channel's",
+          "[engine][lux][accuracy]") {
+    // Each channel c reflects rho_c / (1 - rho_c) of its share of the light, and the light's
+    // colour (3000 K) has luminance 1, so E_ind = luminance(colour * rho / (1 - rho)) Phi / A.
+    const dvec3 rho(0.9, 0.5, 0.2);
+    const dvec3 rgb = cs::cct_to_linear_rgb(3000.0);
+    const dvec3 colour = rgb / cs::luminance(rgb);
+    const SphereReading r = read_sphere(world::LambertMaterial{rho}, {.samples = 65536, .seed = 3});
+    check_indirect(r, cs::luminance(colour * rho / (1.0 - rho)) * sphere_flux_lm / r.area_m2);
+}
+
+TEST_CASE("lux_at: a painting's surface reflects with its base colour until texels are read",
+          "[engine][lux][accuracy]") {
+    // PaintingSurface's default base colour is 0.8 grey and it has no image: E_ind = 4 Phi / A.
+    const world::PaintingSurface surface{};
+    REQUIRE(surface.parameters.base.color == dvec3(0.8));
+    const SphereReading r = read_sphere(surface, {.samples = 65536, .seed = 4});
+    check_indirect(r, 0.8 * sphere_flux_lm / (0.2 * r.area_m2));
 }
 
 // ---- Seeds, samples and threads ----------------------------------------------------------------
