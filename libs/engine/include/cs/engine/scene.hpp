@@ -32,7 +32,9 @@ struct Hit {
     std::uint32_t triangle = 0; // into that instance's mesh, as indices[3 * triangle + k]
     double distance_m = 0.0;    // along the ray, which is of unit length
     glm::dvec3 position_m{0.0}; // origin + distance_m * direction
-    glm::dvec3 geometric_normal{0.0, 0.0, 1.0}; // unit, the triangle's front (counter-clockwise)
+    // Unit, the triangle's front (counter-clockwise); for a triangle too thin to have one, the
+    // interpolated normal, or else the direction back along the ray.
+    glm::dvec3 geometric_normal{0.0, 0.0, 1.0};
     glm::dvec3 normal{0.0, 0.0, 1.0}; // unit: the mesh's vertex normals, interpolated, in world
     glm::dvec2 uv{0.0};               // the mesh's uvs, interpolated
 };
@@ -46,6 +48,7 @@ class Scene {
     explicit Scene(const world::World& world);
     ~Scene();
 
+    // A scene moved from may only be destroyed or assigned to.
     Scene(Scene&&) noexcept;
     Scene& operator=(Scene&&) noexcept;
 

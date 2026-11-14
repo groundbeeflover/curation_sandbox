@@ -218,6 +218,22 @@ struct Moments {
     }
 };
 
+glm::dvec3 checked_point(glm::dvec3 point_m) {
+    if (!finite(point_m)) {
+        throw std::invalid_argument("lux meter: the point is not finite");
+    }
+    return point_m;
+}
+
+// The sensor's normal, of unit length.
+glm::dvec3 checked_normal(glm::dvec3 normal) {
+    const double length = glm::length(normal);
+    if (!finite(normal) || !(length > 0.0) || !std::isfinite(length)) {
+        throw std::invalid_argument("lux meter: the normal is not finite or is zero");
+    }
+    return normal / length;
+}
+
 } // namespace
 
 bool light_visible(const Scene& scene, glm::dvec3 from_m, glm::dvec3 side, glm::dvec3 light_m) {
@@ -239,22 +255,17 @@ bool light_visible(const Scene& scene, glm::dvec3 from_m, glm::dvec3 side, glm::
 }
 
 double direct_lux(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal) {
-    return sensor_direct_lux(scene, lamps_of(scene.world()), point_m, normal);
+    return sensor_direct_lux(scene, lamps_of(scene.world()), checked_point(point_m),
+                             checked_normal(normal));
 }
 
 LuxReading lux_at(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal,
                   const LuxOptions& options) {
-    if (!finite(point_m)) {
-        throw std::invalid_argument("lux_at: the point is not finite");
-    }
-    const double length = glm::length(normal);
-    if (!finite(normal) || !(length > 0.0) || !std::isfinite(length)) {
-        throw std::invalid_argument("lux_at: the normal is not finite or is zero");
-    }
+    checked_point(point_m);
+    const glm::dvec3 n = checked_normal(normal);
     if (options.samples == 0) {
         throw std::invalid_argument("lux_at: samples must be at least 1");
     }
-    const glm::dvec3 n = normal / length;
     const Onb<double> sensor = onb_from_normal(n);
     const Lighting lighting{lamps_of(scene.world()), brdfs_of(scene.world())};
 

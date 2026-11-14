@@ -214,17 +214,23 @@ std::optional<Hit> Scene::intersect(glm::dvec3 origin_m, glm::dvec3 direction, d
 
     const glm::dvec3 ng = glm::cross(mesh.positions[i1] - mesh.positions[i0],
                                      mesh.positions[i2] - mesh.positions[i0]);
-    const double ng_length = glm::length(ng);
-    if (ng_length > 0.0) {
-        hit.geometric_normal = ng / ng_length;
-    }
-
     // Embree's barycentrics: the hit is (1 - u - v) p0 + u p1 + v p2.
     const double u = static_cast<double>(query.hit.u);
     const double v = static_cast<double>(query.hit.v);
     const double w = 1.0 - u - v;
     const glm::dvec3 n = w * mesh.normals[i0] + u * mesh.normals[i1] + v * mesh.normals[i2];
     const double n_length = glm::length(n);
+
+    // A sliver too thin for its cross product in doubles takes the vertex normals' direction,
+    // or failing those faces the ray, so that rays leaving it start on the side they came from.
+    const double ng_length = glm::length(ng);
+    if (ng_length > 0.0) {
+        hit.geometric_normal = ng / ng_length;
+    } else if (n_length > 0.0) {
+        hit.geometric_normal = n / n_length;
+    } else {
+        hit.geometric_normal = -glm::normalize(direction);
+    }
     hit.normal = n_length > 0.0 ? n / n_length : hit.geometric_normal;
     hit.uv = w * source.uvs[i0] + u * source.uvs[i1] + v * source.uvs[i2];
     return hit;

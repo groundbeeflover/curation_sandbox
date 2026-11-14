@@ -71,8 +71,9 @@ constexpr double shadow_gap_m(double distance_m) {
 // not on that side of the ray's start is not visible; one closer to it than the gap is.
 bool light_visible(const Scene& scene, glm::dvec3 from_m, glm::dvec3 side, glm::dvec3 light_m);
 
-// The direct illuminance at a point, in lux, facing along normal (unit length), from every light
-// of the scene: the Direct part above.
+// The direct illuminance at a point, in lux, facing along normal, from every light of the scene:
+// the Direct part above. The normal is normalised; it throws std::invalid_argument as lux_at
+// does for a point or normal that is not finite, or a zero normal.
 double direct_lux(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal);
 
 // Keeps the lux meter's random numbers apart from those of other uses of the same seed (the

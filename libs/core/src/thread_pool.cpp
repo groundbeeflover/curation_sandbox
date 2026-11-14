@@ -141,13 +141,21 @@ bool ThreadPool::parallel_for(std::size_t count, std::size_t chunk_size,
     loop->body = &body;
     loop->cancel = cancel;
 
-    const bool helped = loop->chunks > 1 && !workers_.empty();
+    // The caller takes one chunk; wake no more workers than there are chunks left for them.
+    const std::size_t helpers = std::min(loop->chunks - 1, workers_.size());
+    const bool helped = helpers > 0;
     if (helped) {
         {
             const std::lock_guard lock(mutex_);
             loops_.push_back(loop);
         }
-        wake_.notify_all();
+        if (helpers == workers_.size()) {
+            wake_.notify_all();
+        } else {
+            for (std::size_t i = 0; i < helpers; ++i) {
+                wake_.notify_one();
+            }
+        }
     }
 
     run_chunks(*loop);
