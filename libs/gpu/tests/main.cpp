@@ -11,6 +11,11 @@
 //
 // Messages of kind general (the loader describing which drivers and layers it found) are printed
 // but fail nothing: they are not validation.
+//
+// Under the sanitizers the test presets set VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1
+// (CMakePresets.json): Mesa's drivers keep memory in their own static data, which LeakSanitizer
+// reports as leaked once the loader unloads them. Running a test executable directly, outside
+// ctest, needs the same variable set.
 
 #include <cs/gpu/device.hpp>
 
@@ -55,28 +60,12 @@ void fail_on_validation(const cs::gpu::ValidationMessage& message) {
     std::abort();
 }
 
-// The Vulkan loader unloads a driver when its instance is destroyed. Mesa's drivers keep memory
-// they allocate once per process in their own static data, so after unloading LeakSanitizer
-// reports it as leaked, from frames that have lost their names. Keeping the libraries loaded
-// keeps that memory reachable. Set before the first Vulkan call, unless already set.
-void keep_vulkan_libraries_loaded() {
-    constexpr const char* name = "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING";
-#ifdef _WIN32
-    std::size_t length = 0;
-    if (getenv_s(&length, nullptr, 0, name) == 0 && length == 0)
-        _putenv_s(name, "1");
-#else
-    setenv(name, "1", 0);
-#endif
-}
-
 } // namespace
 
 CATCH_REGISTER_LISTENER(TestCaseTracker)
 
 int main(int argc, char* argv[]) {
     test_thread = std::this_thread::get_id();
-    keep_vulkan_libraries_loaded();
     cs::gpu::set_validation_handler(fail_on_validation);
     return Catch::Session().run(argc, argv);
 }

@@ -7,6 +7,7 @@
 # Nothing from the Vulkan drivers is listed. Mesa's drivers (lavapipe, RADV) allocate state once
 # per process and keep it in their own static data; when the Vulkan loader unloads a driver at
 # vkDestroyInstance, LeakSanitizer reports that memory, from frames that have lost their names,
-# so no entry could match the driver without also matching our own code. Instead the gpu tests'
-# main sets VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1, which keeps drivers loaded and the
-# memory reachable: with it, lavapipe and RADV (Mesa 26.2) report nothing.
+# so no entry could match the driver without also matching our own code. Instead these presets'
+# test environment (CMakePresets.json) sets VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1, which
+# keeps drivers loaded and the memory reachable: with it, lavapipe and RADV (Mesa 26.2) report
+# nothing.
