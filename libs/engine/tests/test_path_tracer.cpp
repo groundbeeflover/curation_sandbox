@@ -227,14 +227,18 @@ geom::Mesh outward_sphere(dvec3 centre_m, double radius_m) {
 // ---- Worlds ------------------------------------------------------------------------------------
 
 // Adds a mesh in world coordinates (identity transform) with a Lambert material of its own.
-void add_lambert(world::World& w, geom::Mesh mesh, double albedo) {
+void add_lambert(world::World& w, geom::Mesh mesh, dvec3 albedo) {
     world::Instance instance;
     instance.part = world::Part::room;
     instance.mesh = static_cast<std::uint32_t>(w.meshes.size());
     instance.material = static_cast<std::uint32_t>(w.materials.size());
     w.meshes.push_back(std::move(mesh));
-    w.materials.emplace_back(world::LambertMaterial{dvec3(albedo)});
+    w.materials.emplace_back(world::LambertMaterial{albedo});
     w.instances.push_back(instance);
+}
+
+void add_lambert(world::World& w, geom::Mesh mesh, double albedo) {
+    add_lambert(w, std::move(mesh), dvec3(albedo));
 }
 
 // The skeleton's room: 6 x 4 x 3.5 m, from (0, 0, 0) to (6, 4, 3.5), closed, facing in, white
@@ -479,10 +483,13 @@ TEST_CASE("render: white furnace with interreflection, a closed albedo-1 sphere 
     //
     // The pixels cannot be held to the convex sphere's 3%. With albedo 1, the lux meter's
     // roulette (which the path tracer must follow, owner's comment on #77) keeps a path with
-    // probability 0.95 and multiplies it by 1 / 0.95 at every bounce, so a crevice pixel averages
-    // a few long paths of large weight: at 256 samples its worst pixel was 4.6% off with the mean
-    // 100.015 +- 0.015, and at 1024 samples still 3.4%. The per-pixel bound is 10%, which
-    // catches a region that loses light (a dark crevice), not noise.
+    // probability 0.95 and multiplies it by 1 / 0.95 at every bounce from the fourth, so a pixel
+    // looking into the crevice averages a few long paths of large weight: a heavy tail. Over 40
+    // seeds (physics review) the worst pixel at 256 samples was typically 7.6% off and up to
+    // 12.5%; at 1024 samples typically 3.6% and at most 5.1%, the mean 100.00 +- 0.02 at every
+    // seed. So this renders 1024 samples and bounds each pixel at 10%, twice the worst seen: wide
+    // enough for the noise, narrow enough to catch a crevice that loses light. The issue's 3% is
+    // the convex sphere's, above.
     world::World w;
     const geom::Mesh box =
         turned_inside_out(translated(geom::room_mesh(3.0, 3.0, 0.5), {-1.5, -1.5, -0.5}));
@@ -500,7 +507,7 @@ TEST_CASE("render: white furnace with interreflection, a closed albedo-1 sphere 
     const world::Camera camera =
         perspective({0.0, -4.5, 1.6}, {0.0, 0.0, 0.5}, {0.0, 0.0, 1.0}, 40.0 * degrees);
     cs::ThreadPool pool(hardware_threads());
-    RenderOptions o = options(32, 32, furnace_spp, 2);
+    RenderOptions o = options(32, 32, 4 * furnace_spp, 2);
     o.environment_nits = furnace_nits;
     o.pool = &pool;
     const cs::Image image = render(scene, camera, o);
@@ -744,7 +751,7 @@ struct SphereRender {
     cs::Image image{1, 1};
 };
 
-SphereRender render_sphere(double rho, bool direct_only, int size, std::uint32_t spp,
+SphereRender render_sphere(dvec3 rho, bool direct_only, int size, std::uint32_t spp,
                            std::uint64_t seed, cs::ThreadPool* pool) {
     const geom::Mesh sphere = faceted_sphere(1.0, 96, 48);
     REQUIRE(geom::is_closed(sphere));
@@ -817,7 +824,7 @@ TEST_CASE("render: the integrating sphere's wall shows rho / pi (E_direct + rho 
     // 512 samples (131,072 paths) bring the mean's standard error to about 0.15%.
     constexpr double rho = 0.8;
     cs::ThreadPool pool(hardware_threads());
-    const SphereRender r = render_sphere(rho, false, 16, 512, 8, &pool);
+    const SphereRender r = render_sphere(dvec3(rho), false, 16, 512, 8, &pool);
     CHECK_THAT(r.direct_lux, WithinRel(1000.0, 0.01)); // I / R^2, the facet a little closer
     check_sphere_wall(r, rho / pi * (r.direct_lux + sphere_indirect_lux(rho, r.area_m2)));
 }
@@ -834,7 +841,7 @@ TEST_CASE("render: the integrating sphere at albedo 0.95, where most light has b
     static_assert(cs::engine::max_path_bounces >= 1024);
     constexpr double rho = 0.95;
     cs::ThreadPool pool(hardware_threads());
-    const SphereRender r = render_sphere(rho, false, 24, 512, 9, &pool);
+    const SphereRender r = render_sphere(dvec3(rho), false, 24, 512, 9, &pool);
     check_sphere_wall(r, rho / pi * (r.direct_lux + sphere_indirect_lux(rho, r.area_m2)));
 }
 
@@ -847,7 +854,7 @@ TEST_CASE("render: direct_only, the integrating sphere's wall shows rho E_direct
     // over the 1 degree view, so every pixel, not only the mean, is held to the issue's 1%.
     constexpr double rho = 0.8;
     cs::ThreadPool pool(hardware_threads());
-    const SphereRender direct = render_sphere(rho, true, 16, 16, 10, &pool);
+    const SphereRender direct = render_sphere(dvec3(rho), true, 16, 16, 10, &pool);
     const double expected = rho / pi * direct.direct_lux;
     INFO("direct_only mean " << direct.stats.mean << ", expected " << expected);
     CHECK(all_finite_and_non_negative(direct.image));
@@ -856,9 +863,125 @@ TEST_CASE("render: direct_only, the integrating sphere's wall shows rho E_direct
 
     // The full render adds the inter-reflected 4000 lux: five times as bright. Fewer samples are
     // enough to tell.
-    const SphereRender full = render_sphere(rho, false, 8, 64, 10, &pool);
+    const SphereRender full = render_sphere(dvec3(rho), false, 8, 64, 10, &pool);
     INFO("full mean " << full.stats.mean);
     CHECK(full.stats.mean > 2.0 * direct.stats.mean);
+}
+
+TEST_CASE("render: the integrating sphere in colour, albedo (0.9, 0.5, 0.2), shows each channel's "
+          "own rho_c / pi x colour_c x (E_direct + rho_c Phi / (A (1 - rho_c)))",
+          "[engine][path_tracer][accuracy]") {
+    // Physics review: Russian roulette follows the largest throughput channel, which only a
+    // coloured surface tells apart from the luminance. Each channel of the wall is an
+    // integrating sphere of its own albedo, lit by the lamp's colour (3000 K, scaled to
+    // luminance 1 as the lux meter does). The red channel, at 0.9, inter-reflects 9 times the
+    // direct light; blue, at 0.2, a quarter. Held per channel to the issue's 1% and to the facets'
+    // 0.3% plus 3 standard errors of that channel's mean.
+    const dvec3 rho(0.9, 0.5, 0.2);
+    const dvec3 rgb = cs::cct_to_linear_rgb(3000.0);
+    const dvec3 colour = rgb / cs::luminance(rgb);
+    cs::ThreadPool pool(hardware_threads());
+    const SphereRender r = render_sphere(dvec3(rho), false, 16, 512, 11, &pool);
+    CHECK(all_finite_and_non_negative(r.image));
+
+    const double n = static_cast<double>(r.image.width()) * r.image.height();
+    for (int c = 0; c < 3; ++c) {
+        const auto channel = [&](int x, int y) {
+            const cs::Rgb& p = r.image.at(x, y);
+            return static_cast<double>(c == 0 ? p.r : c == 1 ? p.g : p.b);
+        };
+        double sum = 0.0;
+        for (int y = 0; y < r.image.height(); ++y) {
+            for (int x = 0; x < r.image.width(); ++x) {
+                sum += channel(x, y);
+            }
+        }
+        const double mean = sum / n;
+        double squares = 0.0;
+        for (int y = 0; y < r.image.height(); ++y) {
+            for (int x = 0; x < r.image.width(); ++x) {
+                squares += (channel(x, y) - mean) * (channel(x, y) - mean);
+            }
+        }
+        const double standard_error = std::sqrt(squares / (n - 1.0) / n);
+        const double expected =
+            rho[c] / pi * colour[c] * (r.direct_lux + sphere_indirect_lux(rho[c], r.area_m2));
+        INFO("channel " << c << ": " << mean << " +- " << standard_error << ", expected "
+                        << expected);
+        CHECK(standard_error < 0.003 * expected);
+        CHECK_THAT(mean, WithinRel(expected, issue_tolerance));
+        CHECK(std::abs(mean - expected) <= sphere_tolerance * expected + 3.0 * standard_error);
+    }
+}
+
+// ---- The path tracer and the lux meter agree -------------------------------------------------
+
+TEST_CASE("render: a spot in the ceiling's plane lights the floor in the picture as in the lux "
+          "reading",
+          "[engine][path_tracer][accuracy]") {
+    // The owner's comment on #77: next-event rays use engine::light_visible, so the skeleton's
+    // spot, which lies in the ceiling's plane, is not hidden by the ceiling (a shadow ray run all
+    // the way to it would end on the ceiling and read 0). A 0.5 degree view from 0.5 m above the
+    // floor point under the spot sees a disc 4.4 mm across, over which the spot's light changes
+    // by far less than 0.1%.
+    const Scene scene(room_with_ceiling_spot());
+    const dvec3 point(3.0, 2.0, 0.0);
+    const dvec3 up(0.0, 0.0, 1.0);
+    const world::Camera camera =
+        perspective({3.01, 2.02, 0.5}, point, {0.0, 1.0, 0.0}, 0.5 * degrees);
+    constexpr double rho = world::default_wall_albedo;
+    cs::ThreadPool pool(hardware_threads());
+
+    // Direct only: rho / pi times the lux meter's direct reading, which is a sum, not an
+    // estimate; 0.1% covers the footprint.
+    RenderOptions o = options(16, 16, 16, 12);
+    o.direct_only = true;
+    o.pool = &pool;
+    const double direct_expected = rho / pi * cs::engine::direct_lux(scene, point, up);
+    const Stats direct = luminance_stats(render(scene, camera, o));
+    INFO("direct_only " << direct.mean << ", expected " << direct_expected);
+    REQUIRE(direct_expected > 100.0); // the spot does light the floor
+    CHECK_THAT(direct.mean, WithinRel(direct_expected, 1e-3));
+
+    // Everything: rho / pi times the lux meter's total, both Monte Carlo estimates; the issue's
+    // 1% and 3 standard errors of their difference.
+    o.direct_only = false;
+    o.samples_per_pixel = 256;
+    const Stats full = luminance_stats(render(scene, camera, o));
+    const cs::engine::LuxReading reading =
+        cs::engine::lux_at(scene, point, up, {.samples = 16384, .seed = 12, .pool = &pool});
+    const double full_expected = rho / pi * reading.total_lux.value;
+    const double combined_error =
+        std::hypot(full.standard_error, rho / pi * reading.total_lux.standard_error);
+    INFO("full " << full.mean << " +- " << full.standard_error << ", lux meter " << full_expected
+                 << " +- " << rho / pi * reading.total_lux.standard_error);
+    CHECK(full.mean > direct.mean);
+    CHECK_THAT(full.mean, WithinRel(full_expected, issue_tolerance));
+    CHECK(std::abs(full.mean - full_expected) <= 3.0 * combined_error);
+}
+
+TEST_CASE("render: a surface seen from behind reflects the light on that side, and none from the "
+          "other",
+          "[engine][path_tracer][accuracy]") {
+    // Triangles have two sides (scene.hpp). A rectangle at z = 1 facing up, of albedo 0.5, seen
+    // from below: with a 1000 cd isotropic light 1 m below it, its underside receives 1000 lux and
+    // shows rho E / pi = 159.15 nits; with the light 1 m above it instead, the underside is dark,
+    // exactly. A 1 degree view from z = 0.5 sees a disc 8.7 mm across, where E changes by 0.003%.
+    const geom::Mesh panel = rectangle({0.0, 0.0, 1.0}, {5.0, 0.0, 0.0}, {0.0, 5.0, 0.0});
+    const world::Camera camera =
+        perspective({0.0, 0.0, 0.5}, {0.0, 0.0, 1.0}, {0.0, 1.0, 0.0}, 1.0 * degrees);
+    const RenderOptions o = options(8, 8, 4, 13);
+
+    world::World below;
+    add_lambert(below, panel, 0.5);
+    below.lights.push_back(isotropic_light({0.0, 0.0, 0.0}, 1000.0));
+    const Stats lit = luminance_stats(render(below, camera, o));
+    CHECK_THAT(lit.mean, WithinRel(0.5 * 1000.0 / pi, issue_tolerance));
+
+    world::World above;
+    add_lambert(above, panel, 0.5);
+    above.lights.push_back(isotropic_light({0.0, 0.0, 2.0}, 1000.0));
+    CHECK(all_equal_to(render(above, camera, o), 0.0f));
 }
 
 // ---- Seeds, samples and threads ----------------------------------------------------------------

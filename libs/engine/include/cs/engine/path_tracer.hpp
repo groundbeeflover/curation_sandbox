@@ -34,7 +34,11 @@
 //
 // Materials: Lambert surfaces reflect with their albedo. A painting reflects with its
 // PaintingBrdf; its photograph's texels are not read yet (M1-17), its base colour stands in, as in
-// the lux meter. Albedos are clamped to [0, 1].
+// the lux meter. Albedos are clamped to [0, 1]. Both sides of a surface reflect (scene.hpp).
+// Surfaces reflect about their interpolated normal; a path whose next direction, drawn about
+// that normal, falls below the triangle itself ends there, as in PBRT, so smooth normals on a
+// coarse mesh can only darken it a little (0.01% on the furnace's 96 x 48 sphere, about 1% on
+// an 8 x 4 one).
 //
 // Randomness: sample s of pixel (x, y) uses its own generator,
 // cs::Rng(cs::hash_seed(seed, x, y, s, path_dimension)), for its position in the pixel and its
