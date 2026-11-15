@@ -2,17 +2,29 @@
 # three compilers (GCC, Clang with sanitizers, MSVC), plus a fast job for formatting, the
 # planning scripts, the task file and the dependency list. vcpkg's built packages and the
 # compiler output are cached between runs. GPU tests live in gpu.yml (M1-29).
+#
+# Caches saved by a pull request are visible only to that pull request; only main's are shared.
+# A new runner image (a new MSVC every week or two) makes every vcpkg package new, a cold build of
+# about two hours on Windows, so main must be the one that builds and saves it.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  # Every night on main, so that a new runner image is built into main's cache overnight rather
+  # than by the next pull request. With the cache warm, the run takes a few minutes.
+  schedule:
+    - cron: "17 3 * * *"
+  # By hand, from the Actions tab, to warm the cache now.
+  workflow_dispatch:
 
-# A newer push to the same pull request cancels the older run.
+# A newer push to the same pull request cancels the older run. Runs on main (pushes, the nightly
+# run, by hand) wait for each other instead: a merge that cancelled a cold build of main would
+# throw away the packages before they were saved, and every pull request would build them again.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
