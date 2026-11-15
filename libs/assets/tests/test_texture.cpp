@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -354,7 +355,9 @@ TEST_CASE("Input that is not a PNG or JPEG is refused", "[assets][texture]") {
 }
 
 TEST_CASE("load_texture reads a file", "[assets][texture]") {
-    const auto dir = std::filesystem::temp_directory_path() / "cs_assets_test_texture";
+    // Under the working directory, which ctest sets to this build's own directory, so that runs of
+    // other presets or worktrees at the same time do not remove this file.
+    const auto dir = std::filesystem::current_path() / "cs_assets_test_texture";
     std::filesystem::create_directories(dir);
     const auto path = dir / "grey.png";
     {

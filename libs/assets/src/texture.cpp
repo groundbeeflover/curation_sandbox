@@ -12,6 +12,7 @@
 #define STBI_NO_STDIO
 #include <stb_image.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -25,6 +26,11 @@
 namespace cs::assets {
 
 namespace {
+
+// A limit for a message, in MiB: the limits are whole MiB.
+std::string mib(std::uintmax_t bytes) {
+    return std::to_string(bytes >> 20) + " MiB";
+}
 
 struct StbiFree {
     void operator()(void* p) const { stbi_image_free(p); }
@@ -130,8 +136,9 @@ std::vector<Image> build_mip_chain(Image image) {
 
 Texture load_texture_from_memory(std::span<const std::byte> bytes) {
     if (bytes.empty() || bytes.size() > max_texture_file_bytes) {
-        throw std::runtime_error("an image file must hold 1 byte to 512 MiB, this one holds " +
-                                 std::to_string(bytes.size()));
+        throw std::runtime_error("an image file must hold 1 byte to " +
+                                 mib(max_texture_file_bytes) + ", this one holds " +
+                                 std::to_string(bytes.size()) + " bytes");
     }
     const auto* data = reinterpret_cast<const stbi_uc*>(bytes.data());
     const int size = static_cast<int>(bytes.size());
@@ -151,9 +158,10 @@ Texture load_texture_from_memory(std::span<const std::byte> bytes) {
     }
     const std::int64_t decoded = std::int64_t{width} * height * 3 * std::int64_t{sizeof(float)};
     if (decoded > max_texture_decoded_bytes) {
-        throw std::runtime_error(
-            "the image is " + std::to_string(width) + " x " + std::to_string(height) + " pixels, " +
-            std::to_string(decoded >> 20) + " MiB decoded; at most 512 MiB are allowed");
+        throw std::runtime_error("the image is " + std::to_string(width) + " x " +
+                                 std::to_string(height) + " pixels, " + std::to_string(decoded) +
+                                 " bytes decoded as linear float RGB; at most " +
+                                 mib(max_texture_decoded_bytes) + " are allowed");
     }
 
     // stb_image sets w and h; they are read in a statement of their own, after the call.
@@ -174,8 +182,9 @@ Texture load_texture(const std::filesystem::path& path) {
         throw std::runtime_error("cannot read " + path.string() + ": " + error.message());
     }
     if (file_size > max_texture_file_bytes) {
-        throw std::runtime_error(path.string() + " is " + std::to_string(file_size >> 20) +
-                                 " MiB; image files of at most 512 MiB are read");
+        throw std::runtime_error(path.string() + " is " + std::to_string(file_size) +
+                                 " bytes; image files of at most " + mib(max_texture_file_bytes) +
+                                 " are read");
     }
     std::ifstream file(path, std::ios::binary);
     std::vector<std::byte> bytes(static_cast<std::size_t>(file_size));
