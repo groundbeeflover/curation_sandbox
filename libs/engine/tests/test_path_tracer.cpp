@@ -281,6 +281,12 @@ std::size_t hardware_threads() {
     return std::max<std::size_t>(1, std::thread::hardware_concurrency());
 }
 
+// One pool of every hardware thread for the renders that only need speed, shared by the tests.
+cs::ThreadPool& shared_pool() {
+    static cs::ThreadPool pool(hardware_threads());
+    return pool;
+}
+
 double luminance_of(const cs::Rgb& p) {
     return cs::luminance(dvec3(p.r, p.g, p.b));
 }
@@ -463,7 +469,7 @@ TEST_CASE("render: white furnace, a closed albedo-1 sphere in a 100-nit environm
           "[engine][path_tracer][accuracy]") {
     // The issue's criterion. The sphere is convex, so every path leaves after one bounce; the
     // pixels that miss it see the environment directly. Both are 100 nits exactly in expectation.
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     const Scene scene(furnace_sphere_world());
     RenderOptions o = options(32, 32, furnace_spp, 1);
     o.environment_nits = furnace_nits;
@@ -506,7 +512,7 @@ TEST_CASE("render: white furnace with interreflection, a closed albedo-1 sphere 
     // base, where the light interreflects most.
     const world::Camera camera =
         perspective({0.0, -4.5, 1.6}, {0.0, 0.0, 0.5}, {0.0, 0.0, 1.0}, 40.0 * degrees);
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     RenderOptions o = options(32, 32, 4 * furnace_spp, 2);
     o.environment_nits = furnace_nits;
     o.pool = &pool;
@@ -526,7 +532,7 @@ TEST_CASE("render: direct_only, the convex furnace sphere still renders 100 nits
     // path_tracer.hpp: direct_only keeps "the environment seen through one reflection; plus the
     // environment seen straight through the pixel". Off a convex sphere every reflection leaves
     // the scene at once, so that is all the light, and the image is still 100 nits.
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     const Scene scene(furnace_sphere_world());
     RenderOptions o = options(32, 32, furnace_spp, 3);
     o.environment_nits = furnace_nits;
@@ -576,7 +582,7 @@ TEST_CASE("render: a Lambert floor of albedo 0.5 under 250 lux renders rho E / p
     const Scene scene(lit_floor_world());
     const world::Camera camera =
         perspective({0.0, 0.0, 1.0}, dvec3(0.0), {0.0, 1.0, 0.0}, 2.0 * degrees);
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     RenderOptions o = options(32, 32, 16, 4);
     o.direct_only = direct_only;
     o.pool = &pool;
@@ -610,7 +616,7 @@ TEST_CASE("render: a wide view of the lit floor follows rho / pi x I h / r^3 at 
     const Scene scene(lit_floor_world());
     const world::Camera camera =
         perspective({0.0, 0.0, 1.0}, dvec3(0.0), {0.0, 1.0, 0.0}, 60.0 * degrees);
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     RenderOptions o = options(32, 32, 16, 5);
     o.pool = &pool;
     const cs::Image image = render(scene, camera, o);
@@ -686,7 +692,7 @@ TEST_CASE("render: row 0 is the top of the image and column 0 its left, as the c
     const Scene scene(w);
     const world::Camera camera =
         perspective({0.0, 0.0, 1.0}, {0.0, 1.0, 1.0}, {0.0, 0.0, 1.0}, 60.0 * degrees);
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     RenderOptions o = options(32, 32, 16, 7);
     o.pool = &pool;
     const cs::Image image = render(scene, camera, o);
@@ -823,7 +829,7 @@ TEST_CASE("render: the integrating sphere's wall shows rho / pi (E_direct + rho 
     // Russian roulette with probability 0.8 a bounce, about 8 hits on average; 16 x 16 pixels of
     // 512 samples (131,072 paths) bring the mean's standard error to about 0.15%.
     constexpr double rho = 0.8;
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     const SphereRender r = render_sphere(dvec3(rho), false, 16, 512, 8, &pool);
     CHECK_THAT(r.direct_lux, WithinRel(1000.0, 0.01)); // I / R^2, the facet a little closer
     check_sphere_wall(r, rho / pi * (r.direct_lux + sphere_indirect_lux(rho, r.area_m2)));
@@ -840,7 +846,7 @@ TEST_CASE("render: the integrating sphere at albedo 0.95, where most light has b
     // samples (294,912 paths) bring the mean's standard error to about 0.2%.
     static_assert(cs::engine::max_path_bounces >= 1024);
     constexpr double rho = 0.95;
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     const SphereRender r = render_sphere(dvec3(rho), false, 24, 512, 9, &pool);
     check_sphere_wall(r, rho / pi * (r.direct_lux + sphere_indirect_lux(rho, r.area_m2)));
 }
@@ -853,7 +859,7 @@ TEST_CASE("render: direct_only, the integrating sphere's wall shows rho E_direct
     // There is no Monte Carlo spread but the pixel's footprint, and E_d varies by less than 0.1%
     // over the 1 degree view, so every pixel, not only the mean, is held to the issue's 1%.
     constexpr double rho = 0.8;
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     const SphereRender direct = render_sphere(dvec3(rho), true, 16, 16, 10, &pool);
     const double expected = rho / pi * direct.direct_lux;
     INFO("direct_only mean " << direct.stats.mean << ", expected " << expected);
@@ -880,7 +886,7 @@ TEST_CASE("render: the integrating sphere in colour, albedo (0.9, 0.5, 0.2), sho
     const dvec3 rho(0.9, 0.5, 0.2);
     const dvec3 rgb = cs::cct_to_linear_rgb(3000.0);
     const dvec3 colour = rgb / cs::luminance(rgb);
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
     const SphereRender r = render_sphere(dvec3(rho), false, 16, 512, 11, &pool);
     CHECK(all_finite_and_non_negative(r.image));
 
@@ -930,7 +936,7 @@ TEST_CASE("render: a spot in the ceiling's plane lights the floor in the picture
     const world::Camera camera =
         perspective({3.01, 2.02, 0.5}, point, {0.0, 1.0, 0.0}, 0.5 * degrees);
     constexpr double rho = world::default_wall_albedo;
-    cs::ThreadPool pool(hardware_threads());
+    cs::ThreadPool& pool = shared_pool();
 
     // Direct only: rho / pi times the lux meter's direct reading, which is a sum, not an
     // estimate; 0.1% covers the footprint.

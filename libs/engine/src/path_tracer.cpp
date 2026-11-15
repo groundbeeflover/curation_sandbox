@@ -94,10 +94,11 @@ class CameraRays {
         if (!finite(camera.position_m)) {
             throw std::invalid_argument("path tracer: the camera's position is not finite");
         }
+        // A component that is not finite makes the length infinite or NaN.
         const double forward_length = glm::length(camera.forward);
         const double up_length = glm::length(camera.up);
-        if (!finite(camera.forward) || !finite(camera.up) || !(forward_length > 0.0) ||
-            !(up_length > 0.0) || !std::isfinite(forward_length) || !std::isfinite(up_length)) {
+        if (!(forward_length > 0.0) || !(up_length > 0.0) || !std::isfinite(forward_length) ||
+            !std::isfinite(up_length)) {
             throw std::invalid_argument(
                 "path tracer: the camera's forward or up is not finite or is zero");
         }
@@ -146,11 +147,11 @@ class CameraRays {
   private:
     world::Projection projection_;
     glm::dvec3 position_;
-    glm::dvec3 forward_{1.0, 0.0, 0.0};
-    glm::dvec3 right_{0.0, -1.0, 0.0};
-    glm::dvec3 up_{0.0, 0.0, 1.0};
-    double half_width_ = 0.0;  // of the image plane at distance 1, or of the view, in metres
-    double half_height_ = 0.0; // likewise
+    glm::dvec3 forward_;
+    glm::dvec3 right_;
+    glm::dvec3 up_;
+    double half_width_;  // of the image plane at distance 1, or of the view, in metres
+    double half_height_; // likewise
     int width_;
     int height_;
 };
@@ -160,7 +161,8 @@ class CameraRays {
 glm::dvec3 trace(const Scene& scene, const Lighting& lighting, CameraRays::Ray ray,
                  bool direct_only, double environment_nits, Rng& rng) {
     // Light reflected at most last_bounce + 1 times is counted: next-event estimation at hits
-    // 0 to last_bounce, and the environment along rays leaving them.
+    // 0 to last_bounce, and the environment along the rays leaving them; the ray leaving hit
+    // last_bounce only needs to know whether it leaves the scene.
     const std::uint32_t last_bounce = direct_only ? 0 : max_path_bounces;
     glm::dvec3 origin = ray.origin;
     glm::dvec3 direction = ray.direction;
@@ -170,9 +172,6 @@ glm::dvec3 trace(const Scene& scene, const Lighting& lighting, CameraRays::Ray r
         const std::optional<Hit> hit = scene.intersect(origin, direction);
         if (!hit) {
             radiance += throughput * environment_nits; // white: luminance 1 per nit
-            break;
-        }
-        if (bounce > last_bounce) {
             break;
         }
         const glm::dvec3 wo = -direction;
@@ -232,11 +231,17 @@ glm::dvec3 trace(const Scene& scene, const Lighting& lighting, CameraRays::Ray r
             break; // rounding put it below the surface
         }
         origin = hit->position_m + ray_offset_m(hit->position_m) * side;
+        if (bounce == last_bounce) {
+            if (!scene.occluded(origin, direction, 0.0, std::numeric_limits<double>::infinity())) {
+                radiance += throughput * environment_nits;
+            }
+            break;
+        }
     }
     return radiance;
 }
 
-void check_size(const RenderOptions& options) {
+const RenderOptions& checked_options(const RenderOptions& options) {
     if (options.width < 1 || options.height < 1 || options.width > max_image_side ||
         options.height > max_image_side ||
         std::int64_t{options.width} * options.height > max_image_pixels) {
@@ -245,13 +250,14 @@ void check_size(const RenderOptions& options) {
     if (!(options.environment_nits >= 0.0) || !std::isfinite(options.environment_nits)) {
         throw std::invalid_argument("path tracer: environment_nits is negative or not finite");
     }
+    return options;
 }
 
 } // namespace
 
 struct ProgressiveRender::Impl {
     Impl(const Scene& scene_, const world::Camera& camera, const RenderOptions& options_)
-        : scene(&scene_), options((check_size(options_), options_)),
+        : scene(&scene_), options(checked_options(options_)),
           camera_rays(camera, options.width, options.height), lighting(scene_.world()),
           sums(static_cast<std::size_t>(options.width) * static_cast<std::size_t>(options.height),
                glm::dvec3(0.0)) {}
@@ -262,6 +268,13 @@ struct ProgressiveRender::Impl {
     Lighting lighting;
     std::vector<glm::dvec3> sums; // of every sample's radiance, row by row
     std::uint32_t samples = 0;
+
+    glm::dvec3& sum(std::size_t x, std::size_t y) {
+        return sums[y * static_cast<std::size_t>(options.width) + x];
+    }
+    const glm::dvec3& sum(std::size_t x, std::size_t y) const {
+        return sums[y * static_cast<std::size_t>(options.width) + x];
+    }
 };
 
 ProgressiveRender::ProgressiveRender(const Scene& scene, const world::Camera& camera,
@@ -282,7 +295,7 @@ void ProgressiveRender::add_samples(std::uint32_t count) {
     const auto rows = [&](std::size_t begin, std::size_t end) {
         for (std::size_t y = begin; y < end; ++y) {
             for (std::size_t x = 0; x < width; ++x) {
-                glm::dvec3& sum = r.sums[y * width + x];
+                glm::dvec3& sum = r.sum(x, y);
                 for (std::uint32_t s = first; s < first + count; ++s) {
                     Rng rng(hash_seed(r.options.seed, static_cast<std::uint32_t>(x),
                                       static_cast<std::uint32_t>(y), s, path_dimension));
@@ -319,9 +332,7 @@ Image ProgressiveRender::image() const {
     for (int y = 0; y < r.options.height; ++y) {
         for (int x = 0; x < r.options.width; ++x) {
             const glm::dvec3 mean =
-                r.sums[static_cast<std::size_t>(y) * static_cast<std::size_t>(r.options.width) +
-                       static_cast<std::size_t>(x)] /
-                n;
+                r.sum(static_cast<std::size_t>(x), static_cast<std::size_t>(y)) / n;
             image.at(x, y) = {static_cast<float>(mean.r), static_cast<float>(mean.g),
                               static_cast<float>(mean.b)};
         }
