@@ -51,11 +51,8 @@
 #include <cs/engine/scene.hpp>
 #include <cs/world/world.hpp>
 
-#include <glm/vec3.hpp>
-
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 namespace cs {
 class ThreadPool;
@@ -81,8 +78,9 @@ struct RenderOptions {
 };
 
 // A render that improves as samples are added: add_samples runs more samples on every pixel, and
-// image() is the mean of all samples so far. It refers to the scene, which must outlive it, and
-// copies the camera and options.
+// image() is the mean of all samples so far. It refers to the scene and to options.pool, which
+// must outlive it, and copies the camera and the other options. A render moved from may only be
+// destroyed or assigned to.
 class ProgressiveRender {
   public:
     // Throws std::invalid_argument for a size outside the limits above, an environment_nits that
@@ -98,14 +96,18 @@ class ProgressiveRender {
     ProgressiveRender(ProgressiveRender&&) noexcept;
     ProgressiveRender& operator=(ProgressiveRender&&) noexcept;
 
-    // Runs `count` more samples on every pixel, on options.pool if there is one.
+    // Runs `count` more samples on every pixel, on options.pool if there is one. Throws
+    // std::invalid_argument if that would make more than 2^32 - 1 samples per pixel. If a sample
+    // throws, the exception is passed on and the render is broken, its pixels holding different
+    // numbers of samples: from then on add_samples and image() throw std::logic_error.
     void add_samples(std::uint32_t count);
 
     // Samples per pixel so far.
     std::uint32_t samples() const;
 
     // The mean radiance of every pixel so far, in nits; black before the first sample. Row 0 is
-    // the top of the image, column 0 its left, as the camera sees it.
+    // the top of the image, column 0 its left, as the camera sees it. Throws std::logic_error for
+    // a broken render (add_samples).
     Image image() const;
 
   private:

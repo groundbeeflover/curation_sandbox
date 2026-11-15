@@ -268,6 +268,13 @@ struct ProgressiveRender::Impl {
     Lighting lighting;
     std::vector<glm::dvec3> sums; // of every sample's radiance, row by row
     std::uint32_t samples = 0;
+    bool broken = false; // an add_samples threw part way: the sums disagree with `samples`
+
+    void check_not_broken() const {
+        if (broken) {
+            throw std::logic_error("path tracer: an earlier add_samples failed part way");
+        }
+    }
 
     glm::dvec3& sum(std::size_t x, std::size_t y) {
         return sums[y * static_cast<std::size_t>(options.width) + x];
@@ -287,6 +294,7 @@ ProgressiveRender& ProgressiveRender::operator=(ProgressiveRender&&) noexcept = 
 
 void ProgressiveRender::add_samples(std::uint32_t count) {
     Impl& r = *impl_;
+    r.check_not_broken();
     if (count > std::numeric_limits<std::uint32_t>::max() - r.samples) {
         throw std::invalid_argument("path tracer: more than 2^32 - 1 samples per pixel");
     }
@@ -310,10 +318,15 @@ void ProgressiveRender::add_samples(std::uint32_t count) {
         }
     };
     const auto height = static_cast<std::size_t>(r.options.height);
-    if (r.options.pool != nullptr) {
-        r.options.pool->parallel_for(height, 1, rows);
-    } else {
-        rows(0, height);
+    try {
+        if (r.options.pool != nullptr) {
+            r.options.pool->parallel_for(height, 1, rows);
+        } else {
+            rows(0, height);
+        }
+    } catch (...) {
+        r.broken = true;
+        throw;
     }
     r.samples += count;
 }
@@ -324,6 +337,7 @@ std::uint32_t ProgressiveRender::samples() const {
 
 Image ProgressiveRender::image() const {
     const Impl& r = *impl_;
+    r.check_not_broken();
     Image image(r.options.width, r.options.height);
     if (r.samples == 0) {
         return image;

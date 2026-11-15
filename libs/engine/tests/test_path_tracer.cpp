@@ -1111,6 +1111,49 @@ TEST_CASE("ProgressiveRender: the image is black before the first sample, at the
     CHECK(all_equal_to(progressive.image(), 50.0f));
 }
 
+TEST_CASE("ProgressiveRender: more than 2^32 - 1 samples per pixel throws std::invalid_argument",
+          "[engine][path_tracer]") {
+    // add_samples counts samples in 32 bits; the guard refuses a count that would wrap it,
+    // before any sample runs.
+    const Scene scene(world::World{});
+    ProgressiveRender progressive(scene, room_camera(), options(2, 2, 1, 1));
+    progressive.add_samples(1);
+    CHECK_THROWS_AS(progressive.add_samples(std::numeric_limits<std::uint32_t>::max()),
+                    std::invalid_argument);
+    CHECK(progressive.samples() == 1);
+    progressive.add_samples(1); // still usable
+    CHECK(progressive.samples() == 2);
+}
+
+namespace {
+
+// A light whose distribution throws, to break a render part way.
+class Throwing final : public light::Distribution {
+  public:
+    double intensity_cd(glm::dvec3) const override { throw std::runtime_error("no intensity"); }
+    double total_lumens() const override { return 1.0; }
+};
+
+} // namespace
+
+TEST_CASE("ProgressiveRender: after a sample throws, the render is broken and says so",
+          "[engine][path_tracer]") {
+    // path_tracer.hpp: the exception is passed on, and since some pixels may then hold more
+    // samples than others, add_samples and image() throw std::logic_error from then on.
+    world::World w;
+    add_lambert(w, large_floor(), 0.5);
+    w.lights.push_back(make_light(
+        {0.0, 0.0, 2.0}, {0.0, 0.0, 0.0}, std::make_shared<const Throwing>(),
+        std::make_shared<const light::GenericSpot>(1.0, 30.0 * degrees, 30.0 * degrees)));
+    const Scene scene(w);
+    const world::Camera camera =
+        perspective({0.0, 0.0, 1.0}, {0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, 10.0 * degrees);
+    ProgressiveRender progressive(scene, camera, options(4, 4, 1, 1));
+    CHECK_THROWS_AS(progressive.add_samples(1), std::runtime_error);
+    CHECK_THROWS_AS(progressive.image(), std::logic_error);
+    CHECK_THROWS_AS(progressive.add_samples(1), std::logic_error);
+}
+
 // ---- Darkness and the environment --------------------------------------------------------------
 
 TEST_CASE("render: a scene with no lights and no environment renders black",
