@@ -52,6 +52,10 @@ function(expect_greetings what printed)
     run("building after ${what}" succeeds ${build})
     file(GLOB_RECURSE exe LIST_DIRECTORIES false
         "${bin}/list_greetings" "${bin}/list_greetings.exe")
+    list(LENGTH exe count)
+    if(NOT count EQUAL 1)
+        message(FATAL_ERROR "FAIL: expected one list_greetings under ${bin}, found: ${exe}")
+    endif()
     run("running list_greetings after ${what}" succeeds ${exe})
     if(NOT output STREQUAL printed)
         message(FATAL_ERROR "FAIL: after ${what}, list_greetings printed\n${output}\n"

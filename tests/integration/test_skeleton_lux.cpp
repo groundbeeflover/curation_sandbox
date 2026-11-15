@@ -56,9 +56,11 @@ TEST_CASE("the compiled skeleton's chart reads the spot's I cos / d^2 at its cen
     const cs::engine::LuxReading reading = cs::engine::lux_at(scene, point_m, normal, options);
 
     // The direct part is a sum over point lights, not an estimate, so the engine evaluates the
-    // same I cos / d^2 and agrees to rounding; its shadow ray starts ray_offset_m (1e-5 m) off
-    // the face, far below 1%. The 1% (the owner's, on #47) leaves room for nothing else: a light
-    // shadowed by the frame or the ceiling, a wrong intensity or a flipped normal all miss it.
+    // same I cos / d^2 and agrees to rounding. The 1% (the owner's, on #47) leaves room for
+    // nothing else between world and engine: a light shadowed by the frame, the wall or the
+    // ceiling, an intensity taken in the wrong direction or a light missed all fail it. Both
+    // sides read the luminaire's own intensity_cd, so whether the compiled spot's candela are
+    // right is light's and world's tests to show, not this one's.
     CHECK(reading.direct_lux.standard_error == 0.0);
     REQUIRE(reading.direct_lux.value > 0.0);
     CHECK_THAT(reading.direct_lux.value, WithinRel(expected_lux, 0.01));

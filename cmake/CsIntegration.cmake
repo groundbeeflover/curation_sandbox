@@ -34,7 +34,7 @@ function(cs_add_integration_tests)
     add_executable(cs_integration_tests ${tests})
     target_link_libraries(cs_integration_tests PRIVATE ${modules} cs_options Catch2::Catch2WithMain)
     # The repository root, to find tests/scenes/ and data/.
-    target_compile_definitions(cs_integration_tests PRIVATE CS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    target_compile_definitions(cs_integration_tests PRIVATE CS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     set_property(DIRECTORY PROPERTY LABELS integration)
     # PRE_TEST and SKIP() as in cs_add_module (cmake/CsModule.cmake).
     catch_discover_tests(cs_integration_tests

@@ -25,7 +25,8 @@
 #   cs_generate_registry(ui features PARAMETERS "MainWindow&" INCLUDES "features/feature.hpp")
 #
 # Only the directory's own *.cpp are registered, not those of its subdirectories, and each
-# file's name must be a C++ identifier (snake_case.cpp). The directory is globbed with
+# file's name must be a C++ identifier (snake_case.cpp). All registries of a module share its
+# namespace, so two of them must not hold files of the same name. The directory is globbed with
 # CONFIGURE_DEPENDS, so `cmake --build` notices a file added or removed and regenerates the list.
 
 function(cs_generate_registry module dir)
@@ -56,6 +57,10 @@ function(cs_generate_registry module dir)
         set(function ${arg_FUNCTION})
     else()
         string(REPLACE "/" "_" function "register_${dir}")
+    endif()
+    if(NOT function MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+        message(FATAL_ERROR "${where}: FUNCTION ${function} is not an unqualified C++ name; "
+            "it is defined in namespace cs::${module}")
     endif()
     # Parameters are named p0, p1, ...; unnamed when nothing uses them, so that an empty registry
     # compiles without unused-parameter warnings.
