@@ -18,7 +18,11 @@ project_board = "Curation Sandbox"
 [[labels]]
 name = "area:build"
 color = "5319e7"
-description = "CMake, vcpkg, CI, benchmarks, golden-image tooling, packaging"
+description = "CMake, vcpkg, benchmarks, golden-image tooling, packaging"
+[[labels]]
+name = "area:ci"
+color = "8a63d2"
+description = "GitHub Actions workflows: the CI, GPU and app jobs and their caches"
 [[labels]]
 name = "area:core"
 color = "0e8a16"
@@ -131,13 +135,13 @@ description = "Start before other ready tasks: /dispatch takes these first"
 [[milestones]]
 id = "M1"
 title = "M1 Walking skeleton"
-due_on = "2026-12-04"
+due_on = "2026-11-27"
 description = "The app opens, a room is built, one painting hangs at its true size under one spotlight in candela, you walk around it and read its lux; every layer exists thinly and is tested. Exit criteria: docs/roadmap.md#m1-walking-skeleton"
 
 [[milestones]]
 id = "M2"
 title = "M2 Build and hang"
-due_on = "2027-01-08"
+due_on = "2026-12-18"
 description = "Journey J1 without the catalogue: walls and openings, six frame styles, imports and checklists, hanging with snapping, save, undo and recovery, a 50-work gallery within memory budget. Exit criteria: docs/roadmap.md#m2-build-and-hang"
 
 [[milestones]]
@@ -1098,21 +1102,26 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-21", "M1-06", "M1-11", "M1-15", "M1-34"]
-touches = ["libs/gpu/shaders/standard.slang", "libs/gpu/shaders/common/", "libs/gpu/include/cs/gpu/standard_tier.hpp", "libs/gpu/src/standard_tier.cpp", "libs/gpu/tests/test_standard_tier.cpp", "tests/integration/test_standard_vs_engine.cpp"]
-goal = "The Standard tier's first pass: every pixel lit exactly by every luminaire's candela distribution, tone mapped like the engine, with an illuminance output that proves the light is right."
+touches = ["libs/gpu/shaders/standard.slang", "libs/gpu/shaders/modules/lighting.slang", "libs/gpu/shaders/modules/luminaire.slang", "libs/gpu/include/cs/gpu/standard_tier.hpp", "libs/gpu/src/standard_tier.cpp", "libs/gpu/tests/test_standard_tier.cpp", "tests/integration/test_standard_vs_engine.cpp", "tests/integration/gpu_validation.cpp"]
+goal = "The Standard tier's first pass: every pixel lit exactly by every luminaire's candela distribution, into linear radiance, with an illuminance output that proves the light is right."
 context = [
   "docs/adr/0002-rendering-tiers.md: the Standard tier; accuracy tolerances",
-  "libs/light GenericSpot (M1-11); libs/core colour (M1-06)",
+  "libs/light GenericSpot (M1-11, #135): I(θ) = I_peak · 2^-((θ/half_beam)^p), and past half the field angle θf a fade to zero by θc = 1.5 θf (at most 90° when the field is 180° or less; almost a hard edge for fields just over 180°). Some shader `pow` implementations are undefined at pow(0, p), exactly the beam axis",
+  "Shared shader code goes in libs/gpu/shaders/modules/, the folder `import` searches (cmake/CsShaders.cmake); a .slang file without entry points directly in shaders/ fails the build (slangc E57004)",
+  "Tone mapping and the colour pipeline are M1-44's, split from this task by the groom of 16 November 2026; the owner's comments on #78 of 2026-11-13 and 2026-11-15 about pbr_neutral, the exposure constants and cct_to_linear_rgb now belong there",
+  "tests/integration/ is one executable, cs_integration_tests, linking every module and using Catch2's own main (M1-34, #146); libs/gpu/tests/main.cpp installs the validation hook only for libs/gpu's own tests (M1-19, #138)",
   "Use the physics-reviewer and gpu-reviewer subagents before opening the pull request",
 ]
 acceptance = [
-  "A forward pass shades Lambert surfaces with every luminaire: L = rho/pi * I(direction) * cos(theta) / d^2, without shadows, into linear radiance; a tone-mapping pass applies EV100 exposure, PBR Neutral and sRGB, and a test of patches of known luminance matches cs::pbr_neutral within 1/255",
-  "The spotlight profile in the shader matches light::GenericSpot at 100 directions within 1e-4",
+  "A forward pass shades Lambert surfaces with every luminaire: L = rho/pi * I(direction) * cos(theta) / d^2, without shadows, into a linear radiance target",
+  "The shader reads each spot's profile from a 1D table of relative intensity over θ, built on the CPU from light::GenericSpot, rather than computing `pow` per pixel (an analytic form, if kept, guards θ = 0); the table resolves the taper between θf and θc and returns exactly 0 beyond θc",
+  "[gpu] The shader's profile matches light::GenericSpot within 1e-4 at 100 directions, including the beam axis, at least ten between θf and θc and one just beyond θc, for the skeleton's 15°/25° spot, a wide 10°/40° spot (p ≈ 0.87) and a spot with a 179° field",
   "An illuminance output per pixel: [gpu][accuracy] in the inverse-square scene the floor under a 1000 cd light reads 250 lux within 1%; in the skeleton scene the painting centre reads within 2% of engine::lux_at's direct value (an integration test, since gpu may not depend on engine)",
-  "[gpu] The skeleton renders validation-clean on lavapipe and the 780M; a 256x144 render is attached to the pull request",
+  "tests/integration/gpu_validation.cpp registers a Catch2 listener (CATCH_REGISTER_LISTENER) that installs gpu::set_validation_handler and fails the running test on any validation warning or error, and creates devices with Validation::required when CS_REQUIRE_GPU=1 in a debug build; it reuses libs/gpu/tests/gpu_test.hpp (make_device, gpu_required) by relative path, and a test makes one known-invalid call and checks that it fails",
+  "[gpu] The skeleton renders validation-clean on lavapipe and the 780M; a 256x144 render is attached to the pull request, tone mapped on the CPU with libs/core (or with M1-44's pass if it has merged)",
   "`ctest --preset debug -L gpu` passes",
 ]
-out_of_scope = ["Shadows (M2-26)", "Indirect light (M3)", "cs-render's standard tier and GPU goldens (M1-29)", "The swapchain (M1-23)"]
+out_of_scope = ["Shadows (M2-26)", "Indirect light (M3)", "Tone mapping and the colour pipeline in shaders (M1-44)", "cs-render's standard tier and GPU goldens (M1-29)", "The swapchain (M1-23)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
   "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
@@ -1124,7 +1133,7 @@ verification_visual = "Attach the 256x144 render of the skeleton from the 780M: 
 id = "M1-23"
 epic = "E1.4"
 title = "Swapchain presenter for a window surface"
-area = "gpu"
+area = "ui"
 type = "feature"
 size = "S"
 owner = "agent"
@@ -1212,21 +1221,27 @@ area = "ui"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-04", "M1-22", "M1-23", "M1-34"]
+blocked_by = ["M1-04", "M1-22", "M1-23", "M1-34", "M1-44", "M1-45"]
 touches = ["libs/ui/", "apps/curation/", "cmake/CsQt.cmake"]
 goal = "The desktop application: a Qt Widgets main window around the Vulkan viewport (as ADR 0011 decided), showing the Standard tier of a project, with features that register themselves so that UI tasks do not collide."
 context = [
-  "docs/adr/0006-ui-and-interaction.md and docs/adr/0011-qt-vulkan-viewport.md (M1-04)",
-  "libs/gpu presenter (M1-23) and Standard tier (M1-22)",
+  "docs/adr/0006-ui-and-interaction.md and docs/adr/0011-qt-vulkan-viewport.md (M1-04), including its list of what M1-26 must do differently",
+  "libs/gpu presenter (M1-23), Standard tier (M1-22) and tone-mapping pass (M1-44); libs/ui's PointerLock and cmake/CsQt.cmake (M1-45)",
+  "cs_generate_registry calls the register functions in file-name order, so edit_menu.cpp registers before file_menu.cpp (M1-34, #146)",
+  "ADR 0002 wants automatic exposure, but none is planned in M1 (M2-39 adds it)",
   "Qt Test on the offscreen platform: https://doc.qt.io/qt-6/qtest-overview.html",
 ]
 acceptance = [
-  "apps/curation opens a main window (File: New, Open folder, Save, Quit) hosting the viewport as ADR 0011 decided, showing the Standard tier of an opened project folder; resizing and moving between displays of different scale recreate the swapchain without validation messages",
+  "apps/curation opens a main window (File: New, Open folder, Save, Quit) hosting the viewport as ADR 0011 decided, showing the Standard tier of an opened project folder through M1-44's tone-mapping pass; resizing and moving between displays of different scale recreate the swapchain without validation messages",
   "Every libs/ui/src/features/*.cpp is registered through cs_generate_registry (M1-34), so adding a feature never edits main_window.cpp; the File menu (file_menu.cpp) and an inspector dock that hosts pages registered by later features (inspector_host.cpp) are themselves features",
+  "Menus, menu items and inspector pages carry an explicit order (a number per menu and per item) and the main window sorts by it, so nothing depends on registration order; [ui] a test registers two features in both orders and finds the same menu bar, with File first",
+  "The viewport adapter offers walking's relative pointer mode through M1-45's PointerLock: lock, unlock, relative motion in logical pixels, and locked and unlocked notifications, for M1-27's camera input",
+  "The viewport uses the active viewpoint's EV100; with no viewpoint active it keeps the last one's (EV100 8 for a new project), and the status bar shows the EV100",
+  "The status bar shows the validation message count, or \"validation: off\" when the layer did not load (ADR 0011, point 8); UI tests that claim zero messages fail when it is off",
   "[ui] An offscreen QTest opens tests/scenes/skeleton, checks the title and docks, and saves a screenshot of the widgets to build/<preset>/ui-out/",
   "Without a window surface (the offscreen platform) the viewport renders into M1-20's offscreen target instead, so UI tests run headless; Qt is found at the version pinned in docs/dependencies.md",
 ]
-out_of_scope = ["Commands and panels (M1-27)", "CI for the app (M1-31)", "Packaging (M4)"]
+out_of_scope = ["Commands and panels (M1-27)", "The Wayland pointer protocols and the grab fallback themselves (M1-45)", "Automatic exposure (M2-39)", "CI for the app (M1-31)", "Packaging (M4)"]
 verification = [
   "cmake --preset app && cmake --build --preset app",
   "QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
@@ -1273,7 +1288,7 @@ area = "build"
 type = "test"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-22", "M1-33"]
+blocked_by = ["M1-22", "M1-33", "M1-44"]
 touches = ["apps/cs-bench/", "bench/scenes/empty-room/", "bench/baselines/"]
 goal = "Measure the budgets of the blueprint instead of hoping for them: a benchmark runner, the first benchmark scene, and the first baseline on the reference hardware."
 context = [
@@ -1282,7 +1297,7 @@ context = [
   "Vulkan timestamp queries: https://docs.vulkan.org/samples/latest/samples/api/timestamp_queries/README.html",
 ]
 acceptance = [
-  "`cs-bench <scene> --tier standard --size 1920x1080 --frames 600 --out <file>.json` renders a scripted camera path offscreen and writes the result schema of scripts/perf-compare.py: frame time p50, p95 and p99 (GPU timestamps and CPU), GPU memory in use, peak resident memory, load time to first frame, device, driver and git revision",
+  "`cs-bench <scene> --tier standard --size 1920x1080 --frames 600 --out <file>.json` renders a scripted camera path offscreen (each frame the Standard tier's pass and M1-44's tone-mapping pass) and writes the result schema of scripts/perf-compare.py: frame time p50, p95 and p99 (GPU timestamps and CPU), GPU memory in use, peak resident memory, load time to first frame, device, driver and git revision",
   "`cs-bench --device-report` prints the GPU, driver and API version and a machine slug (for example radeon-780m) used to name baselines",
   "bench/scenes/empty-room/ exists; [gpu] a 10-frame 320x180 run passes in ctest on lavapipe",
   "Baselines are one file per machine, scene and tier: bench/baselines/<machine>/<scene>-<tier>.json. On the 780M, empty-room at 1080p has p95 at most 8 ms, saved as bench/baselines/radeon-780m/empty-room-standard.json (the PR includes the perf-compare table)",
@@ -1297,7 +1312,7 @@ verification = [
 id = "M1-29"
 epic = "E1.4"
 title = "GPU and golden tests on lavapipe in CI"
-area = "build"
+area = "ci"
 type = "test"
 size = "S"
 owner = "agent"
@@ -1348,7 +1363,7 @@ verification = [
 id = "M1-31"
 epic = "E1.5"
 title = "The app in CI: builds on Windows and Linux, UI tests on lavapipe"
-area = "build"
+area = "ci"
 type = "chore"
 size = "S"
 owner = "agent"
@@ -1545,7 +1560,7 @@ verification = [
 id = "M1-38"
 epic = "E1.1"
 title = "CI: check installed dependency versions and test the test chart"
-area = "build"
+area = "ci"
 type = "chore"
 size = "S"
 owner = "agent"
@@ -1572,7 +1587,7 @@ verification = [
 id = "M1-39"
 epic = "E1.1"
 title = "Build Embree and Slang in release only, through overlay triplets"
-area = "build"
+area = "ci"
 type = "chore"
 size = "S"
 owner = "agent"
@@ -1728,6 +1743,73 @@ verification = [
 ]
 
 [[tasks]]
+id = "M1-44"
+epic = "E1.4"
+title = "Colour pipeline in Slang and the tone-mapping pass"
+area = "core"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-20", "M1-06"]
+touches = ["libs/gpu/shaders/modules/colour.slang", "libs/gpu/shaders/tonemap.slang", "libs/gpu/shaders/colour_check.slang", "libs/gpu/include/cs/gpu/tonemap.hpp", "libs/gpu/src/tonemap.cpp", "libs/gpu/tests/test_tonemap.cpp"]
+goal = "The GPU shows exactly the colours the engine computes: EV100 exposure, PBR Neutral and sRGB ported from libs/core, in a tone-mapping pass, so that the Standard tier's images differ from the engine's only in light."
+context = [
+  "libs/core/include/cs/core/colour.hpp (M1-06, #136): exposure_scale(ev100) and the ev100_* constants, pbr_neutral (negative and NaN channels count as 0), cct_to_linear_rgb (1667 to 25000 K); libs/core/tests/test_colour.cpp's PBR Neutral case and its 10 inputs",
+  "Shared shader code goes in libs/gpu/shaders/modules/, the folder `import` searches; every file directly in libs/gpu/shaders/ needs an entry point (cmake/CsShaders.cmake, M1-20)",
+  "M1-20's offscreen target and readback (libs/gpu/include/cs/gpu/offscreen.hpp)",
+  "M1-22's output, as its session settled it on 16 November 2026: one RGBA32F image, linear radiance in nits in RGB and illuminance in lux in A, left in SHADER_READ_ONLY_OPTIMAL with its writes visible to fragment and compute shader reads. Luminaire colours come from cs::cct_to_linear_rgb on the CPU, as the owner's comment on #78 of 2026-11-13 allowed, so no shader needs a port of it",
+  "Split from M1-22 by the groom of 16 November 2026, from the owner's comments on #78 of 2026-11-13 and 2026-11-15. The area is core because that lane is free and the work ports libs/core; the files are libs/gpu's, so the gpu-reviewer and physics-reviewer subagents review it",
+]
+acceptance = [
+  "libs/gpu/shaders/modules/colour.slang ports libs/core's exposure (EV100 and its constants) and pbr_neutral (negative and NaN channels as 0)",
+  "[gpu][accuracy] A compute shader (colour_check.slang) evaluates the ported functions; at the 10 inputs of test_colour.cpp's PBR Neutral case, and for the exposure scale at EV100 6, 8 and 10, they match libs/core within 1e-4 (float on the GPU)",
+  "A tone-mapping pass reads M1-22's RGBA32F image (radiance in nits in RGB; the illuminance in A is ignored, never treated as alpha) and writes the display image: exposure at a given EV100, PBR Neutral, then sRGB encoding (in the shader or by an _SRGB target format)",
+  "[gpu] Patches of known luminance, written into an RGBA32F image with an arbitrary lux value in A and tone mapped on the GPU, match libs/core's CPU pipeline within 1/255 per channel at EV100 6, 8 and 10",
+  "[gpu] Validation-clean on lavapipe; `ctest --preset debug -L gpu` passes",
+]
+out_of_scope = ["Lighting (M1-22)", "Automatic exposure (M2-39)", "The swapchain and the viewport (M1-23, M1-26)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L gpu",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-45"
+epic = "E1.5"
+title = "Relative pointer mode for walking: Wayland lock and grab fallback"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-04", "M1-01"]
+touches = ["cmake/CsQt.cmake", "libs/ui/CMakeLists.txt", "libs/ui/src/viewport/", "libs/ui/tests/main.cpp", "libs/ui/tests/test_pointer_lock.cpp"]
+goal = "Walking needs the mouse to turn the view without the cursor leaving the window, which Qt has no public API for. A small piece of libs/ui locks the pointer to a window and reports relative motion, so M1-26 only wires it into the viewport and M1-27 only turns motion into camera turns."
+context = [
+  "docs/adr/0011-qt-vulkan-viewport.md: \"Relative mouse mode (walking)\" and points 1, 6, 9 and 10",
+  "The owner's comment on #82 of 2026-11-13: the Wayland protocols, CMake code generation, grab and warp elsewhere, and the private-header call in one file",
+  "The spike's code: `git show origin/spike/qt-vulkan:spike/qt-vulkan/src/wayland_pointer.cpp` (about 150 lines, with wayland_pointer.hpp) and the protocol generation in spike/qt-vulkan/CMakeLists.txt",
+  "Pointer constraints: https://wayland.app/protocols/pointer-constraints-unstable-v1; relative pointer: https://wayland.app/protocols/relative-pointer-unstable-v1",
+  "docs/dependencies.md: the Qt row (6.10.3 in CI, 6.10.3 or newer locally) and the LGPL obligations",
+  "Split from M1-26 by the groom of 16 November 2026. This is the first code in libs/ui, so it also gives the module its Qt build and a test main that creates the application object; M1-26 extends both",
+]
+acceptance = [
+  "cmake/CsQt.cmake, with CS_BUILD_APP only, finds Qt 6 (Core, Gui, Widgets, Test) at no less than the version pinned in docs/dependencies.md and, on Linux, Qt6::WaylandClient and Qt6::GuiPrivate; it enables the C language and generates the two protocols' client code with qt6_generate_wayland_protocol_client_sources. On Linux a missing Wayland module or protocol file stops the configure with a message naming the package to install",
+  "PointerLock (libs/ui/src/viewport/) locks a QWindow's pointer: lock(), unlock(), is_locked(), and signals locked(), unlocked() and motion(dx, dy) in logical pixels. On the wayland platform, when the compositor offers both protocols, it locks the surface and reports the unaccelerated relative deltas; elsewhere it grabs the mouse, hides the cursor and warps it back to the window's centre after each move. The one private-header call (the window's wl_surface through QPlatformNativeInterface) lives in one file",
+  "Walk mode ends on unlock(), Esc, focus loss and the compositor's unlocked event; each emits unlocked() exactly once and shows the cursor again (ADR 0011, point 10)",
+  "[ui] On the offscreen platform, tests drive the fallback with synthetic events: moves of known size give motion() of the same size in logical pixels, the move caused by warping back to the centre gives no motion, and Esc, focus loss and unlock() each end the lock once",
+  "[ui] On a Wayland session (QT_QPA_PLATFORM unset), a test shows a window, locks it and receives locked() from the compositor; on any other platform it skips and says why",
+  "`QT_QPA_PLATFORM=offscreen ctest --preset app -L ui` passes",
+]
+out_of_scope = ["Wiring the lock into the viewport adapter, and the status bar (M1-26)", "Turning motion into camera turns (M1-27)", "Raw input on Windows and XInput2 on X11 (ADR 0011, point 9; later)", "Installing the Wayland packages in CI (M1-31)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app",
+  "QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "ctest --preset app -L ui (on a Wayland session, where the lock test runs instead of skipping)",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
 id = "M2-01"
 epic = "E2.1"
 title = "Walls with thickness, joined corners and openings"
@@ -1736,7 +1818,7 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-10"]
-touches = ["libs/geom/include/cs/geom/walls.hpp", "libs/geom/src/walls.cpp", "libs/geom/tests/test_walls.cpp"]
+touches = ["libs/geom/include/cs/geom/walls.hpp", "libs/geom/src/walls.cpp", "libs/geom/tests/test_walls.cpp", "libs/geom/include/cs/geom/room.hpp", "libs/geom/src/room.cpp", "libs/geom/tests/test_room.cpp"]
 goal = "Meshes for free-standing and connected walls of any length and thickness, joined cleanly at corners, with doorways and passages cut through them."
 context = [
   "docs/adr/0008-exhibit-data-model.md: Wall and Opening components",
@@ -2485,7 +2567,7 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-15", "M2-24", "M1-28", "M2-29"]
-touches = ["libs/engine/include/cs/engine/lux_service.hpp", "libs/engine/src/lux_service.cpp", "libs/engine/tests/test_lux_service.cpp", "apps/cs-bench/"]
+touches = ["libs/engine/include/cs/engine/lux_service.hpp", "libs/engine/src/lux_service.cpp", "libs/engine/tests/test_lux_service.cpp", "apps/cs-bench/", "libs/engine/src/lighting.hpp", "libs/engine/src/lux.cpp", "libs/engine/src/path_tracer.cpp"]
 goal = "Every work's lux statistics kept current as the curator edits, computed off the UI thread, redoing only the works an edit affects."
 context = [
   "docs/adr/0002-rendering-tiers.md: lux on every work within 1 s at 2% standard error",
@@ -2510,7 +2592,7 @@ verification = [
 id = "M2-29"
 epic = "E2.6"
 title = "The gallery-50 benchmark scene and a memory check in CI"
-area = "build"
+area = "ci"
 type = "test"
 size = "M"
 owner = "agent"
@@ -2869,4 +2951,99 @@ out_of_scope = ["Checking only the edited entities (with M2-24's incremental upd
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
   "python3 scripts/format.py --check",
+]
+
+# ---------------------------------------------------------------------------------------------
+# M3: only the spikes are filed (groom of 16 November 2026), so that their decisions are ready
+# when the milestone is decomposed, at about 70% of M2.
+# ---------------------------------------------------------------------------------------------
+
+[[tasks]]
+id = "M3-01"
+epic = "E3.1"
+title = "Spike: which manufacturers' IES files we may ship"
+area = "light"
+type = "spike"
+size = "S"
+owner = "agent"
+blocked_by = []
+touches = ["docs/adr/0012-fixture-library-sources.md"]
+goal = "Decide which real museum fixtures the library can ship with their manufacturers' photometric files, before E3.1 builds the library. The blueprint promises about ten (spot, flood, wall washer, framing projector), and docs/dependencies.md allows an IES file only when its terms allow redistribution with the app. Time box: one session."
+context = [
+  "docs/product/blueprint.md, the Light feature: about ten real museum fixtures with IES files, plus generic fixtures in lumens and beam angle",
+  "docs/adr/0003-painting-materials.md: fixtures, dim to target, licences checked per file and recorded in docs/dependencies.md",
+  "docs/dependencies.md: the row for a manufacturer's terms, per file, and the IES files row",
+  "IES LM-63-2019 is the format E3.1 parses; many European manufacturers publish EULUMDAT (LDT) first",
+  "Only the record is merged; this task commits no photometric file. The owner sends any request for permission, so the record drafts them",
+]
+acceptance = [
+  "docs/adr/0012-fixture-library-sources.md lists at least eight manufacturers whose fixtures museums use (track spots, wall washers, framing projectors), and for each: where its photometric files come from, the formats offered (IES LM-63, EULUMDAT), its licence or terms of use quoted with a link and the date read, and a verdict: may ship, may ship with permission, or may not",
+  "The record proposes about ten fixtures covering spot, flood, wall washer and framing projector, each with a source that may ship or a named fallback, and says what the library ships if no permission arrives",
+  "For every source that needs permission, the record drafts a short request for the owner to send: what we ask for, which files, how they are credited, and the app's licence",
+  "The record says whether M3 needs EULUMDAT, or whether IES LM-63 alone covers the chosen fixtures",
+]
+out_of_scope = ["Parsing IES files (E3.1)", "Committing any photometric file", "Sending the requests (the owner does)"]
+verification = [
+  "test -f docs/adr/0012-fixture-library-sources.md",
+  "The owner reads the record and sends the drafted requests",
+]
+
+[[tasks]]
+id = "M3-02"
+epic = "E3.3"
+title = "Spike: lightmaps against probes for frames and works"
+area = "engine"
+type = "spike"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-16", "M1-17"]
+touches = ["docs/adr/0013-bounced-light-on-frames-and-works.md"]
+goal = "Decide how the Standard tier gets bounced light on frames and works, before E3.3 builds the bake. ADR 0002 bakes lightmaps for walls, floors and ceilings and probes for everything else, but a work hangs centimetres from a lit wall, and nobody has measured whether probes are accurate enough there. Time box: two sessions."
+context = [
+  "docs/adr/0002-rendering-tiers.md: the engine bakes indirect light for the Standard tier; lux on each work's grid within 5% (mean) and 10% (95th percentile) of the engine",
+  "docs/roadmap.md, M3 exit criteria: bake preview at most 2 s and full bake at most 30 s on the reference CPU (`cs-bench --bake`)",
+  "libs/engine: lux_at with its direct and indirect parts (M1-15), the path tracer (M1-16), per-work lux grids and cs-render (M1-17)",
+  "Frames are M1-10's box frame until M2-05 adds moulding profiles; say what deeper profiles may change",
+  "Experiments run on a throwaway branch spike/bounce; only the decision record is merged",
+]
+acceptance = [
+  "docs/adr/0013-bounced-light-on-frames-and-works.md compares, on the skeleton scene and on a room of at least ten framed works under six spots built on the throwaway branch, the indirect light on each work's lux grid and on frame faces from: the engine's reference; lightmaps at three texel sizes; irradiance probes (L1 or L2 spherical harmonics) on a grid at two spacings; and one probe set per work",
+  "For each method the record gives the error against the reference (mean and 95th percentile of total lux on the work grids, against ADR 0002's 5% and 10%), the memory, the bake time on the reference CPU, and what a moved work or light costs to bake again",
+  "The record decides the method for frames and for works with its parameters, splits the bake's time between preview and full bake within the 2 s and 30 s budgets, and lists what E3.3's tasks must build",
+  "The record links the throwaway branch and the commands that reproduce its tables",
+]
+out_of_scope = ["Merging bake code (E3.3)", "The Standard tier's shaders for bounced light (E3.3)", "Reflections in glazing (E3.2)"]
+verification = [
+  "test -f docs/adr/0013-bounced-light-on-frames-and-works.md",
+  "The owner reads the record and reruns one of its tables with the linked commands",
+]
+
+[[tasks]]
+id = "M3-03"
+epic = "E3.3"
+title = "Spike: CIE 171 test cases and Radiance as a second reference"
+area = "engine"
+type = "spike"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-16"]
+touches = ["docs/adr/0014-external-validation.md"]
+goal = "Decide which external checks the engine runs beyond its analytic tests: which CIE 171:2006 test cases can be rebuilt from public descriptions, and whether Radiance runs them as a second reference. Time box: one session."
+context = [
+  "docs/adr/0002-rendering-tiers.md, accuracy table: the engine against Radiance on the CIE 171 scenes we can rebuild, within 3%; the standard is paywalled. Its sources link a report of Radiance tested against CIE 171",
+  "CIE 171's measured rooms carry about ±13% measurement uncertainty (ADR 0002), so measured cases check plausibility, analytic ones accuracy",
+  "The engine today: point and spot luminaires in candela, Lambert surfaces, the lux meter and the path tracer (M1-15, M1-16); IES fixtures and area sources arrive in M3",
+  "Radiance would be a test-time tool, never shipped: check its licence against docs/dependencies.md all the same",
+  "Experiments run on a throwaway branch spike/cie171; only the decision record is merged",
+]
+acceptance = [
+  "docs/adr/0014-external-validation.md lists the CIE 171 test cases known from public descriptions (what each checks and which inputs are published) and, for each, whether our scene model can express it now, after M3, or not at all",
+  "For two cases the engine can express now, the record shows its result from a throwaway run against the published reference values, with the difference",
+  "The record says whether Radiance can run in CI (licence, install time, run time for one case) or only locally, and recommends which cases become [accuracy] tests in M3 and with what tolerance",
+  "The record says which published values our tests may contain and how they are cited, given that the standard is paywalled",
+]
+out_of_scope = ["Merging tests or scenes (the M3 tasks the record proposes)", "Buying the standard (the owner decides, if the record recommends it)"]
+verification = [
+  "test -f docs/adr/0014-external-validation.md",
+  "The owner reads the record",
 ]
