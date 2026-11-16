@@ -39,7 +39,8 @@ class History {
     //   entity and the reference; the document and both stacks are left as they were.
     // - A transaction that changes nothing is not recorded: it returns an empty ChangeList and
     //   leaves the stacks as they were.
-    // - Otherwise the transaction goes on the undo stack and the redo stack is cleared.
+    // - Otherwise the transaction goes on the undo stack, the redo stack is cleared, and the
+    //   document's revision goes up by one. Refused and empty commits leave the revision too.
     ChangeList commit(Transaction transaction);
 
     bool can_undo() const { return !undo_.empty(); }
