@@ -21,11 +21,13 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace cs::gpu {
@@ -59,16 +61,21 @@ double lit_end_rad(const light::GenericSpot& spot) {
     }
 }
 
-// Appends the spot's table to `profiles` (standard_tier.hpp says how it is laid out) and sets
-// the light's core_end and lit_end.
-void append_profile(const light::GenericSpot& spot, LightData& light,
-                    std::vector<float>& profiles) {
+// Where a spot's table starts in the profiles, and its ends as LightData holds them.
+struct Profile {
+    std::uint32_t first = 0;
+    float core_end = 0.0f;
+    float lit_end = 0.0f;
+};
+
+// Appends the spot's table to `profiles` (standard_tier.hpp says how it is laid out).
+Profile append_profile(const light::GenericSpot& spot, std::vector<float>& profiles) {
     const double lit_end = lit_end_rad(spot);
     const double core_end = std::min(0.5 * spot.field_angle_rad(), lit_end);
     const double w_core = std::sin(0.5 * core_end);
     const double w_lit = std::sin(0.5 * lit_end);
-    light.core_end = static_cast<float>(w_core);
-    light.lit_end = static_cast<float>(w_lit);
+    const Profile profile{static_cast<std::uint32_t>(profiles.size()), static_cast<float>(w_core),
+                          static_cast<float>(w_lit)};
     // The angle of a table entry at w = sin(theta / 2), never past the last lit angle, which
     // the round trip through sin and asin could step over at a hard edge.
     const auto entry = [&](double w) {
@@ -83,6 +90,7 @@ void append_profile(const light::GenericSpot& spot, LightData& light,
         const double t = static_cast<double>(i) / (profile_taper_entries - 1);
         profiles.push_back(entry(w_core + (w_lit - w_core) * t));
     }
+    return profile;
 }
 
 // ---- The camera --------------------------------------------------------------------------------
@@ -245,12 +253,18 @@ LightTable make_light_table(std::span<const world::Light> lights) {
                                     std::to_string(max_standard_lights));
     LightTable table;
     table.lights.reserve(lights.size());
-    table.profiles.reserve(lights.size() * profile_entries);
+    // A spot's shape relative to its peak depends on its beam and field angles alone
+    // (distribution.hpp), so lights of one fixture type share a table.
+    std::map<std::pair<double, double>, Profile> shapes;
     for (std::size_t k = 0; k < lights.size(); ++k) {
         const world::Light& light = lights[k];
         if (!light.spot)
             throw std::invalid_argument("make_light_table: light " + std::to_string(k) +
                                         " has no generic spot");
+        const auto peak_cd = static_cast<float>(light.spot->peak_intensity_cd());
+        if (!std::isfinite(peak_cd))
+            throw std::invalid_argument("make_light_table: light " + std::to_string(k) +
+                                        "'s peak intensity is too large for a float");
         const light::Luminaire& luminaire = light.luminaire;
         // to_fixture's rows are the fixture's axes in the world.
         const glm::dvec3 ex = luminaire.to_fixture({1.0, 0.0, 0.0});
@@ -258,16 +272,21 @@ LightTable make_light_table(std::span<const world::Light> lights) {
         const glm::dvec3 ez = luminaire.to_fixture({0.0, 0.0, 1.0});
         LightData data;
         data.position_m = glm::vec3(luminaire.position_m());
-        data.peak_cd = static_cast<float>(light.spot->peak_intensity_cd());
+        data.peak_cd = peak_cd;
         data.axis_x = glm::vec3(ex.x, ey.x, ez.x);
         data.axis_y = glm::vec3(ex.y, ey.y, ez.y);
         data.axis_z = glm::vec3(ex.z, ey.z, ez.z);
-        data.profile = static_cast<std::uint32_t>(k * profile_entries);
         // As the engine colours its lamps (engine/path_tracer.cpp).
         const glm::dvec3 rgb = cct_to_linear_rgb(light.colour_temperature_k);
         const double y = luminance(rgb);
         data.colour = glm::vec3(y > 0.0 ? rgb / y : glm::dvec3(1.0));
-        append_profile(*light.spot, data, table.profiles);
+        const std::pair shape{light.spot->beam_angle_rad(), light.spot->field_angle_rad()};
+        auto found = shapes.find(shape);
+        if (found == shapes.end())
+            found = shapes.emplace(shape, append_profile(*light.spot, table.profiles)).first;
+        data.profile = found->second.first;
+        data.core_end = found->second.core_end;
+        data.lit_end = found->second.lit_end;
         table.lights.push_back(data);
     }
     return table;
@@ -705,6 +724,13 @@ StandardImages StandardTier::render(const world::Camera& camera) const {
     region.imageExtent = {width_, height_, 1}; // tightly packed rows
     vkCmdCopyImageToBuffer(cmd, hdr_image_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer(),
                            1, &region);
+    // Back to where record() leaves the image, for shader reads after the copy's.
+    const VkImageMemoryBarrier2 to_readers = detail::image_barrier(
+        hdr_image_, 0, 1, {VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_NONE},
+        {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+         VK_ACCESS_2_SHADER_READ_BIT},
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    detail::record_barriers(cmd, {}, std::span(&to_readers, 1));
     detail::record_host_read(cmd, readback);
     commands.submit_and_wait();
     readback.invalidate();

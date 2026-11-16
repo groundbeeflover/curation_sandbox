@@ -76,10 +76,12 @@ namespace cs::gpu {
 //
 // Accuracy: within 1e-4 of the peak at every angle for spots whose exponent p (distribution.hpp)
 // is from 0.5 to 25, a field / beam ratio from about 1.05 to 11, with a field angle up to 340
-// degrees; uniform cones and isotropic lights are exact. Outside those bounds the error stays
-// where the profile is sharpest: within micro-degrees of the axis for p < 0.5 (1e-3 of the peak
-// at 5 / 120 degrees), at the beam's edge for p > 25 (1e-2 at 24.9 / 25), and in the last 12
-// degrees behind a fixture whose field is 360 degrees (4e-3 at 180 / 360).
+// degrees but not within 0.1 degree of 180; uniform cones and isotropic lights are exact. Outside
+// those bounds the error stays where the profile is sharpest: within micro-degrees of the axis
+// for p < 0.5 (1e-3 of the peak at 5 / 120 degrees), at the beam's edge for p > 25 (1e-2 at
+// 24.9 / 25), in the last 12 degrees behind a fixture whose field is 360 degrees (4e-3 at
+// 180 / 360), and in the fade of a field within 0.1 degree of 180, which narrows to nothing there
+// (distribution.hpp) while the shader's angle is good to about 1e-7 rad (1e-3 at 179.999).
 
 inline constexpr std::uint32_t profile_core_entries = 1024;
 inline constexpr std::uint32_t profile_taper_entries = 256;
@@ -110,14 +112,17 @@ static_assert(offsetof(LightData, peak_cd) == 12 && offsetof(LightData, core_end
               offsetof(LightData, colour) == 64); // luminaire.slang's offsets
 
 // The lights of a world as the GPU holds them, in one buffer: every LightData, then every
-// profile (profile_entries floats each, the core then the taper, light after light).
+// profile (profile_entries floats each, the core then the taper). A spot's shape relative to its
+// peak depends on its beam and field angles alone, so there is one profile per pair of them, in
+// the order the lights first use them: lights of one fixture type share theirs.
 struct LightTable {
     std::vector<LightData> lights;
     std::vector<float> profiles;
 };
 
 // The table of the world's lights, in their order. Throws std::invalid_argument for a light
-// without a generic spot (world::Light::spot), or for more than max_standard_lights lights.
+// without a generic spot (world::Light::spot) or whose peak intensity overflows a float (a spot
+// of a few attoradians), or for more than max_standard_lights lights.
 LightTable make_light_table(std::span<const world::Light> lights);
 
 // ---- The tier ----------------------------------------------------------------------------------
@@ -170,8 +175,9 @@ class StandardTier {
     void record(VkCommandBuffer commands, const world::Camera& camera) const;
 
     // Records a frame as above, submits it to the device's queue, waits up to a minute and reads
-    // the HDR image back. Throws as record() does, or std::runtime_error on a Vulkan failure or
-    // the timeout. It submits to the device's queue, so not while another thread uses that queue.
+    // the HDR image back, leaving it as record() does. Throws as record() does, or
+    // std::runtime_error on a Vulkan failure or the timeout. It submits to the device's queue, so
+    // not while another thread uses that queue.
     [[nodiscard]] StandardImages render(const world::Camera& camera) const;
 
   private:

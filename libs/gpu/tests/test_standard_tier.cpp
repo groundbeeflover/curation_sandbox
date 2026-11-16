@@ -568,21 +568,28 @@ TEST_CASE("standard: within the bounds standard_tier.hpp states, the shader's pr
         double beam_deg;
         double field_deg;
     };
-    // p from 0.52 to 20, and fields up to 340 degrees, beside the issue's three spots.
+    // p from 0.52 to 20, and fields up to 340 degrees, 0.1 degree either side of 180 included,
+    // beside the issue's three spots.
     for (const Case& c : {Case{"4/40, p 0.52", 4.0, 40.0}, Case{"24/36", 24.0, 36.0},
                           Case{"24/30, p 5.4", 24.0, 30.0}, Case{"20/21.25, p 20", 20.0, 21.25},
-                          Case{"60/340", 60.0, 340.0}, Case{"120/300", 120.0, 300.0}}) {
+                          Case{"60/340", 60.0, 340.0}, Case{"120/300", 120.0, 300.0},
+                          Case{"90/179.9", 90.0, 179.9}, Case{"90/180.1", 90.0, 180.1}}) {
         INFO("spot " << c.what);
         const auto spot = std::make_shared<const light::GenericSpot>(800.0, c.beam_deg * degrees,
                                                                      c.field_deg * degrees);
         const world::Light light = spot_light({1.0, 2.0, 3.0}, {1.4, 1.5, 0.2}, spot);
         const LightTable table = cs::gpu::make_light_table(std::span(&light, 1));
 
-        // Every 1/4096 of the way to the cut-off, and closer and closer to the axis.
+        // Every 1/4096 of the way to the cut-off, 64 across the fade (however narrow), and
+        // closer and closer to the axis.
         const double cutoff = cutoff_rad(*spot);
+        const double half_field = 0.5 * spot->field_angle_rad();
         std::vector<double> thetas;
         for (int k = 0; k < 4096; ++k) {
             thetas.push_back(cutoff * (k + 0.5) / 4096.0);
+        }
+        for (int k = 0; k < 64; ++k) {
+            thetas.push_back(half_field + (cutoff - half_field) * (k + 0.5) / 64.0);
         }
         for (double theta = 1e-7; theta < 1e-2; theta *= 10.0) {
             thetas.push_back(theta);
@@ -657,6 +664,35 @@ TEST_CASE("standard: make_light_table refuses a light without a generic spot, an
     const std::vector<world::Light> enough(cs::gpu::max_standard_lights,
                                            isotropic_light({0.0, 0.0, 2.0}, 100.0));
     CHECK(cs::gpu::make_light_table(enough).lights.size() == cs::gpu::max_standard_lights);
+
+    // A spot so narrow that its peak, finite as a double, overflows a float.
+    const auto needle = std::make_shared<const light::GenericSpot>(800.0, 1e-19, 2e-19);
+    REQUIRE(std::isfinite(needle->peak_intensity_cd()));
+    REQUIRE(needle->peak_intensity_cd() > std::numeric_limits<float>::max());
+    const world::Light narrow = spot_light({0.0, 0.0, 2.0}, {0.0, 0.0, 0.0}, needle);
+    CHECK_THROWS_AS(cs::gpu::make_light_table(std::span(&narrow, 1)), std::invalid_argument);
+}
+
+TEST_CASE("standard: lights of one fixture type share one profile table, each with its own peak",
+          "[gpu][standard]") {
+    const auto bright =
+        std::make_shared<const light::GenericSpot>(800.0, 15.0 * degrees, 25.0 * degrees);
+    const auto dim =
+        std::make_shared<const light::GenericSpot>(200.0, 15.0 * degrees, 25.0 * degrees);
+    const auto wide =
+        std::make_shared<const light::GenericSpot>(800.0, 10.0 * degrees, 40.0 * degrees);
+    const std::vector<world::Light> lights{spot_light({0.0, 0.0, 3.0}, {0.0, 1.0, 0.0}, bright),
+                                           spot_light({2.0, 0.0, 3.0}, {2.0, 1.0, 0.0}, wide),
+                                           spot_light({4.0, 0.0, 3.0}, {4.0, 1.0, 0.0}, dim)};
+    const LightTable table = cs::gpu::make_light_table(lights);
+    REQUIRE(table.lights.size() == 3);
+    CHECK(table.profiles.size() == 2 * cs::gpu::profile_entries);
+    CHECK(table.lights[0].profile == 0);
+    CHECK(table.lights[1].profile == cs::gpu::profile_entries);
+    CHECK(table.lights[2].profile == 0);
+    CHECK(table.lights[2].core_end == table.lights[0].core_end);
+    CHECK(table.lights[2].lit_end == table.lights[0].lit_end);
+    CHECK_THAT(table.lights[2].peak_cd, WithinRel(table.lights[0].peak_cd / 4.0, 1e-6));
 }
 
 // ---- Exact direct light ------------------------------------------------------------------------
@@ -1013,4 +1049,25 @@ TEST_CASE("standard: record() into the caller's command buffer, twice in a row, 
     const StandardImages images = tier.render(camera);
     // Pixel (16, 9) sees 8 cm from the point under the light; 5% only asks that it renders.
     CHECK_THAT(lux_at(images, 16, 9), WithinRel(250.0, 0.05));
+
+    // render() leaves the image as record() does: in SHADER_READ_ONLY_OPTIMAL, which the
+    // validation layer checks when this transition from it is submitted.
+    submit_and_wait(*gpu, [&](VkCommandBuffer commands) {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = tier.hdr_image();
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.imageMemoryBarrierCount = 1;
+        dependency.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(commands, &dependency);
+    });
 }
