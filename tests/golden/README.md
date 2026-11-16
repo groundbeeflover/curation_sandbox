@@ -144,7 +144,7 @@ The tolerances, 0.02 mean FLIP and 0.04 nits, are (to be completed from CI's num
 
 ## Checks of the runner
 
-Two more tests with the `golden` label check `cs-render golden` itself (`runner_checks.cmake`).
+Three more tests with the `golden` label check `cs-render golden` itself (`runner_checks.cmake`).
 They work on copies in the build directory:
 
 - **The spot 10% brighter:** skeleton-path, with the spot's lumens raised by 10%, fails. It writes
@@ -152,3 +152,6 @@ They work on copies in the build directory:
 - **A missing reference, and `--update`:** on a small copy of skeleton-path, a missing reference
   skips; `--update` writes one; the next run passes without writing the test directory; a
   different seed fails; the next passing run removes the failure images.
+- **Mistakes:** a mistake on the command line exits with 2. A `test.json` that is not valid exits
+  with 1: an unknown key, a missing scene, a bad size or tier, or text that is not JSON. Neither
+  writes anything.

@@ -139,12 +139,12 @@ fs::path from_utf8(const std::string& text) {
 }
 
 // The test's name: its folder's, whichever way the folder was written (a trailing slash, ".").
-std::string test_name(const fs::path& folder) {
+fs::path test_name(const fs::path& folder) {
     fs::path path = fs::absolute(folder).lexically_normal();
     if (!path.has_filename()) {
         path = path.parent_path();
     }
-    return utf8(path.filename());
+    return path.filename();
 }
 
 // Whether path is folder or lies inside it, after resolving "..", "." and symbolic links.
@@ -169,13 +169,13 @@ std::string read_text(const fs::path& path, std::uintmax_t max_bytes) {
     }
     if (size > max_bytes) {
         throw std::runtime_error(utf8(path) + " is " + std::to_string(size) +
-                                 " bytes, more than the " + std::to_string(max_bytes) +
-                                 " a test.json may have");
+                                 " bytes, more than the " + std::to_string(max_bytes) + " allowed");
     }
     std::ifstream file(path, std::ios::binary);
     std::string text(static_cast<std::size_t>(size), '\0');
     file.read(text.data(), static_cast<std::streamsize>(size));
-    if (!file) {
+    // A file that grew while it was read is refused, as doc's reader refuses one.
+    if (!file || file.peek() != std::ifstream::traits_type::eof()) {
         throw std::runtime_error("cannot read " + utf8(path));
     }
     return text;
@@ -242,18 +242,11 @@ GoldenTest read_test(const fs::path& folder) {
     test.scene = folder / from_utf8(scene.get<std::string>());
 
     const json& tier = member(root, where, "tier");
-    if (!tier.is_string()) {
-        throw std::runtime_error(where + ": \"tier\" is \"path\" or \"standard\"");
+    if (!tier.is_string() || tier.get<std::string>() != "path") {
+        throw std::runtime_error(where + ": \"tier\" is \"path\"; the Standard tier's golden "
+                                         "tests arrive with M1-29");
     }
     test.tier = tier.get<std::string>();
-    if (test.tier == "standard") {
-        throw std::runtime_error(where + ": the Standard tier's golden tests arrive with M1-29; "
-                                         "cs-render golden runs the path tier only");
-    }
-    if (test.tier != "path") {
-        throw std::runtime_error(where + ": \"tier\" is \"path\" or \"standard\", not \"" +
-                                 test.tier + "\"");
-    }
 
     test.image.width = static_cast<int>(whole_number(root, where, "width", 1, cs::max_image_side));
     test.image.height =
@@ -340,7 +333,7 @@ std::string size_text(const cs::Image& image) {
 // Writes the render as the new reference, by way of a temporary file, so that a failed write
 // cannot leave a broken reference behind. Says how far it moved from the old one, for the pull
 // request.
-int update_reference(const fs::path& reference_path, const cs::Image& render) {
+void update_reference(const fs::path& reference_path, const cs::Image& render) {
     if (fs::exists(reference_path)) {
         try {
             const cs::Image old = cs::read_exr(reference_path);
@@ -366,15 +359,13 @@ int update_reference(const fs::path& reference_path, const cs::Image& render) {
         std::cerr << "cs-render: warning: the reference is larger than " << large_reference_bytes
                   << " bytes; tests/golden/README.md says how to keep it small\n";
     }
-    return 0;
 }
 
 int run(const Arguments& arguments) {
     const auto start = std::chrono::steady_clock::now();
     const fs::path& folder = arguments.folder;
-    const std::string name = test_name(folder);
-    const fs::path out =
-        arguments.out.empty() ? fs::path(CS_GOLDEN_OUT_DIR) / from_utf8(name) : arguments.out;
+    const fs::path name = test_name(folder);
+    const fs::path out = arguments.out.empty() ? fs::path(CS_GOLDEN_OUT_DIR) / name : arguments.out;
     if (is_within(out, folder)) {
         throw UsageError("--out is inside the test folder, which only --update writes to");
     }
@@ -382,7 +373,7 @@ int run(const Arguments& arguments) {
     const std::string driver(engine_driver);
     const fs::path reference_path = folder / ("ref." + driver + ".exr");
 
-    std::cout << "golden " << name << ": " << test.tier << " tier on " << driver << ", "
+    std::cout << "golden " << utf8(name) << ": " << test.tier << " tier on " << driver << ", "
               << test.image.width << " x " << test.image.height << " at "
               << test.image.samples_per_pixel << " spp, seed " << test.image.seed << '\n';
     if (!arguments.update && !fs::exists(reference_path)) {
@@ -402,20 +393,15 @@ int run(const Arguments& arguments) {
               << " s\n";
 
     if (arguments.update) {
-        return update_reference(reference_path, render);
+        update_reference(reference_path, render);
+        return 0;
     }
 
     const cs::Image reference = cs::read_exr(reference_path);
-    const double ev100 = display_ev100(project.camera(), reference);
     if (reference.width() != render.width() || reference.height() != render.height()) {
-        remove_failure_images(out); // An earlier failure's difference would mislead.
-        fs::create_directories(out);
-        cs::write_exr(render, out / "render.exr", cs::ExrChannels::float32);
-        cs::write_png(render, out / "render.png", ev100);
-        std::cout << "  differs: the reference is " << size_text(reference)
-                  << ", but test.json asks for " << size_text(render)
-                  << "\n  wrote render.exr and render.png to " << utf8(out) << '\n';
-        return exit_failure;
+        throw std::runtime_error("the reference is " + size_text(reference) +
+                                 ", but test.json asks for " + size_text(render) +
+                                 "; --update writes a new one");
     }
 
     const cs::ImageComparison comparison = cs::compare(reference, render);
@@ -430,12 +416,8 @@ int run(const Arguments& arguments) {
         return 0;
     }
 
-    write_failure_images(out, ev100, reference, render);
-    std::cout << "  differs: "
-              << (!flip_within && !error_within ? "mean FLIP and mean absolute error are"
-                  : !flip_within                ? "mean FLIP is"
-                                                : "mean absolute error is")
-              << " above the tolerance\n  wrote";
+    write_failure_images(out, display_ev100(project.camera(), reference), reference, render);
+    std::cout << "  differs: above a tolerance\n  wrote";
     for (const std::string_view file : failure_files) {
         std::cout << ' ' << file;
     }

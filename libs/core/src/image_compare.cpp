@@ -86,11 +86,6 @@ void check_same_size(const Image& reference, const Image& test) {
     }
 }
 
-// The sRGB transfer function's inverse, for FLIP's magma map, which is defined in sRGB.
-float srgb_to_linear(float v) {
-    return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
-}
-
 } // namespace
 
 ImageComparison compare(const Image& reference, const Image& test) {
@@ -133,9 +128,9 @@ Image flip_heat_map(const Image& reference, const Image& test) {
             const float error = errors.get(x, y);
             const float clamped = error > 0.0f ? std::min(error, 1.0f) : 0.0f;
             const int i = static_cast<int>(clamped * float(entries - 1) + 0.5f);
-            const FLIP::color3& srgb = FLIP::MapMagma[i];
-            heat_map.at(x, y) =
-                Rgb{srgb_to_linear(srgb.r), srgb_to_linear(srgb.g), srgb_to_linear(srgb.b)};
+            // The map is defined in sRGB.
+            const FLIP::color3 linear = FLIP::color3::sRGBToLinearRGB(FLIP::MapMagma[i]);
+            heat_map.at(x, y) = Rgb{linear.r, linear.g, linear.b};
         }
     }
     return heat_map;
