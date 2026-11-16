@@ -451,8 +451,8 @@ TEST_CASE("scene: one MaterialData per material, Lambert or painting, with its c
         CHECK(materials[1].specular_weight == static_cast<float>(source.base.specular_weight));
         CHECK(materials[1].coat_weight == static_cast<float>(source.coat.weight));
         CHECK(materials[1].coat_roughness == static_cast<float>(source.coat.roughness));
-        // coat_ior is not checked: scene.hpp says the coat is the PaintingMaterial's (1.52), and
-        // painting_material.hpp says the real-time tier uses 1.5, as glTF fixes it.
+        // The material's own (1.52); the rasterised tier substitutes glTF's 1.5 (scene.hpp).
+        CHECK(materials[1].coat_ior == static_cast<float>(source.coat.ior));
     }
     SECTION("the second painting of the same asset names the same texture") {
         CHECK(materials[2].kind == MaterialKind::painting);
@@ -650,6 +650,20 @@ TEST_CASE("scene: an asset the loader cannot give is a TextureProblem naming it,
         CHECK(scene.material_data()[0].texture == no_texture);
         REQUIRE(scene.textures().size() == 1);
         CHECK(scene.material_data()[1].texture == 0);
+    }
+
+    SECTION("a loader that throws something other than std::runtime_error is a problem too") {
+        cs::world::World world;
+        world.meshes = {quad_mesh()};
+        world.materials.emplace_back(painting(asset('a')));
+        world.instances = {instance(0, 0)};
+        const TextureLoader loader = [](const AssetRef&) -> cs::assets::Texture {
+            throw std::invalid_argument("deliberately malformed image");
+        };
+        const Scene scene(*gpu, world, loader);
+        REQUIRE(scene.problems().size() == 1);
+        CHECK_THAT(scene.problems()[0].reason, ContainsSubstring("deliberately malformed image"));
+        CHECK(scene.material_data()[0].texture == no_texture);
     }
 
     SECTION("a mip chain with more levels than the image's size allows is a problem") {

@@ -325,7 +325,9 @@ Scene::Scene(const Device& device, const world::World& world, const TextureLoade
                 pending.push_back({std::move(texture), {}});
                 return entry->second;
             }
-        } catch (const std::runtime_error& e) {
+        } catch (const std::exception& e) {
+            // Whatever the loader throws, out of memory included, costs one painting its image,
+            // not the scene.
             reason = e.what();
         }
         problems_.push_back({asset, reason});

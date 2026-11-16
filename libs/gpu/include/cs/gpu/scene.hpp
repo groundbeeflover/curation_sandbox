@@ -24,6 +24,8 @@
 // texture is in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL and every write is visible to the
 // shader, index and copy reads of later commands on the device's queue.
 
+// world and assets types appear below and gpu does not export those modules: a user of this
+// header declares them itself, as it does to compile a world.
 #include <cs/assets/texture.hpp>
 #include <cs/core/image.hpp>
 #include <cs/gpu/device.hpp>
@@ -96,6 +98,8 @@ struct MaterialData {
     float specular_weight = 0.0f;
     float coat_weight = 0.0f;
     float coat_roughness = 0.0f;
+    // The material's own, 1.52 for varnish: the path tracers read it. The rasterised tier uses
+    // 1.5 instead, as glTF fixes it (material/painting_material.hpp).
     float coat_ior = 1.5f;
     std::uint32_t padding[2]{};
 };
@@ -104,7 +108,7 @@ static_assert(sizeof(MaterialData) == 48);
 // ---- Textures ----------------------------------------------------------------------------------
 
 // Gives the decoded image of an asset the world names, with its full mip chain
-// (assets::load_texture builds one). It throws std::runtime_error when it cannot: the scene
+// (assets::load_texture builds one). It throws when it cannot (any std::exception): the scene
 // then shows that painting's base colour and says why in Scene::problems().
 using TextureLoader = std::function<assets::Texture(const world::AssetRef&)>;
 
