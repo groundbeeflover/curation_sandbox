@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -88,8 +89,6 @@ template <typename T> T parse_number(std::string_view flag, std::string_view tex
 
 Arguments parse_arguments(int argc, char* argv[]) {
     Arguments arguments;
-    bool have_project = false;
-    bool have_out = false;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -97,11 +96,10 @@ Arguments parse_arguments(int argc, char* argv[]) {
             std::exit(0);
         }
         if (!arg.starts_with("--")) {
-            if (have_project) {
+            if (!arguments.project.empty()) {
                 throw UsageError("more than one project folder: \"" + std::string(arg) + "\"");
             }
             arguments.project = fs::path(arg);
-            have_project = true;
             continue;
         }
         if (i + 1 >= argc) {
@@ -134,20 +132,19 @@ Arguments parse_arguments(int argc, char* argv[]) {
                                                          std::numeric_limits<std::uint64_t>::max());
         } else if (arg == "--lux-samples") {
             arguments.lux_samples =
-                parse_number<std::uint32_t>("--lux-samples", value, 1, max_lux_samples);
+                parse_number<std::uint32_t>("--lux-samples", value, 2, max_lux_samples);
         } else if (arg == "--threads") {
             arguments.threads = parse_number<unsigned>("--threads", value, 1, max_threads);
         } else if (arg == "--out") {
             arguments.out = fs::path(value);
-            have_out = !arguments.out.empty();
         } else {
             throw UsageError("unknown option " + std::string(arg));
         }
     }
-    if (!have_project) {
+    if (arguments.project.empty()) {
         throw UsageError("no project folder");
     }
-    if (!have_out) {
+    if (arguments.out.empty()) {
         throw UsageError("no --out prefix");
     }
     return arguments;
@@ -160,15 +157,22 @@ fs::path with_suffix(const fs::path& prefix, std::string_view suffix) {
     return path;
 }
 
+// The mean luminance of the image's finite pixels, in nits, for automatic exposure: one NaN or
+// infinite pixel would otherwise decide the exposure of the whole image.
 double mean_luminance(const cs::Image& image) {
     double sum = 0.0;
+    double count = 0.0;
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
             const cs::Rgb& p = image.at(x, y);
-            sum += cs::luminance(glm::dvec3(p.r, p.g, p.b));
+            const double y_nits = cs::luminance(glm::dvec3(p.r, p.g, p.b));
+            if (std::isfinite(y_nits)) {
+                sum += y_nits;
+                count += 1.0;
+            }
         }
     }
-    return sum / (static_cast<double>(image.width()) * image.height());
+    return count > 0.0 ? sum / count : 0.0;
 }
 
 json vec(glm::dvec2 v) {

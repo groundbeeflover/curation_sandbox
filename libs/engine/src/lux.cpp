@@ -58,34 +58,6 @@ std::vector<Lamp> lamps_of(const world::World& world) {
     return lamps;
 }
 
-// Albedos outside [0, 1] would create energy, or a negative one; NaN becomes 0.
-glm::dvec3 clamp_albedo(glm::dvec3 albedo) {
-    const auto unit = [](double x) { return std::isnan(x) ? 0.0 : std::clamp(x, 0.0, 1.0); };
-    return {unit(albedo.r), unit(albedo.g), unit(albedo.b)};
-}
-
-// One BRDF per world material.
-std::vector<std::unique_ptr<material::Brdf>> brdfs_of(const world::World& world) {
-    std::vector<std::unique_ptr<material::Brdf>> brdfs;
-    brdfs.reserve(world.materials.size());
-    for (const world::Material& material : world.materials) {
-        brdfs.push_back(std::visit(
-            [](const auto& m) -> std::unique_ptr<material::Brdf> {
-                using M = std::decay_t<decltype(m)>;
-                if constexpr (std::is_same_v<M, world::LambertMaterial>) {
-                    return std::make_unique<material::LambertianBrdf>(clamp_albedo(m.albedo));
-                } else {
-                    // Its base colour, for a painting without a photograph (Lighting::brdf_at).
-                    material::PaintingMaterial parameters = m.parameters;
-                    parameters.base.color = clamp_albedo(parameters.base.color);
-                    return std::make_unique<material::PaintingBrdf>(parameters);
-                }
-            },
-            material));
-    }
-    return brdfs;
-}
-
 // Calls add(lamp, wi, illuminance_lux) for every lamp that lights the point: in front of
 // `normal`, emitting towards the point, and visible from it. wi is the unit direction to the
 // lamp; `side` is the geometric normal on the side the light must come from (light_visible).
@@ -126,22 +98,7 @@ double sensor_direct_lux(const Scene& scene, const std::vector<Lamp>& lamps, glm
 // What the indirect paths need of the world, made once per reading.
 struct Lighting {
     std::vector<Lamp> lamps;
-    std::vector<std::unique_ptr<material::Brdf>> brdfs; // one per world material
-    const Textures* textures = nullptr;
-
-    // The BRDF at a hit: its material's, or for a painting with a photograph, one made in
-    // `painting` with the photograph's texel at the hit as its base colour.
-    const material::Brdf& brdf_at(const Scene& scene, const Hit& hit,
-                                  std::optional<material::PaintingBrdf>& painting) const {
-        const std::uint32_t index = scene.world().instances[hit.instance].material;
-        const auto* surface = std::get_if<world::PaintingSurface>(&scene.world().materials[index]);
-        if (surface == nullptr || !surface->image || textures == nullptr) {
-            return *brdfs[index];
-        }
-        material::PaintingMaterial parameters = surface->parameters;
-        parameters.base.color = clamp_albedo(painting_base_colour(*surface, hit.uv, textures));
-        return painting.emplace(parameters);
-    }
+    MaterialBrdfs brdfs;
 };
 
 // One indirect path from the sensor: pi times the luminance found in a cosine-distributed
@@ -172,7 +129,8 @@ double indirect_sample(const Scene& scene, const Lighting& lighting, glm::dvec3 
         const Onb<double> frame = onb_from_normal(shading);
         const glm::dvec3 wo_local = frame.to_local(wo);
         std::optional<material::PaintingBrdf> painting;
-        const material::Brdf& brdf = lighting.brdf_at(scene, *hit, painting);
+        const material::Brdf& brdf =
+            lighting.brdfs.at(scene.world().instances[hit->instance].material, hit->uv, painting);
 
         // Next-event estimation: the lamps' direct light, reflected towards wo.
         for_each_lamp_lighting(scene, lighting.lamps, hit->position_m, shading, side,
@@ -284,7 +242,8 @@ LuxReading lux_at(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal,
         throw std::invalid_argument("lux_at: samples must be at least 1");
     }
     const Onb<double> sensor = onb_from_normal(n);
-    const Lighting lighting{lamps_of(scene.world()), brdfs_of(scene.world()), options.textures};
+    const Lighting lighting{lamps_of(scene.world()),
+                            MaterialBrdfs(scene.world(), options.textures)};
 
     LuxReading reading;
     reading.direct_lux.value = sensor_direct_lux(scene, lighting.lamps, point_m, n);

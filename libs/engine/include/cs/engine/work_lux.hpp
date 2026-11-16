@@ -37,7 +37,7 @@ namespace cs::engine {
 
 // The grid's points along each side.
 inline constexpr int work_lux_grid_side = 5;
-inline constexpr std::size_t work_lux_grid_points = 25;
+inline constexpr std::size_t work_lux_grid_points = work_lux_grid_side * work_lux_grid_side;
 
 // Keeps the grid's seeds apart from other uses of the same seed, as hash_seed's `dimension`.
 inline constexpr std::uint32_t work_lux_dimension = 0x776c'7801; // "wlx" and 1

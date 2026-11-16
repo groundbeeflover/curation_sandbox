@@ -12,6 +12,7 @@
 //
 // Written from the issue and the public headers only (test-author), without the implementation.
 
+#include <cs/engine/lux.hpp>
 #include <cs/engine/path_tracer.hpp>
 #include <cs/engine/scene.hpp>
 #include <cs/engine/textures.hpp>
@@ -22,6 +23,8 @@
 #include <cs/geom/mesh.hpp>
 #include <cs/geom/painting.hpp>
 #include <cs/geom/wall_face.hpp>
+#include <cs/light/distribution.hpp>
+#include <cs/light/luminaire.hpp>
 #include <cs/world/ids.hpp>
 #include <cs/world/world.hpp>
 
@@ -45,6 +48,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -838,6 +842,72 @@ TEST_CASE("render: without textures, or without the painting's, the face shows i
             for (int x = 1; x < image_side - 1; ++x) {
                 check_pixel(image, x, y, dvec3(0.8), exact_pixel_tolerance);
             }
+        }
+    }
+}
+
+namespace {
+
+// The quad of quad_from_geom lit by a wide spot in front of it, without a room: a sensor below
+// the quad, facing up, sees the quad and so reads its reflected light as indirect.
+world::World lit_painting(const world::PaintingSurface& surface) {
+    world::World w = one_painting(quad_from_geom(), std::nullopt);
+    w.materials[0] = surface;
+    auto spot = std::make_shared<const cs::light::GenericSpot>(1000.0, 1.0, 1.5);
+    world::Light light{world::Id{}, cs::light::Luminaire({0.0, -1.0, 2.0}, {0.0, 0.0, 1.0}, spot),
+                       spot, 3000.0};
+    w.lights.push_back(std::move(light));
+    return w;
+}
+
+} // namespace
+
+TEST_CASE("lux_at and render: a uniform photograph of colour c reflects exactly as base colour c",
+          "[engine][textures][lux][path_tracer]") {
+    // The texture holds c in floats; c is exact in float, so both paintings have the same albedo
+    // bit for bit and, with the same seeds, every path draws the same numbers: the readings and
+    // the images must be equal exactly, not within a tolerance. A lux meter that ignored the
+    // texture would read the default 0.8 grey instead, and differ.
+    const dvec3 c(0.25, 0.5, 0.75);
+    const world::AssetRef ref{valid_sha, "png"};
+    cs::Image one(1, 1);
+    set(one, 0, 0, c);
+    Textures textures;
+    textures.add(ref, texture_of(one));
+
+    world::PaintingSurface photographed = painting_with(ref);
+    world::PaintingSurface plain = painting_with(std::nullopt);
+    plain.parameters.base.color = c;
+    const cs::engine::Scene with_photograph(lit_painting(photographed));
+    const cs::engine::Scene with_colour(lit_painting(plain));
+
+    cs::engine::LuxOptions lux;
+    lux.samples = 256;
+    lux.textures = &textures;
+    const dvec3 point(0.0, -0.5, 0.0);
+    const dvec3 up(0.0, 0.0, 1.0);
+    const cs::engine::LuxReading a = cs::engine::lux_at(with_photograph, point, up, lux);
+    const cs::engine::LuxReading b = cs::engine::lux_at(with_colour, point, up, lux);
+    REQUIRE(a.total_lux.value > a.direct_lux.value); // the quad's light reaches the sensor
+    CHECK(a.direct_lux.value == b.direct_lux.value);
+    CHECK(a.total_lux.value == b.total_lux.value);
+    CHECK(a.total_lux.standard_error == b.total_lux.standard_error);
+
+    world::Camera camera;
+    camera.position_m = {0.0, -2.0, 1.0};
+    camera.forward = {0.0, 1.0, 0.0};
+    camera.up = {0.0, 0.0, 1.0};
+    camera.vertical_fov_rad = 0.6;
+    cs::engine::RenderOptions render;
+    render.width = 16;
+    render.height = 16;
+    render.samples_per_pixel = 8;
+    render.textures = &textures;
+    const cs::Image image_a = cs::engine::render(with_photograph, camera, render);
+    const cs::Image image_b = cs::engine::render(with_colour, camera, render);
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 0; x < 16; ++x) {
+            CHECK(rgb_of(image_a.at(x, y)) == rgb_of(image_b.at(x, y)));
         }
     }
 }

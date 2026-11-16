@@ -33,16 +33,16 @@ void check(const world::Exhibit& exhibit) {
     }
 }
 
-// The summary of one part of the 25 readings.
-template <typename Part>
-LuxSummary summarise(const std::array<WorkLuxPoint, work_lux_grid_points>& points, Part part) {
+// The summary of one part (direct or total) of the 25 readings.
+LuxSummary summarise(const std::array<WorkLuxPoint, work_lux_grid_points>& points,
+                     Estimate LuxReading::* part) {
     LuxSummary summary;
     summary.minimum = std::numeric_limits<double>::infinity();
     summary.maximum = -std::numeric_limits<double>::infinity();
     double sum = 0.0;
     double variance_sum = 0.0;
     for (const WorkLuxPoint& point : points) {
-        const Estimate& estimate = part(point.reading);
+        const Estimate& estimate = point.reading.*part;
         sum += estimate.value;
         variance_sum += estimate.standard_error * estimate.standard_error;
         summary.minimum = std::min(summary.minimum, estimate.value);
@@ -85,10 +85,8 @@ WorkLux work_lux_grid(const Scene& scene, const world::Exhibit& exhibit,
                                        exhibit.painting_instance, 0, work_lux_dimension);
         point.reading = lux_at(scene, point.point_m, exhibit.face_normal, point_options);
     }
-    result.direct_lux = summarise(
-        result.points, [](const LuxReading& r) -> const Estimate& { return r.direct_lux; });
-    result.total_lux = summarise(
-        result.points, [](const LuxReading& r) -> const Estimate& { return r.total_lux; });
+    result.direct_lux = summarise(result.points, &LuxReading::direct_lux);
+    result.total_lux = summarise(result.points, &LuxReading::total_lux);
     return result;
 }
 
