@@ -113,24 +113,29 @@ tracer, a last-bit difference in `std::sin` or in Embree's kernels can flip a ra
 (which way a path bounces, or where Russian roulette ends it). Then a whole path differs. The
 tolerances therefore come from measurement: every build below against the reference.
 
+The runner rounds each render to half floats the way the reference was stored before comparing,
+so a render identical to the reference's compares as exactly 0.
+
 | Render | Mean FLIP | Mean absolute error (nits) |
 | --- | --- | --- |
-| GCC 16.2, release (the reference's own render) | 0.00087 | 0.0012 |
-| GCC 16.2, debug with sanitizers | 0.00087 | 0.0012 |
-| Clang 23.1, release | 0.00087 | 0.0012 |
-| Clang 23.1, debug with sanitizers | 0.00087 | 0.0012 |
-| GCC release, Embree forced to AVX2 | 0.0015 | 0.0015 |
-| GCC release, Embree forced to SSE2 | 0.0017 | 0.0016 |
-| CI: GCC 13.3, release | 0.0015 | 0.0015 |
-| CI: Clang 18.1, debug with sanitizers | 0.00087 | 0.0012 |
-| CI: MSVC 19.44, release | 0.00087 | 0.0012 |
+| GCC 16.2, release (the reference's own render) | 0 | 0 |
+| GCC 16.2, debug with sanitizers | 0 | 0 |
+| Clang 23.1, release | 0 | 0 |
+| Clang 23.1, debug with sanitizers | 0 | 0 |
+| GCC release, Embree forced to AVX2 | 0.00091 | 0.00031 |
+| GCC release, Embree forced to AVX or SSE4.2 or SSE2 | 0.0012 | 0.00042 |
+| CI: MSVC 19.44, release | 0 | 0 |
+| CI: Clang 18.1, debug with sanitizers | 0 | 0 |
+| CI: GCC 13.3, release, on a runner without AVX-512 | 0.00091 | 0.00031 |
 
-The 0.00087 and 0.0012 that every identical render shows is the reference's rounding to half
-floats: MSVC and both compilers' debug builds reproduce the reference exactly. Embree's kernels are
-what differ. Forcing its AVX2 or SSE2 kernels on the reference's machine made a couple of paths in
-the whole image diverge: two specks in the FLIP heat map. CI's GCC job gave the forced AVX2 run's
-numbers to every digit, so its runner had no AVX-512. (Embree 4.4 takes its kernels only from the
-device's configuration string, so forcing them took a throwaway build, not part of the code.)
+The compilers agree exactly, debug builds included, and MSVC with them; Embree's kernels are what
+differ. Forcing its AVX2 or older kernels on the reference's machine made a couple of paths in the
+whole image diverge: two specks in the FLIP heat map. The CI rows come from a run with tolerances
+of 0, before the runner rounded renders to half floats. MSVC and Clang matched the reference
+exactly then too. GCC's numbers then (0.00153 and 0.00155) were the forced AVX2 run's to every
+digit, so its runner had no AVX-512, and the row gives the AVX2 run's numbers now. (Embree 4.4
+takes its kernels only from the device's configuration string, so forcing them took a throwaway
+build, not part of the code.)
 
 What the tolerances must catch, from the same reference, with the spot's lumens raised:
 
@@ -145,11 +150,11 @@ For comparison, the same render with seed 2, in which every path differs, is 0.2
 platform's paths diverged wholesale, the test would fail there, and the answer would be more
 samples, not a looser tolerance.
 
-**The tolerances are 0.02 mean FLIP and 0.02 nits.** Each is about ten times the largest
-difference measured above (0.0017 and 0.0016, forced SSE2), rounded up. That leaves room for a
-platform whose paths diverge more often, and both stay below what the spot made 1% brighter gives,
-let alone 10%. 64 samples per pixel are enough for that, so the test stays fast: about 8 s in CI's
-debug job.
+**The tolerances are 0.02 mean FLIP and 0.02 nits.** They are 17 and 48 times the largest
+differences measured above (0.0012 and 0.00042, Embree's older kernels), which leaves room for a
+platform whose paths diverge more often. Both stay below what the spot made 1% brighter gives, and
+the 10% change is 7.6 and 35 times above them. 64 samples per pixel are enough for that, so the
+test stays fast: about 8 s in CI's debug job.
 
 ## Checks of the runner
 

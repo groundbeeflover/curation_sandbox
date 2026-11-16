@@ -55,7 +55,9 @@ constexpr std::string_view usage =
     "\n"
     "--update writes the render as the new reference, a half-float EXR, and nothing else; the\n"
     "pull request that commits it says why. Without --update, nothing in the test folder is\n"
-    "written. tests/golden/README.md has the rest.\n";
+    "written. tests/golden/README.md has the rest.\n"
+    "\n"
+    "(To render a project folder named golden, write it as ./golden.)\n";
 
 // The driver that renders the path tier: the engine, on the CPU.
 constexpr std::string_view engine_driver = "cpu";
@@ -148,13 +150,10 @@ fs::path test_name(const fs::path& folder) {
 }
 
 // Whether path is folder or lies inside it, after resolving "..", "." and symbolic links.
+// Throws std::filesystem::filesystem_error if either cannot be resolved.
 bool is_within(const fs::path& path, const fs::path& folder) {
-    std::error_code error;
-    const fs::path inner = fs::weakly_canonical(path, error);
-    const fs::path outer = fs::weakly_canonical(folder, error);
-    if (error) {
-        return false;
-    }
+    const fs::path inner = fs::weakly_canonical(path);
+    const fs::path outer = fs::weakly_canonical(folder);
     const auto [outer_end, inner_end] =
         std::mismatch(outer.begin(), outer.end(), inner.begin(), inner.end());
     return outer_end == outer.end() ||
@@ -330,6 +329,19 @@ std::string size_text(const cs::Image& image) {
     return std::to_string(image.width()) + " x " + std::to_string(image.height());
 }
 
+// The render as a reference stores it, rounded to half floats and clamped to the largest one, by
+// way of write_exr's own conversion and a file in `out` that is removed again. So a render
+// identical to the one --update wrote compares as exactly 0, and a pixel brighter than 65504 nits
+// cannot fail a test.
+cs::Image as_stored(const cs::Image& render, const fs::path& out) {
+    fs::create_directories(out);
+    const fs::path scratch = out / "render.half.exr";
+    cs::write_exr(render, scratch, cs::ExrChannels::half);
+    cs::Image stored = cs::read_exr(scratch);
+    fs::remove(scratch);
+    return stored;
+}
+
 // Writes the render as the new reference, by way of a temporary file, so that a failed write
 // cannot leave a broken reference behind. Says how far it moved from the old one, for the pull
 // request.
@@ -349,8 +361,14 @@ void update_reference(const fs::path& reference_path, const cs::Image& render) {
     }
     fs::path temporary = reference_path;
     temporary += ".new";
-    cs::write_exr(render, temporary, cs::ExrChannels::half);
-    fs::rename(temporary, reference_path);
+    try {
+        cs::write_exr(render, temporary, cs::ExrChannels::half);
+        fs::rename(temporary, reference_path);
+    } catch (...) {
+        std::error_code ignored;
+        fs::remove(temporary, ignored); // Never leave it in the test folder.
+        throw;
+    }
 
     const std::uintmax_t bytes = fs::file_size(reference_path);
     std::cout << "  wrote " << utf8(reference_path) << " (" << bytes
@@ -376,6 +394,11 @@ int run(const Arguments& arguments) {
     std::cout << "golden " << utf8(name) << ": " << test.tier << " tier on " << driver << ", "
               << test.image.width << " x " << test.image.height << " at "
               << test.image.samples_per_pixel << " spp, seed " << test.image.seed << '\n';
+    // Checked before a skip, so that a test with a broken scene path fails rather than skips.
+    if (!fs::is_regular_file(test.scene / "project.json")) {
+        throw std::runtime_error("the scene " + utf8(test.scene) +
+                                 " is not a project folder: it has no project.json");
+    }
     if (!arguments.update && !fs::exists(reference_path)) {
         std::cout << "  skipped: no reference for " << driver << ", " << utf8(reference_path)
                   << "\n  `cs-render golden " << utf8(folder)
@@ -392,6 +415,8 @@ int run(const Arguments& arguments) {
               << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
               << " s\n";
 
+    // Images from an earlier failure no longer apply once the reference is updated or matched.
+    remove_failure_images(out);
     if (arguments.update) {
         update_reference(reference_path, render);
         return 0;
@@ -404,19 +429,19 @@ int run(const Arguments& arguments) {
                                  "; --update writes a new one");
     }
 
-    const cs::ImageComparison comparison = cs::compare(reference, render);
+    const cs::Image stored = as_stored(render, out);
+    const cs::ImageComparison comparison = cs::compare(reference, stored);
     print_comparison(comparison, &test.tolerances);
     // Written so that NaN fails.
     const bool flip_within = comparison.mean_flip <= test.tolerances.mean_flip;
     const bool error_within =
         comparison.mean_absolute_error <= test.tolerances.mean_absolute_error_nits;
     if (flip_within && error_within) {
-        remove_failure_images(out);
         std::cout << "  matches\n";
         return 0;
     }
 
-    write_failure_images(out, display_ev100(project.camera(), reference), reference, render);
+    write_failure_images(out, display_ev100(project.camera(), reference), reference, stored);
     std::cout << "  differs: above a tolerance\n  wrote";
     for (const std::string_view file : failure_files) {
         std::cout << ' ' << file;
