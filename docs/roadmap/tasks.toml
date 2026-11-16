@@ -1977,7 +1977,7 @@ area = "ui"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M2-09", "M2-10", "M1-27", "M2-14"]
+blocked_by = ["M2-09", "M2-10", "M1-27", "M2-14", "M2-40"]
 touches = ["libs/ui/src/features/import_image.cpp", "libs/ui/src/features/import_dialog.cpp", "libs/ui/tests/test_import_ui.cpp", "docs/product/screens/m2-import.png"]
 goal = "Journey J3 in the app: drop an image on a wall, answer four prefilled questions, and the work hangs at its true size with a material that follows from the answers."
 context = [
@@ -1988,6 +1988,7 @@ context = [
 acceptance = [
   "Dropping an image file on a wall, or File > Import image, opens a dialog with true size (filled by parse_dimensions from pasted text), medium preset (from the medium text), finish and glazing (defaulted by preset)",
   "The dialog says how close a visitor can stand before the image looks soft ('Sharp from about 0.7 m') and warns below 1 m",
+  "An image larger than the Standard cap imports, and the dialog says so ('Shrunk from 14600 x 11680 px to 8192 x 6554 px'), with the sharp distance of the stored image (M2-40)",
   "OK hangs the work at the drop point on the centre line in one transaction",
   "[ui] An offscreen test imports a test image with pasted text '28 3/4 x 36 1/4 in. (73 x 92 cm)' and finds a Work 730 mm high and 920 mm wide",
   "docs/product/screens/m2-import.png shows the dialog",
@@ -2772,5 +2773,36 @@ out_of_scope = ["Metering modes (centre-weighted, spot, histogram percentiles)",
 verification = [
   "cmake --preset debug && cmake --build --preset debug && CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-40"
+epic = "E2.3"
+title = "Shrink large images to the Standard cap on import"
+area = "assets"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M2-32"]
+touches = ["libs/assets/include/cs/assets/downsample.hpp", "libs/assets/src/downsample.cpp", "libs/assets/tests/test_downsample.cpp", "libs/assets/include/cs/assets/import.hpp", "libs/assets/src/import.cpp", "libs/assets/src/tiff.cpp", "libs/assets/include/cs/assets/texture.hpp", "libs/assets/src/texture.cpp"]
+goal = "The high-resolution images curators bring import, instead of being refused. M1-14 (#145) refuses any image over 512 MiB decoded, about 45 megapixels, which turns away 48- to 50-megapixel phone and camera photos and museum masters (Cleveland's TIFFs at 14.6 px/mm make a 100 x 80 cm painting about 170 megapixels). ADR 0004's Standard tier keeps the long edge at most 8192 px, but no task shrinks images to it."
+context = [
+  "docs/adr/0004-catalogue.md: Resolution (Standard: long edge capped at 8192 px; HD tiles in 1.0)",
+  "docs/adr/0005-machine-learning.md: keep every imported image byte for byte; downsample in linear light; never sharpen",
+  "M1-14 (#145): load_texture, its size limits, build_mip_chain's area averaging and effective_resolution",
+  "M2-09 and M2-32: the import path, ICC conversion and TIFF; M2-21 keeps the original file in the project by content hash",
+]
+acceptance = [
+  "An image whose long edge exceeds the cap (a parameter, 8192 px by default) is shrunk on import to a long edge of exactly the cap, the short edge rounded to the nearest pixel, in linear light after ICC conversion, by area averaging; an image within the cap is unchanged. [accuracy] A 300 x 200 test image with a cap of 128 imports as 128 x 85 and keeps its mean linear value within 1e-4 per channel",
+  "The full-resolution image is never held as float RGB: TIFF is shrunk strip by strip, PNG and JPEG are converted row by row from their decoded 8 or 16 bits. The pull request states the peak memory (`/usr/bin/time -v`, release build) of importing a 14600 x 11680 16-bit TIFF and an 8064 x 6048 JPEG, both made by a test helper",
+  "Limits move to the source, still checked before decoding: a long edge over 32768 px, or a decoded source over 2 GiB at its own bit depth, is refused with a message; 48- and 170-megapixel images import. The stored texture is at most cap x cap",
+  "The import result gives the original's pixel size and the stored size, and effective_resolution for both, so the import dialog can say what was shrunk and how sharp the work stays",
+  "The loaders' fuzz targets from M2-32 run 60 s on the new path without findings; `ctest --preset debug -L assets` passes; /security-review run and answered in the PR",
+]
+out_of_scope = ["HD tiles and virtual texturing (1.0)", "KTX2 encoding (M4)", "Keeping the original file in the project (M2-21)", "The import dialog (M2-11)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L assets",
+  "cmake --preset fuzz && cmake --build --preset fuzz && for f in build/fuzz/libs/assets/fuzz_*; do $f -max_total_time=60; done",
   "python3 scripts/format.py --check",
 ]

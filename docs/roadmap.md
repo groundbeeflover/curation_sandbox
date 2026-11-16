@@ -395,7 +395,7 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-08 | Frames, mats and glazing in the render world | world | feature | S | agent | M2-05, M2-06, M2-07, M1-13, M2-31 | `libs/world/src/compile.cpp`, `libs/world/src/exhibits.cpp`, `libs/world/tests/test_exhibits.cpp` |
 | M2-09 | Colour-managed import: ICC profiles and 16-bit images | assets | feature | M | agent | M1-14, M1-02 | `libs/assets/include/cs/assets/import.hpp`, `libs/assets/src/import.cpp`, `libs/assets/src/icc.cpp`, `libs/assets/tests/test_import_colour.cpp`, `libs/assets/tests/data/icc/` |
 | M2-10 | Parse dimensions and media from museum text | editor | feature | S | agent | M1-01 | `libs/editor/include/cs/editor/parse_text.hpp`, `libs/editor/src/parse_text.cpp`, `libs/editor/tests/test_parse_text.cpp`, `libs/editor/tests/data/museum_strings.toml`, `data/presets/` |
-| M2-11 | Import dialog: four questions and the resolution warning | ui | feature | M | agent | M2-09, M2-10, M1-27, M2-14 | `libs/ui/src/features/import_image.cpp`, `libs/ui/src/features/import_dialog.cpp`, `libs/ui/tests/test_import_ui.cpp`, `docs/product/screens/m2-import.png` |
+| M2-11 | Import dialog: four questions and the resolution warning | ui | feature | M | agent | M2-09, M2-10, M1-27, M2-14, M2-40 | `libs/ui/src/features/import_image.cpp`, `libs/ui/src/features/import_dialog.cpp`, `libs/ui/tests/test_import_ui.cpp`, `docs/product/screens/m2-import.png` |
 | M2-12 | A fuzzed CSV reader for checklists | editor | feature | S | agent | M1-01 | `libs/editor/include/cs/editor/csv.hpp`, `libs/editor/src/csv.cpp`, `libs/editor/tests/test_csv.cpp`, `libs/editor/fuzz/fuzz_csv.cpp` |
 | M2-13 | Checklist panel | ui | feature | S | agent | M2-33, M2-11 | `libs/ui/src/features/checklist_panel.cpp`, `libs/ui/tests/test_checklist_ui.cpp`, `docs/product/screens/m2-checklist.png` |
 | **M2-14** | Picking and walk collision through scene queries | editor | feature | S | agent | M1-15, M1-24, M2-31 | `libs/editor/include/cs/editor/picking.hpp`, `libs/editor/src/picking.cpp`, `libs/editor/src/camera_controller.cpp`, `libs/editor/tests/test_picking.cpp`, `libs/editor/include/cs/editor/selection.hpp`, `libs/editor/src/selection.cpp`, `libs/editor/tests/test_selection.cpp` |
@@ -424,6 +424,7 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-37 | Lux on every work in the app | ui | feature | S | agent | M2-28, M2-13 | `libs/ui/src/features/lux_bridge.cpp`, `libs/ui/src/features/checklist_panel.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_lux_ui.cpp`, `docs/product/screens/m2-gallery-50.png` |
 | M2-38 | Read project.json in bounded memory | doc | bug | M | agent | M2-22 | `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/project_io.hpp`, `libs/doc/tests/test_project_io_memory.cpp` |
 | M2-39 | Automatic exposure in the viewport | gpu | feature | M | agent | M1-22, M1-27 | `libs/gpu/include/cs/gpu/auto_exposure.hpp`, `libs/gpu/src/auto_exposure.cpp`, `libs/gpu/shaders/auto_exposure.slang`, `libs/gpu/tests/test_auto_exposure.cpp`, `libs/ui/src/features/auto_exposure.cpp`, `libs/ui/tests/test_auto_exposure_ui.cpp` |
+| M2-40 | Shrink large images to the Standard cap on import | assets | feature | M | agent | M2-32 | `libs/assets/include/cs/assets/downsample.hpp`, `libs/assets/src/downsample.cpp`, `libs/assets/tests/test_downsample.cpp`, `libs/assets/include/cs/assets/import.hpp`, `libs/assets/src/import.cpp`, `libs/assets/src/tiff.cpp`, `libs/assets/include/cs/assets/texture.hpp`, `libs/assets/src/texture.cpp` |
 
 ### Task graph
 
@@ -451,6 +452,7 @@ graph LR
     M2_13["M2-13 Checklist panel"]
     M2_32["M2-32 TIFF import and fuzz targets for..."]
     M2_33["M2-33 Checklist rows to works, with pl..."]
+    M2_40["M2-40 Shrink large images to the Stand..."]
   end
   subgraph E2_4["E2.4 Hanging tools"]
     M2_14["M2-14 Picking and walk collision throu..."]
@@ -492,6 +494,7 @@ graph LR
   M2_09 --> M2_11
   M2_10 --> M2_11
   M2_14 --> M2_11
+  M2_40 --> M2_11
   M2_33 --> M2_13
   M2_11 --> M2_13
   M2_31 --> M2_14
@@ -534,9 +537,10 @@ graph LR
   M2_28 --> M2_37
   M2_13 --> M2_37
   M2_22 --> M2_38
+  M2_32 --> M2_40
   classDef crit stroke:#b60205,stroke-width:3px
   class M2_06,M2_31,M2_14,M2_15,M2_16,M2_20,M2_35 crit
-  linkStyle 14,15,16,19,41,47 stroke:#b60205,stroke-width:3px
+  linkStyle 15,16,17,20,42,48 stroke:#b60205,stroke-width:3px
 ```
 
 Within M2 the longest chain runs from the frame and finish library through walls in the render
@@ -550,7 +554,7 @@ assets (M2-09), editor (M2-10 and M2-12 if not already done during M1), gpu (M2-
 | --- | --- |
 | geom | M2-01; M2-05 → M2-07 |
 | doc | M2-06 → M2-22 → M2-38; M2-21 → M2-23 |
-| assets | M2-09 → M2-32 |
+| assets | M2-09 → M2-32 → M2-40 |
 | world | M2-31 → M2-08 → M2-24 |
 | editor | M2-10, M2-12 → M2-33; M2-14 → M2-15 → M2-16 → M2-17; M2-02, M2-03, M2-18; M2-30 last |
 | gpu | M2-19; M2-26 → M2-27 → M2-36; M2-39 (after M1-27) |
