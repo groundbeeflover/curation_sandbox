@@ -66,6 +66,20 @@ The code is a set of modules under `libs/`, one `cs_add_module(...)` call each
 (`cmake/CsModule.cmake`): sources, tests and fuzz targets are found by glob, so adding a file
 never edits a CMake list, and a module sees only the modules it declares.
 
+## Render a project
+
+`cs-render` turns a project folder into a path-traced image and a lux report, without a window:
+
+```sh
+cmake --preset release && cmake --build --preset release
+./build/release/apps/cs-render/cs-render tests/scenes/skeleton --tier path --size 256x144 --spp 64 --seed 1 --out build/out/skeleton
+```
+
+It writes `build/out/skeleton.exr` (linear light in nits), `build/out/skeleton.png` (exposed at
+the viewpoint's EV100, tone mapped for a screen) and `build/out/skeleton.lux.json`: for every
+work, the direct and total illuminance in lux at a 5 x 5 grid over the part a visitor sees, with
+their mean, minimum, maximum and standard error. `--help` lists the options.
+
 ## Licence
 
 Apache-2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Every dependency must allow
