@@ -1,0 +1,12 @@
+{
+  "scene": "../../scenes/skeleton",
+  "tier": "path",
+  "width": 128,
+  "height": 72,
+  "samplesPerPixel": 64,
+  "seed": 1,
+  "tolerances": {
+    "meanFlip": 0.0,
+    "meanAbsoluteError_nits": 0.0
+  }
+}

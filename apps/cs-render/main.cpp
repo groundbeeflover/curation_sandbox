@@ -9,27 +9,26 @@
 // sRGB) and <prefix>.lux.json (per exhibit, the lux on its 5 x 5 grid, engine::work_lux_grid).
 // The image is the first viewpoint's. Everything is seeded: the same command gives the same
 // files whatever the machine's thread count.
+//
+//   cs-render golden <test-folder> [--update]
+//
+// runs a golden-image test instead (golden.hpp, tests/golden/README.md).
 
-#include <cs/core/colour.hpp>
+#include "common.hpp"
+#include "golden.hpp"
+
 #include <cs/core/image.hpp>
 #include <cs/core/image_io.hpp>
 #include <cs/core/thread_pool.hpp>
 #include <cs/doc/document.hpp>
-#include <cs/doc/project_io.hpp>
 #include <cs/engine/lux.hpp>
-#include <cs/engine/path_tracer.hpp>
 #include <cs/engine/scene.hpp>
-#include <cs/engine/textures.hpp>
 #include <cs/engine/work_lux.hpp>
-#include <cs/world/compile.hpp>
 #include <cs/world/world.hpp>
 
 #include <nlohmann/json.hpp>
 
-#include <algorithm>
-#include <charconv>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -37,57 +36,38 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
-#include <vector>
 
 namespace {
 
 namespace fs = std::filesystem;
+using cs_render::UsageError;
 using nlohmann::json;
 
 constexpr std::string_view usage =
     "usage: cs-render <project-folder> --out <prefix> [--tier path] [--size 256x144]\n"
     "                 [--spp 64] [--seed 1] [--lux-samples 1024] [--threads <n>]\n"
+    "       cs-render golden <test-folder> [--update] [--out <folder>] [--threads <n>]\n"
     "\n"
     "Writes <prefix>.exr (linear nits), <prefix>.png (EV100 exposure, PBR Neutral, sRGB) and\n"
-    "<prefix>.lux.json (the lux on every exhibit). The Standard tier arrives with M1-29.\n";
+    "<prefix>.lux.json (the lux on every exhibit). The Standard tier arrives with M1-29.\n"
+    "`cs-render golden --help` explains the golden-image tests.\n";
 
 // Bounds on what the command line may ask for.
-constexpr std::uint32_t max_spp = 1u << 20;
 constexpr std::uint32_t max_lux_samples = 1u << 24;
-constexpr unsigned max_threads = 1024;
-
-// A usage error: exit code 2 and the usage text.
-struct UsageError : std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
 
 struct Arguments {
     fs::path project;
     fs::path out;
-    int width = 256;
-    int height = 144;
-    std::uint32_t spp = 64;
-    std::uint64_t seed = 1;
+    cs_render::ImageSettings image;
     std::uint32_t lux_samples = 1024;
     unsigned threads = 0; // 0: the machine's
 };
 
-template <typename T> T parse_number(std::string_view flag, std::string_view text, T low, T high) {
-    T value{};
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc() || end != text.data() + text.size() || value < low || value > high) {
-        throw UsageError(std::string(flag) + " takes a whole number from " + std::to_string(low) +
-                         " to " + std::to_string(high) + ", not \"" + std::string(text) + "\"");
-    }
-    return value;
-}
-
 Arguments parse_arguments(int argc, char* argv[]) {
+    using cs_render::parse_number;
     Arguments arguments;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -119,22 +99,27 @@ Arguments parse_arguments(int argc, char* argv[]) {
             if (x == std::string_view::npos) {
                 throw UsageError("--size is <width>x<height>, such as 256x144");
             }
-            arguments.width = parse_number("--size", value.substr(0, x), 1, cs::max_image_side);
-            arguments.height = parse_number("--size", value.substr(x + 1), 1, cs::max_image_side);
-            if (std::int64_t{arguments.width} * arguments.height > cs::max_image_pixels) {
+            arguments.image.width =
+                parse_number("--size", value.substr(0, x), 1, cs::max_image_side);
+            arguments.image.height =
+                parse_number("--size", value.substr(x + 1), 1, cs::max_image_side);
+            if (std::int64_t{arguments.image.width} * arguments.image.height >
+                cs::max_image_pixels) {
                 throw UsageError("--size is larger than " + std::to_string(cs::max_image_pixels) +
                                  " pixels");
             }
         } else if (arg == "--spp") {
-            arguments.spp = parse_number<std::uint32_t>("--spp", value, 1, max_spp);
+            arguments.image.samples_per_pixel =
+                parse_number<std::uint32_t>("--spp", value, 1, cs_render::max_spp);
         } else if (arg == "--seed") {
-            arguments.seed = parse_number<std::uint64_t>("--seed", value, 0,
-                                                         std::numeric_limits<std::uint64_t>::max());
+            arguments.image.seed = parse_number<std::uint64_t>(
+                "--seed", value, 0, std::numeric_limits<std::uint64_t>::max());
         } else if (arg == "--lux-samples") {
             arguments.lux_samples =
                 parse_number<std::uint32_t>("--lux-samples", value, 2, max_lux_samples);
         } else if (arg == "--threads") {
-            arguments.threads = parse_number<unsigned>("--threads", value, 1, max_threads);
+            arguments.threads =
+                parse_number<unsigned>("--threads", value, 1, cs_render::max_threads);
         } else if (arg == "--out") {
             arguments.out = fs::path(value);
         } else {
@@ -155,24 +140,6 @@ fs::path with_suffix(const fs::path& prefix, std::string_view suffix) {
     fs::path path = prefix;
     path += suffix;
     return path;
-}
-
-// The mean luminance of the image's finite pixels, in nits, for automatic exposure: one NaN or
-// infinite pixel would otherwise decide the exposure of the whole image.
-double mean_luminance(const cs::Image& image) {
-    double sum = 0.0;
-    double count = 0.0;
-    for (int y = 0; y < image.height(); ++y) {
-        for (int x = 0; x < image.width(); ++x) {
-            const cs::Rgb& p = image.at(x, y);
-            const double y_nits = cs::luminance(glm::dvec3(p.r, p.g, p.b));
-            if (std::isfinite(y_nits)) {
-                sum += y_nits;
-                count += 1.0;
-            }
-        }
-    }
-    return count > 0.0 ? sum / count : 0.0;
 }
 
 json vec(glm::dvec2 v) {
@@ -206,48 +173,23 @@ double seconds_since(std::chrono::steady_clock::time_point start) {
 
 int run(const Arguments& arguments) {
     const auto start = std::chrono::steady_clock::now();
-    const cs::doc::Document document = cs::doc::load_project_folder(arguments.project);
-    const cs::world::World world = cs::world::compile(document);
-    for (const cs::world::Problem& problem : world.problems) {
-        std::cerr << "cs-render: warning: " << problem.entity.to_string() << ": " << problem.reason
-                  << '\n';
-    }
-    if (world.cameras.empty()) {
-        throw std::runtime_error("the project has no viewpoint to render from");
-    }
-    const cs::world::Camera& camera = world.cameras.front();
-
-    const cs::engine::LoadedTextures loaded =
-        cs::engine::load_textures(world, arguments.project / "assets");
-    for (const cs::engine::TextureProblem& problem : loaded.problems) {
-        std::cerr << "cs-render: warning: image " << problem.asset.sha256 << "."
-                  << problem.asset.extension << " is shown as grey: " << problem.reason << '\n';
-    }
-
-    const unsigned threads = arguments.threads != 0
-                                 ? arguments.threads
-                                 : std::max(1u, std::thread::hardware_concurrency());
+    const cs_render::Project project = cs_render::load_project(arguments.project);
+    const cs::world::World& world = project.world;
+    const unsigned threads = cs_render::thread_count(arguments.threads);
     cs::ThreadPool pool(threads);
     const cs::engine::Scene scene(world);
     const double load_s = seconds_since(start);
 
     const auto render_start = std::chrono::steady_clock::now();
-    cs::engine::RenderOptions render_options;
-    render_options.width = arguments.width;
-    render_options.height = arguments.height;
-    render_options.samples_per_pixel = arguments.spp;
-    render_options.seed = arguments.seed;
-    render_options.pool = &pool;
-    render_options.textures = &loaded.textures;
-    const cs::Image image = cs::engine::render(scene, camera, render_options);
+    const cs::Image image = cs_render::render_view(project, scene, arguments.image, pool);
     const double render_s = seconds_since(render_start);
 
     const auto lux_start = std::chrono::steady_clock::now();
     cs::engine::LuxOptions lux_options;
     lux_options.samples = arguments.lux_samples;
-    lux_options.seed = arguments.seed;
+    lux_options.seed = arguments.image.seed;
     lux_options.pool = &pool;
-    lux_options.textures = &loaded.textures;
+    lux_options.textures = &project.textures.textures;
     json exhibits = json::array();
     for (const cs::world::Exhibit& exhibit : world.exhibits) {
         const cs::engine::WorkLux lux = cs::engine::work_lux_grid(scene, exhibit, lux_options);
@@ -261,9 +203,9 @@ int run(const Arguments& arguments) {
         }
         exhibits.push_back(
             {{"entity", exhibit.entity.to_string()},
-             {"name", entity_name(document, exhibit.entity)},
+             {"name", entity_name(project.document, exhibit.entity)},
              {"work", exhibit.work.to_string()},
-             {"title", work_title(document, exhibit.work)},
+             {"title", work_title(project.document, exhibit.work)},
              {"visible_m",
               {{"min", vec(exhibit.visible.min_m)}, {"max", vec(exhibit.visible.max_m)}}},
              {"direct", summary(lux.direct_lux)},
@@ -272,28 +214,27 @@ int run(const Arguments& arguments) {
     }
     const double lux_s = seconds_since(lux_start);
 
-    const bool automatic = !camera.ev100.has_value();
-    const double ev100 =
-        automatic ? cs::ev100_from_average_luminance(mean_luminance(image)) : *camera.ev100;
+    const bool automatic = !project.camera().ev100.has_value();
+    const double ev100 = cs_render::display_ev100(project.camera(), image);
 
     json problems = json::array();
     for (const cs::world::Problem& problem : world.problems) {
         problems.push_back({{"entity", problem.entity.to_string()}, {"reason", problem.reason}});
     }
-    for (const cs::engine::TextureProblem& problem : loaded.problems) {
+    for (const cs::engine::TextureProblem& problem : project.textures.problems) {
         problems.push_back({{"asset", problem.asset.sha256 + "." + problem.asset.extension},
                             {"reason", problem.reason}});
     }
     const json report = {
         {"tier", "path"},
-        {"seed", arguments.seed},
+        {"seed", arguments.image.seed},
         {"luxSamples", arguments.lux_samples},
         {"luxGrid",
          {{"columns", cs::engine::work_lux_grid_side}, {"rows", cs::engine::work_lux_grid_side}}},
         {"image",
-         {{"width", arguments.width},
-          {"height", arguments.height},
-          {"samplesPerPixel", arguments.spp},
+         {{"width", arguments.image.width},
+          {"height", arguments.image.height},
+          {"samplesPerPixel", arguments.image.samples_per_pixel},
           {"ev100", ev100},
           {"automaticExposure", automatic}}},
         {"exhibits", std::move(exhibits)},
@@ -316,9 +257,9 @@ int run(const Arguments& arguments) {
         }
     }
 
-    std::cout << "cs-render: " << arguments.width << " x " << arguments.height << " at "
-              << arguments.spp << " spp on " << threads << " threads: load " << load_s
-              << " s, render " << render_s << " s, lux " << lux_s << " s, total "
+    std::cout << "cs-render: " << arguments.image.width << " x " << arguments.image.height << " at "
+              << arguments.image.samples_per_pixel << " spp on " << threads << " threads: load "
+              << load_s << " s, render " << render_s << " s, lux " << lux_s << " s, total "
               << seconds_since(start) << " s\n"
               << "  " << exr.string() << "\n  " << png.string() << " (EV100 " << ev100
               << (automatic ? ", automatic" : "") << ")\n  " << lux_json.string() << '\n';
@@ -328,13 +269,16 @@ int run(const Arguments& arguments) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc >= 2 && std::string_view(argv[1]) == "golden") {
+        return cs_render::golden_main(argc - 1, argv + 1);
+    }
     try {
         return run(parse_arguments(argc, argv));
     } catch (const UsageError& error) {
         std::cerr << "cs-render: " << error.what() << "\n\n" << usage;
-        return 2;
+        return cs_render::exit_usage;
     } catch (const std::exception& error) {
         std::cerr << "cs-render: " << error.what() << '\n';
-        return 1;
+        return cs_render::exit_failure;
     }
 }
