@@ -211,19 +211,9 @@ class Scene {
     std::vector<VmaAllocation> texture_allocations_; // one per texture
     std::vector<TextureProblem> problems_;
 
+    void create_buffer(SceneBufferKind kind, VkDeviceSize size_bytes);
+    void create_image(Texture& texture);
     void destroy() noexcept;
 };
-
-// ---- Memory ------------------------------------------------------------------------------------
-
-// Everything allocated through a device's VMA allocator, from vmaCalculateStatistics: every
-// scene, target and buffer alive on it.
-struct MemoryInUse {
-    std::uint64_t allocations = 0;      // VMA allocations alive
-    std::uint64_t allocation_bytes = 0; // their sizes
-    std::uint64_t block_bytes = 0;      // the device memory VMA holds for them, free space included
-};
-
-[[nodiscard]] MemoryInUse memory_in_use(const Device& device);
 
 } // namespace cs::gpu

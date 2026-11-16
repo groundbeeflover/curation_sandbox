@@ -422,4 +422,14 @@ VkResult Device::wait_idle() const {
     return vkDeviceWaitIdle(device_);
 }
 
+MemoryInUse memory_in_use(const Device& device) {
+    VmaTotalStatistics statistics{};
+    vmaCalculateStatistics(device.allocator(), &statistics);
+    MemoryInUse in_use;
+    in_use.allocations = statistics.total.statistics.allocationCount;
+    in_use.allocation_bytes = statistics.total.statistics.allocationBytes;
+    in_use.block_bytes = statistics.total.statistics.blockBytes;
+    return in_use;
+}
+
 } // namespace cs::gpu

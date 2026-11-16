@@ -18,7 +18,7 @@ constexpr std::uint64_t submission_timeout_ns = 60'000'000'000;
 
 } // namespace
 
-void check(VkResult result, const char* who, const char* what) {
+void check(VkResult result, const char* what, const char* who) {
     if (result != VK_SUCCESS)
         throw std::runtime_error(std::string(who) + ": " + what + " failed (" +
                                  std::to_string(static_cast<int>(result)) + ")");
@@ -33,18 +33,17 @@ OneTimeCommands::OneTimeCommands(const Device& device)
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
         pool_info.queueFamilyIndex = device.queue_family();
-        check(vkCreateCommandPool(device_, &pool_info, nullptr, &pool_), "gpu",
-              "creating a command pool");
+        check(vkCreateCommandPool(device_, &pool_info, nullptr, &pool_), "creating a command pool");
         VkCommandBufferAllocateInfo command_info{};
         command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         command_info.commandPool = pool_;
         command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         command_info.commandBufferCount = 1;
-        check(vkAllocateCommandBuffers(device_, &command_info, &commands_), "gpu",
+        check(vkAllocateCommandBuffers(device_, &command_info, &commands_),
               "allocating a command buffer");
         VkFenceCreateInfo fence_info{};
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        check(vkCreateFence(device_, &fence_info, nullptr, &fence_), "gpu", "creating a fence");
+        check(vkCreateFence(device_, &fence_info, nullptr, &fence_), "creating a fence");
     } catch (...) {
         destroy();
         throw;
@@ -67,12 +66,12 @@ VkCommandBuffer OneTimeCommands::begin() {
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    check(vkBeginCommandBuffer(commands_, &begin_info), "gpu", "beginning a command buffer");
+    check(vkBeginCommandBuffer(commands_, &begin_info), "beginning a command buffer");
     return commands_;
 }
 
 void OneTimeCommands::submit_and_wait() {
-    check(vkEndCommandBuffer(commands_), "gpu", "recording commands");
+    check(vkEndCommandBuffer(commands_), "recording commands");
     VkCommandBufferSubmitInfo command_submit{};
     command_submit.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
     command_submit.commandBuffer = commands_;
@@ -80,20 +79,20 @@ void OneTimeCommands::submit_and_wait() {
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
     submit.commandBufferInfoCount = 1;
     submit.pCommandBufferInfos = &command_submit;
-    check(vkQueueSubmit2(queue_, 1, &submit, fence_), "gpu", "submitting commands");
+    check(vkQueueSubmit2(queue_, 1, &submit, fence_), "submitting commands");
     pending_ = true;
     const VkResult result = vkWaitForFences(device_, 1, &fence_, VK_TRUE, submission_timeout_ns);
     if (result == VK_TIMEOUT)
         throw std::runtime_error("gpu: the GPU did not finish an upload or download within a "
                                  "minute");
-    check(result, "gpu", "waiting for commands");
+    check(result, "waiting for commands");
     pending_ = false;
 }
 
 // ---- HostBuffer --------------------------------------------------------------------------------
 
 HostBuffer::HostBuffer(VmaAllocator allocator, VkDeviceSize size_bytes, Use use)
-    : allocator_(allocator), size_bytes_(size_bytes) {
+    : allocator_(allocator) {
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_info.size = size_bytes;
@@ -109,7 +108,6 @@ HostBuffer::HostBuffer(VmaAllocator allocator, VkDeviceSize size_bytes, Use use)
     VmaAllocationInfo mapped{};
     check(vmaCreateBuffer(allocator_, &buffer_info, &allocation_info, &buffer_, &allocation_,
                           &mapped),
-          "gpu",
           use == Use::upload ? "allocating a staging buffer" : "allocating a readback buffer");
     data_ = static_cast<std::byte*>(mapped.pMappedData);
     if (data_ == nullptr) {
@@ -123,12 +121,12 @@ HostBuffer::~HostBuffer() {
 }
 
 void HostBuffer::flush() const {
-    check(vmaFlushAllocation(allocator_, allocation_, 0, VK_WHOLE_SIZE), "gpu",
+    check(vmaFlushAllocation(allocator_, allocation_, 0, VK_WHOLE_SIZE),
           "flushing a staging buffer");
 }
 
 void HostBuffer::invalidate() const {
-    check(vmaInvalidateAllocation(allocator_, allocation_, 0, VK_WHOLE_SIZE), "gpu",
+    check(vmaInvalidateAllocation(allocator_, allocation_, 0, VK_WHOLE_SIZE),
           "invalidating a readback buffer");
 }
 
@@ -147,20 +145,17 @@ VkDeviceSize max_buffer_bytes(const Device& device) {
     return std::min(properties_11.maxMemoryAllocationSize, properties_13.maxBufferSize);
 }
 
-VkBufferMemoryBarrier2 buffer_barrier(VkBuffer buffer) {
-    VkBufferMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer = buffer;
-    barrier.size = VK_WHOLE_SIZE;
-    return barrier;
-}
-
 VkImageMemoryBarrier2 image_barrier(VkImage image, std::uint32_t first_level,
-                                    std::uint32_t level_count) {
+                                    std::uint32_t level_count, Access from, Access to,
+                                    VkImageLayout old_layout, VkImageLayout new_layout) {
     VkImageMemoryBarrier2 barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = from.stages;
+    barrier.srcAccessMask = from.accesses;
+    barrier.dstStageMask = to.stages;
+    barrier.dstAccessMask = to.accesses;
+    barrier.oldLayout = old_layout;
+    barrier.newLayout = new_layout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
@@ -168,17 +163,32 @@ VkImageMemoryBarrier2 image_barrier(VkImage image, std::uint32_t first_level,
     return barrier;
 }
 
-void record_barriers(VkCommandBuffer commands, const VkMemoryBarrier2* memory,
-                     const VkBufferMemoryBarrier2* buffer, const VkImageMemoryBarrier2* images,
-                     std::uint32_t image_count) {
+void record_barriers(VkCommandBuffer commands, std::span<const VkMemoryBarrier2> memory,
+                     std::span<const VkImageMemoryBarrier2> images) {
     VkDependencyInfo dependency{};
     dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.memoryBarrierCount = memory != nullptr ? 1 : 0;
-    dependency.pMemoryBarriers = memory;
-    dependency.bufferMemoryBarrierCount = buffer != nullptr ? 1 : 0;
-    dependency.pBufferMemoryBarriers = buffer;
-    dependency.imageMemoryBarrierCount = image_count;
-    dependency.pImageMemoryBarriers = images;
+    dependency.memoryBarrierCount = static_cast<std::uint32_t>(memory.size());
+    dependency.pMemoryBarriers = memory.data();
+    dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(images.size());
+    dependency.pImageMemoryBarriers = images.data();
+    vkCmdPipelineBarrier2(commands, &dependency);
+}
+
+void record_host_read(VkCommandBuffer commands, const HostBuffer& readback) {
+    VkBufferMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = readback.buffer();
+    barrier.size = VK_WHOLE_SIZE;
+    VkDependencyInfo dependency{};
+    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependency.bufferMemoryBarrierCount = 1;
+    dependency.pBufferMemoryBarriers = &barrier;
     vkCmdPipelineBarrier2(commands, &dependency);
 }
 

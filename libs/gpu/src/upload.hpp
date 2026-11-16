@@ -7,11 +7,13 @@
 #include <cs/gpu/device.hpp>
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
 
 namespace cs::gpu::detail {
 
 // Throws std::runtime_error("<who>: <what> failed (<result>)") unless result is VK_SUCCESS.
-void check(VkResult result, const char* who, const char* what);
+void check(VkResult result, const char* what, const char* who = "gpu");
 
 // One primary command buffer from its own transient pool, and a fence: begin(), record,
 // submit_and_wait(). The destructor waits for a submission whose wait timed out before it frees
@@ -62,7 +64,6 @@ class HostBuffer {
 
     [[nodiscard]] VkBuffer buffer() const { return buffer_; }
     [[nodiscard]] std::byte* data() const { return data_; }
-    [[nodiscard]] VkDeviceSize size_bytes() const { return size_bytes_; }
 
     // After the host's writes, before the copies read them; and after the copies' writes (and
     // the fence), before the host reads. No-ops on host-coherent memory.
@@ -74,21 +75,30 @@ class HostBuffer {
     VkBuffer buffer_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     std::byte* data_ = nullptr;
-    VkDeviceSize size_bytes_ = 0;
 };
 
 // The largest buffer the device can allocate as one: the smaller of maxMemoryAllocationSize and
 // maxBufferSize.
 VkDeviceSize max_buffer_bytes(const Device& device);
 
-// A barrier on one buffer, whole, with the queue family ownership left alone.
-VkBufferMemoryBarrier2 buffer_barrier(VkBuffer buffer);
-// A barrier on some levels of a colour image, with the queue family ownership left alone.
+// One side of a barrier: the stages, and the accesses in them, that it waits for or holds back.
+struct Access {
+    VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 accesses = VK_ACCESS_2_NONE;
+};
+
+// A barrier on some levels of a colour image, from one layout to another, with the queue family
+// ownership left alone.
 VkImageMemoryBarrier2 image_barrier(VkImage image, std::uint32_t first_level,
-                                    std::uint32_t level_count);
+                                    std::uint32_t level_count, Access from, Access to,
+                                    VkImageLayout old_layout, VkImageLayout new_layout);
+
 // Records one vkCmdPipelineBarrier2 with these barriers.
-void record_barriers(VkCommandBuffer commands, const VkMemoryBarrier2* memory,
-                     const VkBufferMemoryBarrier2* buffer, const VkImageMemoryBarrier2* images,
-                     std::uint32_t image_count);
+void record_barriers(VkCommandBuffer commands, std::span<const VkMemoryBarrier2> memory,
+                     std::span<const VkImageMemoryBarrier2> images);
+
+// Records the barrier that makes a copy's writes to a readback buffer visible to the host after
+// the submission's fence.
+void record_host_read(VkCommandBuffer commands, const HostBuffer& readback);
 
 } // namespace cs::gpu::detail
