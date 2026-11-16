@@ -100,8 +100,9 @@ class ValidationUnavailableError : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-// Vulkan 1.3 with dynamic rendering, synchronization2 and buffer device address enabled, and a
-// VMA allocator that can allocate buffers with device addresses.
+// Vulkan 1.3 with dynamic rendering, synchronization2, buffer device address and shader draw
+// parameters (SV_VertexID) enabled, and a VMA allocator that can allocate buffers with device
+// addresses.
 class Device {
   public:
     // Throws NoDeviceError, ValidationUnavailableError, std::logic_error (another Device is
@@ -149,5 +150,15 @@ class Device {
 
     void destroy() noexcept;
 };
+
+// Everything allocated through a device's VMA allocator, from vmaCalculateStatistics: every
+// scene, target and buffer alive on it.
+struct MemoryInUse {
+    std::uint64_t allocations = 0;      // VMA allocations alive
+    std::uint64_t allocation_bytes = 0; // their sizes
+    std::uint64_t block_bytes = 0;      // the device memory VMA holds for them, free space included
+};
+
+[[nodiscard]] MemoryInUse memory_in_use(const Device& device);
 
 } // namespace cs::gpu

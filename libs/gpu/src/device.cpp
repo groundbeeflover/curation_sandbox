@@ -301,6 +301,11 @@ Device::Device(const DeviceOptions& options) {
         features_13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         features_13.dynamicRendering = VK_TRUE;
         features_13.synchronization2 = VK_TRUE;
+        // SV_VertexID in Slang is VertexIndex minus BaseVertex, which needs DrawParameters: the
+        // scene's draws give each mesh's first vertex as the base (scene.hpp).
+        VkPhysicalDeviceVulkan11Features features_11{};
+        features_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        features_11.shaderDrawParameters = VK_TRUE;
         VkPhysicalDeviceVulkan12Features features_12{};
         features_12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         features_12.bufferDeviceAddress = VK_TRUE;
@@ -308,14 +313,15 @@ Device::Device(const DeviceOptions& options) {
         selector.set_minimum_version(1, 3)
             .set_required_features_13(features_13)
             .set_required_features_12(features_12)
+            .set_required_features_11(features_11)
             .allow_any_gpu_device_type(true);
         if (options.presentation)
             selector.add_required_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         auto devices = selector.select_devices();
         if (!devices || devices.value().empty())
             throw NoDeviceError(
-                "no Vulkan device with Vulkan 1.3, dynamic rendering, synchronization2 and "
-                "buffer device address" +
+                "no Vulkan device with Vulkan 1.3, dynamic rendering, synchronization2, "
+                "buffer device address and shader draw parameters" +
                 std::string(options.presentation ? " and VK_KHR_swapchain" : "") + ": " +
                 (devices ? std::string("none found") : devices.error().message()));
         const vkb::PhysicalDevice chosen = choose_device(devices.value(), name_filter);
@@ -414,6 +420,16 @@ bool Device::can_present(VkSurfaceKHR surface) const {
 
 VkResult Device::wait_idle() const {
     return vkDeviceWaitIdle(device_);
+}
+
+MemoryInUse memory_in_use(const Device& device) {
+    VmaTotalStatistics statistics{};
+    vmaCalculateStatistics(device.allocator(), &statistics);
+    MemoryInUse in_use;
+    in_use.allocations = statistics.total.statistics.allocationCount;
+    in_use.allocation_bytes = statistics.total.statistics.allocationBytes;
+    in_use.block_bytes = statistics.total.statistics.blockBytes;
+    return in_use;
 }
 
 } // namespace cs::gpu
