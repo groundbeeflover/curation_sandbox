@@ -623,7 +623,7 @@ TEST_CASE("standard: a light lit all round reads its full intensity straight beh
           "[gpu][standard][accuracy]") {
     const std::unique_ptr<Device> gpu = make_device();
     // Aimed down, obliquely and up, so that the axes round differently in float.
-    for (const dvec3 aim : {dvec3(0.3, -0.2, 0.0), dvec3(2.0, 1.0, -1.0), dvec3(0.3, -0.2, 5.0)}) {
+    for (const dvec3& aim : {dvec3(0.3, -0.2, 0.0), dvec3(2.0, 1.0, -1.0), dvec3(0.3, -0.2, 5.0)}) {
         INFO("aimed at (" << aim.x << ", " << aim.y << ", " << aim.z << ")");
         world::Light light = isotropic_light({0.3, -0.2, 2.5}, 1000.0);
         light.luminaire = light::Luminaire({0.3, -0.2, 2.5}, aim, light.spot);
@@ -937,8 +937,8 @@ TEST_CASE("standard: pixels that see nothing are 0 in all four channels, and an 
         const StandardTier tier(*gpu, scene, w.lights, size, size);
         const StandardImages images = tier.render(looking_down(0.0, 0.0, 1.0, 2.0));
         CHECK(lux_at(images, size / 2, size / 2) > 0.0f);
-        for (const auto [x, y] : {std::pair{0, 0}, std::pair{size - 1, 0}, std::pair{0, size - 1},
-                                  std::pair{size - 1, size - 1}}) {
+        for (const auto& [x, y] : {std::pair{0, 0}, std::pair{size - 1, 0}, std::pair{0, size - 1},
+                                   std::pair{size - 1, size - 1}}) {
             const cs::Rgb& p = images.radiance.at(x, y);
             CHECK(p.r == 0.0f);
             CHECK(p.g == 0.0f);
