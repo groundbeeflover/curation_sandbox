@@ -91,6 +91,35 @@ Document load_project_folder(const std::filesystem::path& folder);
 // range, a number that is not finite); std::runtime_error when the folder cannot be written.
 void save_project_folder(const Document& document, const std::filesystem::path& folder);
 
+// A reference in a document that does not resolve, from check_references. Every reference is held
+// by an entity; what() is "entity <id>: <member>: <problem>", for example
+// "entity 0190f2a4-...: placement.wall: no entity has the id 0190f2a5-...".
+class ReferenceError : public std::runtime_error {
+  public:
+    ReferenceError(const Uuid& entity, const std::string& member, const std::string& problem);
+
+    // The entity that holds the reference.
+    const Uuid& entity() const { return entity_; }
+    // The reference's path within the entity, written as in project.json: "placement.wall",
+    // "luminaire.aim.target", "dimension.from.entity".
+    const std::string& member() const { return member_; }
+    // What is wrong with it: "no entity has the id 0190f2a5-...".
+    const std::string& problem() const { return problem_; }
+
+  private:
+    Uuid entity_;
+    std::string member_;
+    std::string problem_;
+};
+
+// Checks the references of `data` by the rules load_project_folder applies to a file: each
+// reference to a work, an entity or a fixture type names one the document holds; an entity
+// referenced as a wall (or a room, or a track) has that component; and OnHost placements form no
+// cycle. Throws ReferenceError for the first problem: the first dangling reference, taking
+// entities in order of id, else the first cycle. Values' ranges are not checked here; loading
+// checks them.
+void check_references(const DocumentData& data);
+
 // The same, without files: parse_project_json reads the text of a project.json (throwing
 // ProjectError as load_project_folder does), and to_project_json writes the canonical text,
 // including the final newline, without checking the document (it throws ProjectError only for a

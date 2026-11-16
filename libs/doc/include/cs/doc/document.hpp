@@ -6,7 +6,8 @@
 // uses, the works, and the entities of the space, each a fixed set of optional components.
 //
 // A Document is read-only. It is made whole, from DocumentData (by load_project_folder, or by a
-// test), and changes only through the mutation API (ADR 0007).
+// test), and changes only through the mutation API (ADR 0007): a Transaction, committed, undone
+// and redone by a History (transaction.hpp, history.hpp).
 
 #include <cs/doc/components.hpp>
 #include <cs/doc/library.hpp>
@@ -15,10 +16,12 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 namespace cs::doc {
@@ -86,6 +89,23 @@ struct Entity {
     bool operator==(const Entity&) const = default;
 };
 
+// Entity's component members, in the order of ComponentKind.
+inline constexpr auto entity_components =
+    std::make_tuple(&Entity::wall, &Entity::opening, &Entity::room, &Entity::exhibit,
+                    &Entity::framing, &Entity::placement, &Entity::track, &Entity::luminaire,
+                    &Entity::lux_sensor, &Entity::viewpoint, &Entity::dimension);
+
+static_assert(std::tuple_size_v<decltype(entity_components)> == component_kind_count,
+              "entity_components lists every component");
+
+// Calls f(kind, member) for every component, in the order of ComponentKind; `member` points to
+// Entity's std::optional of that component.
+template <class F> constexpr void for_each_component(F&& f) {
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (f(static_cast<ComponentKind>(I), std::get<I>(entity_components)), ...);
+    }(std::make_index_sequence<component_kind_count>{});
+}
+
 // Everything a project file holds, as plain values. Maps are ordered by id, which is the order
 // they are written in.
 struct DocumentData {
@@ -115,10 +135,18 @@ class Document {
     const Entity* find_entity(const Uuid& id) const;
     const Work* find_work(const Uuid& id) const;
 
-    bool operator==(const Document&) const = default;
+    // How many times this document has changed since it was made: each commit, undo and redo
+    // adds one. A Transaction is made for one revision of one document.
+    std::uint64_t revision() const { return revision_; }
+
+    // Equal data; the revisions may differ.
+    bool operator==(const Document& other) const { return data_ == other.data_; }
 
   private:
+    friend class History; // applies committed transactions
+
     DocumentData data_;
+    std::uint64_t revision_ = 0;
 };
 
 } // namespace cs::doc

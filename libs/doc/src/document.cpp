@@ -13,31 +13,13 @@ std::string_view component_key(ComponentKind kind) {
 }
 
 bool Entity::has(ComponentKind kind) const {
-    switch (kind) {
-    case ComponentKind::wall:
-        return wall.has_value();
-    case ComponentKind::opening:
-        return opening.has_value();
-    case ComponentKind::room:
-        return room.has_value();
-    case ComponentKind::exhibit:
-        return exhibit.has_value();
-    case ComponentKind::framing:
-        return framing.has_value();
-    case ComponentKind::placement:
-        return placement.has_value();
-    case ComponentKind::track:
-        return track.has_value();
-    case ComponentKind::luminaire:
-        return luminaire.has_value();
-    case ComponentKind::lux_sensor:
-        return lux_sensor.has_value();
-    case ComponentKind::viewpoint:
-        return viewpoint.has_value();
-    case ComponentKind::dimension:
-        return dimension.has_value();
-    }
-    return false;
+    bool present = false;
+    for_each_component([&](ComponentKind k, auto member) {
+        if (k == kind) {
+            present = (this->*member).has_value();
+        }
+    });
+    return present;
 }
 
 const Entity* Document::find_entity(const Uuid& id) const {
