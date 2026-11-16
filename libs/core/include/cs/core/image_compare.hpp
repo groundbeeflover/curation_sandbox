@@ -29,4 +29,12 @@ struct ImageComparison {
 // Throws std::invalid_argument, saying both sizes, if the images differ in size.
 ImageComparison compare(const Image& reference, const Image& test);
 
+// FLIP's error at every pixel, the values whose mean compare() reports as mean_flip, coloured with
+// FLIP's magma map for a person to look at, as the reference implementation's tool shows it: an
+// error e in [0, 1] takes entry round(255 e) of the map's 256, from near black (e = 0, the images
+// look the same) through purple and orange to pale yellow (e = 1). The map is defined in sRGB; the
+// image holds its colours as display-referred linear RGB in [0, 1], to be written with
+// write_display_png (image_io.hpp). Throws std::invalid_argument as compare does.
+Image flip_heat_map(const Image& reference, const Image& test);
+
 } // namespace cs

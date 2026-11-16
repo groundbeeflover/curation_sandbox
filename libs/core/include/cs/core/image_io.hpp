@@ -4,7 +4,8 @@
 
 // Image files: linear OpenEXR for data (renders, golden references) and 8-bit sRGB PNG for people
 // to look at. An Image holds linear Rec. 709 RGB, in nits for a render; EXR keeps those values as
-// they are, and only a PNG goes through exposure, tone mapping and the sRGB curve (colour.hpp).
+// they are, and only a PNG goes through exposure, tone mapping and the sRGB curve (colour.hpp), or
+// through the sRGB curve alone for an image that is already display-referred, such as a heat map.
 //
 // EXR files from outside are hostile: read_exr checks the header against the limits below before
 // it decodes any pixels, and every failure is a std::runtime_error saying what was wrong.
@@ -64,5 +65,11 @@ Image read_exr_from_memory(std::span<const std::byte> bytes);
 // Throws std::invalid_argument if ev100 is not finite, and std::runtime_error if the file cannot
 // be written.
 void write_png(const Image& image, const std::filesystem::path& path, double ev100);
+
+// Writes an 8-bit sRGB PNG of an image that is already display-referred linear RGB, such as a heat
+// map (flip_heat_map, image_compare.hpp): every channel is encoded with linear_to_srgb8 alone,
+// which clamps it to [0, 1] and takes NaN as 0, with no exposure or tone mapping. Throws
+// std::runtime_error if the file cannot be written.
+void write_display_png(const Image& image, const std::filesystem::path& path);
 
 } // namespace cs
