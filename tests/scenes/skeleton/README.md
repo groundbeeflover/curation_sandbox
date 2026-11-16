@@ -33,8 +33,10 @@ Units are SI. Plan positions are (x, y) in metres, and z is up, with the floor a
 - **On the work's centre**, the light arrives from 2.309 m away, at 62.8 degrees from the work's
   normal (cos 0.4577), so illuminance = I × 0.4577 / 2.309². That is about 460 lux if the spot
   spread its flux evenly over its 25 degree field (5,370 cd), and more with a real peak.
-- **EV100 8** puts the white patch, lit at 450 to 900 lux, below the top of the exposure range:
-  1.2 × 2⁸ ≈ 307 nits. It is an estimate, made before cs-render (M1-17) can render the scene.
+  cs-render (M1-17, #153) measures 1009 lux direct at the centre, and 276 to 1185 lux over the
+  chart's 25 grid points, the upper rows the brightest.
+- **EV100 8** saturates at 1.2 × 2⁸ ≈ 307 nits. In cs-render's 256 x 144 path-traced render the
+  brightest pixel is 312 nits: 4 of 36,864 pixels pass it, and none clips in the PNG.
 
 ## Choices the task left open
 

@@ -303,7 +303,7 @@ quality (after 1.0); super-resolution (after 1.0, if curators ask); the first us
 
 | Dropped | Why |
 | --- | --- |
-| `apps/pt` (renders a gradient) | Replaced by `cs-render`. Removing it is a milestone 1 task, not part of the planning pull requests. |
+| `apps/pt` (renders a gradient) | Replaced by `cs-render`, which removed it (M1-17, #153). |
 | `docs/milestone-1.md` | A learning guide ("type every line yourself", six learning milestones, a 31 January 2027 checkpoint). Deleted rather than archived, so that agents searching the repository are not misled by it; git history keeps it. |
 | The six-milestone learning roadmap in the README | Replaced by [the roadmap](../roadmap.md). |
 | "CPU path tracer first, as a learning step" | The CPU engine stays, for product reasons (ADR 0002), but is built alongside the GPU path, not before it. |
