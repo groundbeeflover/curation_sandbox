@@ -19,8 +19,8 @@ struct VertexOutput {
 static const float2 corners[3] = { float2(-0.5, -0.5), float2(0.5, -0.5), float2(0.0, 0.5) };
 
 [shader("vertex")]
-// SV_VulkanVertexID is Vulkan's VertexIndex as it is. SV_VertexID would subtract BaseVertex,
-// which needs the shaderDrawParameters feature that the device does not enable.
+// SV_VulkanVertexID is Vulkan's VertexIndex as it is; SV_VertexID would subtract BaseVertex
+// (shaderDrawParameters, which the device enables). This draw has no base vertex: both agree.
 VertexOutput vertex_main(uint vertex : SV_VulkanVertexID) {
     VertexOutput output;
     output.position = float4(corners[vertex], 0.5, 1.0);
