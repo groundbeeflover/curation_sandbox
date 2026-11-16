@@ -1242,7 +1242,7 @@ area = "ui"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-26", "M1-24", "M1-25", "M1-15", "M1-17"]
+blocked_by = ["M1-26", "M1-24", "M1-25", "M1-15", "M1-17", "M1-43"]
 touches = ["libs/ui/src/features/skeleton_commands.cpp", "libs/ui/src/features/camera_input.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_walking_skeleton.cpp", ".claude/agents/ux-reviewer.md", "docs/product/screens/m1-walking-skeleton.png"]
 goal = "The walking skeleton a curator can see: build a room, hang a painting at its true size, light it, walk around it and read its lux, all in the app."
 context = [
@@ -1691,6 +1691,39 @@ out_of_scope = ["Sharing identical meshes and materials between instances (M2-24
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L world && ctest --preset debug -L geom && ctest --preset debug -L material && ctest --preset debug -L light",
   "cmake --preset release && cmake --build --preset release && ctest --preset release",
+  "python3 scripts/format.py --check",
+]
+
+
+[[tasks]]
+id = "M1-43"
+epic = "E1.3"
+title = "One check for asset file names, in libs/assets"
+area = "assets"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-17", "M1-21", "M1-34"]
+touches = ["libs/assets/include/cs/assets/asset_file.hpp", "libs/assets/src/asset_file.cpp", "libs/assets/tests/test_asset_file.cpp", "libs/engine/include/cs/engine/textures.hpp", "libs/engine/src/textures.cpp", "libs/engine/tests/test_textures.cpp", "libs/gpu/include/cs/gpu/scene.hpp", "libs/gpu/src/scene.cpp", "libs/gpu/tests/test_scene.cpp", "tests/integration/test_asset_names.cpp"]
+goal = "A photograph loads in every tier or in none. M1-17 (#153) and M1-21 (#151) each check an asset's name before making a path of it, with different lists: the engine accepts png, jpg, tif and exr, the GPU png, jpg and jpeg. So a curator's .jpeg photograph shows on screen while the lux panel reads its painting as plain grey, and a .tif passes the engine's check only to fail to decode. Both pull requests name this as a follow-up."
+context = [
+  "M1-17 (#153): engine::asset_path and engine::load_textures (libs/engine/src/textures.cpp), and their hostile-name tests",
+  "M1-21 (#151): gpu::project_texture_loader and is_sha256 (libs/gpu/src/scene.cpp), and their hostile-name tests",
+  "M1-14 (#145): assets::load_texture decodes PNG and JPEG with stb_image; M2-32 adds TIFF",
+  "ADR 0007: assets live in the project as assets/<sha256>.<extension>; doc accepts any extension of 1 to 8 characters from a-z and 0-9 (components.hpp)",
+  "Blueprint section 7: the texture cache belongs to libs/assets; assets depends only on core, so the function takes the hash and the extension as strings, not world::AssetRef",
+  "CLAUDE.md: input from outside is hostile; never trust a path",
+]
+acceptance = [
+  "assets::asset_file(folder, sha256, extension) returns <folder>/<sha256>.<extension>, and throws std::invalid_argument with a message unless sha256 is 64 lowercase hexadecimal digits and the extension is one load_texture decodes: png, jpg or jpeg (M2-32 adds tif and tiff to the same list). The list exists once, in libs/assets",
+  "engine::asset_path and the GPU's own name check are removed; engine::load_textures and gpu::project_texture_loader call assets::asset_file. Every hostile name either pull request tested (path separators, '..', NUL, upper case, wrong length, absolute paths), each with a real file planted where it would point, is refused, in test_asset_file.cpp",
+  "tests/integration/test_asset_names.cpp: for the same list of valid and hostile names, engine::load_textures and gpu::Scene agree on which photographs load ([gpu]); a .jpeg photograph loads in both",
+  "`ctest --preset debug -L assets` and `-L engine` pass, and `-L gpu` on lavapipe",
+]
+out_of_scope = ["Normalising extensions on import (M2-11)", "TIFF decoding (M2-32)", "Copying assets into the project (M2-21)", "A shared texture cache between the engine and the GPU (M2-27, M2-28)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L assets && ctest --preset debug -L engine",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
 
@@ -2369,7 +2402,7 @@ area = "ui"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M2-21", "M2-23", "M1-27"]
+blocked_by = ["M2-21", "M2-23", "M1-27", "M2-41"]
 touches = ["libs/ui/src/features/project_menu.cpp", "libs/ui/src/features/edit_menu.cpp", "libs/ui/tests/test_project_ui.cpp", "libs/ui/src/features/file_menu.cpp", "docs/product/screens/m2-recovery.png"]
 goal = "The file and edit behaviour every desktop user expects, including a recovery prompt after a crash."
 context = [
@@ -2424,7 +2457,7 @@ area = "gpu"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-21", "M2-26"]
+blocked_by = ["M1-21", "M2-26", "M1-43"]
 touches = ["libs/gpu/include/cs/gpu/residency.hpp", "libs/gpu/src/residency.cpp", "libs/gpu/src/scene.cpp", "libs/gpu/tests/test_residency.cpp", "libs/gpu/shaders/standard.slang"]
 goal = "Many large works in a small amount of video memory: each work keeps the detail its size on screen needs, within the tier's texture budget, without hitches."
 context = [
@@ -2560,14 +2593,15 @@ area = "assets"
 type = "feature"
 size = "S"
 owner = "agent"
-blocked_by = ["M2-09", "M1-41"]
-touches = ["libs/assets/src/tiff.cpp", "libs/assets/tests/test_import_tiff.cpp", "libs/assets/tests/data/tiff/", "libs/assets/fuzz/"]
+blocked_by = ["M2-09", "M1-41", "M1-43"]
+touches = ["libs/assets/src/tiff.cpp", "libs/assets/tests/test_import_tiff.cpp", "libs/assets/tests/data/tiff/", "libs/assets/fuzz/", "libs/assets/src/asset_file.cpp"]
 goal = "Read the TIFF masters museums and photographers deliver, and fuzz every image loader, because images come from outside."
 context = [
   "libtiff; the import path of M2-09",
   "CLAUDE.md: parsers get a fuzz target and /security-review",
 ]
 acceptance = [
+  "tif and tiff join the extensions assets::asset_file accepts (M1-43), so TIFF photographs load in the engine and the GPU alike",
   "8- and 16-bit RGB TIFF (uncompressed, LZW, Deflate) with or without an ICC profile load through the M2-09 path; CMYK and multi-page TIFF are refused with a message",
   "A libFuzzer target for each loader (PNG, JPEG, TIFF, ICC) runs 60 s without findings",
   "Test images in libs/assets/tests/data/tiff/ total at most 60 KB; `ctest --preset debug -L assets` passes; /security-review run and answered in the PR",
@@ -2804,5 +2838,35 @@ out_of_scope = ["HD tiles and virtual texturing (1.0)", "KTX2 encoding (M4)", "K
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L assets",
   "cmake --preset fuzz && cmake --build --preset fuzz && for f in build/fuzz/libs/assets/fuzz_*; do $f -max_total_time=60; done",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-41"
+epic = "E2.5"
+title = "Check values on every commit"
+area = "doc"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-09", "M2-38"]
+touches = ["libs/doc/include/cs/doc/project_io.hpp", "libs/doc/src/project_io.cpp", "libs/doc/include/cs/doc/history.hpp", "libs/doc/src/history.cpp", "libs/doc/tests/test_check_values.cpp"]
+goal = "An edit can never leave a project that cannot be saved. M1-09 (#152) checks references on every commit, but values only when a file is loaded, so a command that sets a wall's height to 0 or a NaN position commits, and then saving refuses the document: the curator loses the work since the last save. M1-09 names this as a follow-up."
+context = [
+  "M1-09 (#152): History::commit applies, checks with check_references, and puts the before values back on a refusal; loading and commits share one walk over the values for references",
+  "libs/doc/src/project_io.cpp: the ranges, finite numbers, string lengths and library id syntax that loading checks today, with JSON paths in its messages",
+  "ADR 0007: the document changes only through Transaction",
+  "After M2-38, whose bounded-memory reader and M2-22's migrations change project_io.cpp first: the value rules move out of that reader into check_values",
+]
+acceptance = [
+  "check_values(const DocumentData&) in project_io checks every value rule that loading checks, from one set of rules: loading calls it, and load errors keep their JSON paths and messages (the existing load tests pass unchanged)",
+  "History::commit calls it with check_references; a refused commit throws a ValueError naming the entity or work, the member and the rule ('wall.height_m must be greater than 0'), and leaves the document, its revision and both stacks as they were",
+  "For each value rule, a transaction setting a value just outside it is refused and one just inside commits",
+  "Property test with a fixed seed: 1000 random transactions on the skeleton, some with out-of-range or non-finite values; after each commit the document saves with save_project_folder and loads back byte-identical, and the refusals are counted",
+  "`ctest --preset debug -L doc` passes",
+]
+out_of_scope = ["Checking only the edited entities (with M2-24's incremental updates)", "A bound on the undo stack (M2-25)", "Validating typed input in the tools (M1-25)"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L doc",
   "python3 scripts/format.py --check",
 ]
