@@ -718,8 +718,10 @@ TEST_CASE("scene: project_texture_loader refuses a malformed sha256 or extension
     const TempFolder root("project_texture_loader_names");
     const std::filesystem::path assets = root.path() / "assets";
     std::filesystem::create_directories(assets);
+    // On a case-insensitive file system (Windows) the uppercase name is the good file itself,
+    // which still holds a PNG there, so a name already planted is left as it is.
     const auto plant = [](const std::filesystem::path& to) {
-        std::filesystem::copy_file(chart_path(), to);
+        std::filesystem::copy_file(chart_path(), to, std::filesystem::copy_options::skip_existing);
     };
 
     std::string upper(chart_sha256);
@@ -731,13 +733,13 @@ TEST_CASE("scene: project_texture_loader refuses a malformed sha256 or extension
     // the assets folder.
     const std::string escaping = "../" + std::string(chart_sha256.substr(0, 61));
 
+    plant(assets / (std::string(chart_sha256) + ".png")); // the good one, for the control
     plant(assets / (upper + ".png"));
     plant(assets / (short_hash + ".png"));
     plant(assets / (long_hash + ".png"));
     plant(root.path() / (std::string(chart_sha256.substr(0, 61)) + ".png"));
     plant(assets / (std::string(chart_sha256) + ".exe"));
     plant(assets / (std::string(chart_sha256) + ".tif"));
-    plant(assets / (std::string(chart_sha256) + ".png")); // the good one, for the control
 
     const TextureLoader load = cs::gpu::project_texture_loader(assets);
 
