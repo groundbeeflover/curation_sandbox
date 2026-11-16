@@ -31,6 +31,7 @@
 
 #include <glm/geometric.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -256,8 +257,13 @@ std::vector<float> shader_intensities(const Device& gpu, const LightTable& table
     std::memcpy(lights.data(), table.lights.data(), light_bytes);
     std::memcpy(lights.data() + light_bytes, table.profiles.data(), profile_bytes);
     lights.flush();
-    MappedBuffer inputs(gpu, directions.size_bytes());
-    std::memcpy(inputs.data(), directions.data(), directions.size_bytes());
+    // As float4s: the shader reads only scalars and float4s through device addresses.
+    std::vector<glm::vec4> padded;
+    for (const glm::vec3& d : directions) {
+        padded.emplace_back(d, 0.0f);
+    }
+    MappedBuffer inputs(gpu, padded.size() * sizeof(glm::vec4));
+    std::memcpy(inputs.data(), padded.data(), padded.size() * sizeof(glm::vec4));
     inputs.flush();
     MappedBuffer outputs(gpu, directions.size() * sizeof(float));
 
@@ -541,6 +547,91 @@ TEST_CASE("standard: a uniform cone keeps its hard edge: its table ends at half 
     }
 }
 
+TEST_CASE("standard: within the bounds standard_tier.hpp states, the shader's profile is within "
+          "1e-4 of the peak at every angle",
+          "[gpu][standard][accuracy]") {
+    const std::unique_ptr<Device> gpu = make_device();
+    struct Case {
+        const char* what;
+        double beam_deg;
+        double field_deg;
+    };
+    // p from 0.52 to 20, and fields up to 340 degrees, beside the issue's three spots.
+    for (const Case& c : {Case{"4/40, p 0.52", 4.0, 40.0}, Case{"24/36", 24.0, 36.0},
+                          Case{"24/30, p 5.4", 24.0, 30.0}, Case{"20/21.25, p 20", 20.0, 21.25},
+                          Case{"60/340", 60.0, 340.0}, Case{"120/300", 120.0, 300.0}}) {
+        INFO("spot " << c.what);
+        const auto spot = std::make_shared<const light::GenericSpot>(800.0, c.beam_deg * degrees,
+                                                                     c.field_deg * degrees);
+        const world::Light light = spot_light({1.0, 2.0, 3.0}, {1.4, 1.5, 0.2}, spot);
+        const LightTable table = cs::gpu::make_light_table(std::span(&light, 1));
+
+        // Every 1/4096 of the way to the cut-off, and closer and closer to the axis.
+        const double cutoff = cutoff_rad(*spot);
+        std::vector<double> thetas;
+        for (int k = 0; k < 4096; ++k) {
+            thetas.push_back(cutoff * (k + 0.5) / 4096.0);
+        }
+        for (double theta = 1e-7; theta < 1e-2; theta *= 10.0) {
+            thetas.push_back(theta);
+        }
+        std::vector<glm::vec3> directions;
+        std::vector<double> expected;
+        for (std::size_t k = 0; k < thetas.size(); ++k) {
+            const dvec3 d =
+                world_direction(light.luminaire, thetas[k], 2.39996 * static_cast<double>(k), 1.0);
+            directions.emplace_back(d);
+            expected.push_back(light.luminaire.intensity_cd(d));
+        }
+        const std::vector<float> got = shader_intensities(*gpu, table, 0, directions);
+        double worst = 0.0;
+        double worst_theta = 0.0;
+        for (std::size_t k = 0; k < thetas.size(); ++k) {
+            const double error = std::abs(got[k] - expected[k]) / spot->peak_intensity_cd();
+            if (error > worst) {
+                worst = error;
+                worst_theta = thetas[k];
+            }
+        }
+        INFO("worst " << worst << " of the peak, at " << worst_theta / degrees << " degrees");
+        // The issue's 1e-4 of the peak, which the header promises within these bounds.
+        CHECK(worst <= 1e-4);
+    }
+}
+
+TEST_CASE("standard: a light lit all round reads its full intensity straight behind its axis, "
+          "however the direction rounds",
+          "[gpu][standard][accuracy]") {
+    const std::unique_ptr<Device> gpu = make_device();
+    // Aimed down, obliquely and up, so that the axes round differently in float.
+    for (const dvec3 aim : {dvec3(0.3, -0.2, 0.0), dvec3(2.0, 1.0, -1.0), dvec3(0.3, -0.2, 5.0)}) {
+        INFO("aimed at (" << aim.x << ", " << aim.y << ", " << aim.z << ")");
+        world::Light light = isotropic_light({0.3, -0.2, 2.5}, 1000.0);
+        light.luminaire = light::Luminaire({0.3, -0.2, 2.5}, aim, light.spot);
+        const LightTable table = cs::gpu::make_light_table(std::span(&light, 1));
+        const dvec3 behind = -light.luminaire.axis();
+        const dvec3 ex = light.luminaire.to_fixture({1.0, 0.0, 0.0});
+        const dvec3 ey = light.luminaire.to_fixture({0.0, 1.0, 0.0});
+        const dvec3 ez = light.luminaire.to_fixture({0.0, 0.0, 1.0});
+        const dvec3 axis_x{ex.x, ey.x, ez.x};
+        // Lengths a few float ulps either side of 1, and a hair off the axis.
+        std::vector<glm::vec3> directions;
+        for (int k = -8; k <= 8; ++k) {
+            for (const double length : {1.0, 3.7, 0.01}) {
+                const double scale = length * (1.0 + k * std::ldexp(1.0, -23));
+                directions.emplace_back(behind * scale);
+                directions.emplace_back((behind + 1e-7 * axis_x) * scale);
+            }
+        }
+        const std::vector<float> got = shader_intensities(*gpu, table, 0, directions);
+        for (std::size_t k = 0; k < got.size(); ++k) {
+            INFO("direction " << k << ": " << got[k] << " cd");
+            // Every entry of the table is 1; interpolating between them in float rounds by an ulp.
+            CHECK_THAT(got[k], WithinRel(1000.0, 1e-6));
+        }
+    }
+}
+
 TEST_CASE("standard: make_light_table refuses a light without a generic spot, and more than "
           "max_standard_lights lights",
           "[gpu][standard]") {
@@ -600,23 +691,71 @@ TEST_CASE("standard: the floor under a 1000 cd light 2 m above reads 250 lux, ev
     CHECK(worst_radiance <= 1e-4);
 }
 
-TEST_CASE("standard: a perspective camera reads the same lux at the same point as an orthographic "
-          "one",
+TEST_CASE("standard: a perspective camera reads I cos / d^2 at the point each pixel's ray meets "
+          "the floor, as the engine's camera aims its rays",
           "[gpu][standard][accuracy]") {
     const std::unique_ptr<Device> gpu = make_device();
-    const world::World w = floor_world({isotropic_light({0.0, 0.0, 2.0}, 1000.0)});
+    const dvec3 light_m{0.0, 0.0, 2.0};
+    const world::World w = floor_world({isotropic_light(light_m, 1000.0)});
     const Scene scene(*gpu, w, no_loader());
-    constexpr int size = 33;
-    const StandardTier tier(*gpu, scene, w.lights, size, size);
-    // Looking straight down from 1.5 m with a 60 degree field: the centre pixel sees the origin.
+    // Not square, so that the aspect ratio matters; odd, so that the centre pixel sees the origin.
+    constexpr int width = 41;
+    constexpr int height = 23;
+    const StandardTier tier(*gpu, scene, w.lights, width, height);
+    // Looking straight down from 1.5 m with a 60 degree vertical field: right is +x, up is +y.
     world::Camera camera;
     camera.position_m = {0.0, 0.0, 1.5};
     camera.forward = {0.0, 0.0, -1.0};
     camera.up = {0.0, 1.0, 0.0};
     camera.vertical_fov_rad = 60.0 * degrees;
     const StandardImages images = tier.render(camera);
-    // 1e-4 as above.
-    CHECK_THAT(lux_at(images, size / 2, size / 2), WithinRel(250.0, 1e-4));
+
+    // 1e-4 as in the orthographic test: a wrong field of view, aspect or half-pixel offset moves
+    // the point, and the lux, by far more away from the centre.
+    CHECK_THAT(lux_at(images, width / 2, height / 2), WithinRel(250.0, 1e-4));
+    const double half_height = std::tan(30.0 * degrees);
+    const double half_width = half_height * width / height;
+    double worst = 0.0;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            // The ray (sx, sy, -1) from 1.5 m meets the floor 1.5 times along it.
+            const double sx = (2.0 * (x + 0.5) / width - 1.0) * half_width;
+            const double sy = (1.0 - 2.0 * (y + 0.5) / height) * half_height;
+            const double expected = floor_lux(light_m, 1000.0, {1.5 * sx, 1.5 * sy, 0.0});
+            worst = std::max(worst, std::abs(lux_at(images, x, y) / expected - 1.0));
+        }
+    }
+    CHECK(worst <= 1e-4);
+}
+
+TEST_CASE("standard: an orthographic camera tells apart surfaces 0.2 mm apart, 5 m away",
+          "[gpu][standard]") {
+    const std::unique_ptr<Device> gpu = make_device();
+    // A square of albedo 0.2 on the floor and one of 0.8 a fifth of a millimetre above it, as a
+    // mount above its backing: every pixel must show the upper one. Their depths differ by 2e-7,
+    // 3.4 float steps near 1 with the far plane at 1 km; at 10 km they would share a step.
+    world::World w;
+    w.meshes = {floor_mesh(0.0, 0.0, 1.0, 1.0, 0.0), floor_mesh(0.0, 0.0, 1.0, 1.0, 0.0002)};
+    w.materials = {world::LambertMaterial{dvec3(0.2)}, world::LambertMaterial{dvec3(0.8)}};
+    w.instances = {instance(0, 0), instance(1, 1)};
+    w.lights = {isotropic_light({0.0, 0.0, 3.0}, 1000.0)};
+    const Scene scene(*gpu, w, no_loader());
+    constexpr int size = 33;
+    const StandardTier tier(*gpu, scene, w.lights, size, size);
+    const StandardImages images = tier.render(looking_down(0.0, 0.0, 5.0, 1.5));
+
+    // Radiance over illuminance is albedo / pi times the colour: 0.8 or 0.2, nothing between.
+    const double green = light_colour(3000.0).g / pi;
+    int lower = 0;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const double albedo = images.radiance.at(x, y).g / lux_at(images, x, y) / green;
+            if (std::abs(albedo - 0.8) > 1e-3) {
+                ++lower;
+            }
+        }
+    }
+    CHECK(lower == 0);
 }
 
 TEST_CASE("standard: two lights add; a light behind the surface adds nothing; the back of a "
@@ -820,6 +959,8 @@ TEST_CASE("standard: the tier refuses a zero size and an invalid camera", "[gpu]
     CHECK_THROWS_AS((void)tier.render(perspective), std::invalid_argument);
 
     // The tier still renders after refusing.
+    // Pixel (8, 4) sees 0.11 m from the point under the light: about 249 lux, so 5% only asks
+    // that the tier renders as before; the exact values are the inverse-square test's.
     CHECK_THAT(tier.render(good).illuminance_lux.at(4 * 16 + 8), WithinRel(250.0, 0.05));
 }
 
@@ -892,5 +1033,6 @@ TEST_CASE("standard: record() into the caller's command buffer, twice in a row, 
     // And render() still works after the image was left in GENERAL: every frame starts from
     // UNDEFINED.
     const StandardImages images = tier.render(camera);
+    // Pixel (16, 9) sees 8 cm from the point under the light; 5% only asks that it renders.
     CHECK_THAT(lux_at(images, 16, 9), WithinRel(250.0, 0.05));
 }

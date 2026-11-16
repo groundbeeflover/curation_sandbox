@@ -90,7 +90,7 @@ void append_profile(const light::GenericSpot& spot, LightData& light,
 // A perspective camera sees from this far in front of it (to infinity); an orthographic one
 // from its plane to this far ahead (standard_tier.hpp).
 constexpr double near_m = 0.01;
-constexpr double orthographic_far_m = 10'000.0;
+constexpr double orthographic_far_m = 1'000.0;
 
 bool finite(glm::dvec3 v) {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
@@ -108,6 +108,8 @@ struct ForwardPush {
     std::uint32_t padding = 0;
 };
 static_assert(sizeof(ForwardPush) == 120);
+static_assert(offsetof(ForwardPush, eye) == 64 && offsetof(ForwardPush, vertices) == 80 &&
+              offsetof(ForwardPush, light_count) == 112); // standard.slang's offsets
 
 // The view of a camera as the engine's path tracer makes it (engine/path_tracer.cpp,
 // CameraRays): the same checks, the same axes, so that a pixel sees along the same ray. Depth is
@@ -361,9 +363,10 @@ void StandardTier::upload_lights(const LightTable& table) {
     const VkDeviceSize profile_bytes = table.profiles.size() * sizeof(float);
     const VkDeviceSize size_bytes = light_bytes + profile_bytes;
 
+    // Declared before the commands, so that it outlives their wait when a timeout throws.
+    std::optional<detail::HostBuffer> staging;
     detail::OneTimeCommands commands(*device_);
     const VkCommandBuffer cmd = commands.begin();
-    std::optional<detail::HostBuffer> staging;
     if (size_bytes > 0) {
         VkBufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -688,12 +691,12 @@ StandardImages StandardTier::render(const world::Camera& camera) const {
     const VkCommandBuffer cmd = commands.begin();
     record(cmd, camera);
 
-    // The frame's writes, then the copy that reads them.
+    // record() made the frame's writes available and ended at the shader stages; the copy
+    // follows from there.
     const VkImageMemoryBarrier2 to_copy = detail::image_barrier(
         hdr_image_, 0, 1,
-        {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
-             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT},
+        {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+         VK_ACCESS_2_NONE},
         {VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT},
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     detail::record_barriers(cmd, {}, std::span(&to_copy, 1));

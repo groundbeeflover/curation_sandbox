@@ -44,9 +44,14 @@ using glm::dvec3;
 namespace {
 
 // The ADR 0002 tolerance for the Standard tier's direct light against the engine, and the
-// issue's: 2%. Both evaluate I cos / d^2 from the same spot, the tier in float from its profile
-// table (within 1e-4 of the peak), so anything near 2% is a wrong point, normal or intensity.
+// issue's: 2%.
 constexpr double direct_tolerance = 0.02;
+
+// What the two should actually agree to. Both evaluate I cos / d^2 from the same spot at the same
+// point, the tier in float (a few 1e-6) from its profile table (within 1e-4 of the peak; the
+// chart's centre is at about a third of the peak), so 1e-3 leaves room for both and still fails a
+// wrong point, normal or intensity that the 2% would let through.
+constexpr double agreement = 1e-3;
 
 std::filesystem::path skeleton_folder() {
     return std::filesystem::path(CS_SOURCE_DIR) / "tests" / "scenes" / "skeleton";
@@ -148,6 +153,7 @@ TEST_CASE("standard vs engine: the skeleton's chart centre reads within 2% of en
     const float lux = lux_at(images, centre);
     INFO("Standard tier " << lux << " lux, engine " << reading.direct_lux.value << " lux");
     CHECK_THAT(lux, WithinRel(reading.direct_lux.value, direct_tolerance));
+    CHECK_THAT(lux, WithinRel(reading.direct_lux.value, agreement));
 }
 
 TEST_CASE("standard vs engine: the skeleton renders from its viewpoint at 256 x 144, its chart "
@@ -202,6 +208,7 @@ TEST_CASE("standard vs engine: the skeleton renders from its viewpoint at 256 x 
     INFO("pixel (" << pixel.x << ", " << pixel.y << "): Standard tier " << lux_at(images, pixel)
                    << " lux, engine " << expected << " lux");
     CHECK_THAT(lux_at(images, pixel), WithinRel(expected, direct_tolerance));
+    CHECK_THAT(lux_at(images, pixel), WithinRel(expected, agreement));
 
     // The picture for the pull request, tone mapped on the CPU with libs/core (M1-44 brings the
     // GPU's own pass): the build tree's standard-out/.

@@ -14,8 +14,13 @@
 // Rec. 709 RGB of luminance 1 (cs::cct_to_linear_rgb of its colour temperature, as in the
 // engine). A light behind the surface (cos theta <= 0) adds nothing. Surfaces are Lambertian:
 // their albedo is the material's base colour, or for a painting with a texture the texture's
-// texel, sampled trilinearly; it is clamped to [0, 1], NaN to 0, as the engine clamps it. Both
-// sides of a surface reflect: the normal is turned towards the camera.
+// texel, sampled trilinearly; it is clamped to [0, 1], NaN to 0, as the engine clamps it. The
+// engine gives paintings their PaintingBrdf (a specular lobe and a coat) instead, so their
+// radiance differs from the engine's until the Standard tier's materials arrive (milestone 2);
+// their illuminance does not. Both sides of a surface reflect: the interpolated normal is turned
+// towards the camera. The engine decides the side from the triangle's own normal; the two agree
+// on flat-shaded meshes, which is all libs/geom makes, and would differ at the silhouettes of
+// smooth-shaded ones.
 //
 // The result is one HDR image of hdr_format: RGB is the radiance L in nits (linear, not exposed
 // or tone mapped: that is M1-44's pass), A is the illuminance E in lux on the surface seen
@@ -27,7 +32,8 @@
 // (1 - 2 (y + 0.5) / height) * half_height) on the image plane, row 0 at the top, so that a
 // pixel of this tier and the same pixel of the engine's image see the same point. A perspective
 // camera sees from 0.01 m in front of it to infinity; an orthographic one from its own plane to
-// 10 km ahead.
+// 1 km ahead, telling surfaces apart down to about 0.1 mm (a float's resolution near 1, times
+// 1 km).
 
 #include <cs/core/image.hpp>
 #include <cs/gpu/device.hpp>
@@ -67,6 +73,13 @@ namespace cs::gpu {
 // emits anything (just short of its cut-off; half its beam angle for a uniform cone; 180 degrees
 // when it lights the whole sphere), and core_end is half its field angle, or lit_end if that is
 // smaller.
+//
+// Accuracy: within 1e-4 of the peak at every angle for spots whose exponent p (distribution.hpp)
+// is from 0.5 to 25, a field / beam ratio from about 1.05 to 11, with a field angle up to 340
+// degrees; uniform cones and isotropic lights are exact. Outside those bounds the error stays
+// where the profile is sharpest: within micro-degrees of the axis for p < 0.5 (1e-3 of the peak
+// at 5 / 120 degrees), at the beam's edge for p > 25 (1e-2 at 24.9 / 25), and in the last 12
+// degrees behind a fixture whose field is 360 degrees (4e-3 at 180 / 360).
 
 inline constexpr std::uint32_t profile_core_entries = 1024;
 inline constexpr std::uint32_t profile_taper_entries = 256;
@@ -92,6 +105,9 @@ struct LightData {
     std::uint32_t padding = 0;
 };
 static_assert(sizeof(LightData) == 80);
+static_assert(offsetof(LightData, peak_cd) == 12 && offsetof(LightData, core_end) == 28 &&
+              offsetof(LightData, lit_end) == 44 && offsetof(LightData, profile) == 60 &&
+              offsetof(LightData, colour) == 64); // luminaire.slang's offsets
 
 // The lights of a world as the GPU holds them, in one buffer: every LightData, then every
 // profile (profile_entries floats each, the core then the taper, light after light).
@@ -114,7 +130,8 @@ struct StandardImages {
 
 // Owns its pipeline, the lights' buffer, its descriptors and its images: the HDR image and a
 // depth image. It refers to the scene, which must outlive it; a changed world needs a new tier
-// (its lights are uploaded once). Destroy it before its Device.
+// (its lights are uploaded once). Destroy it before its Device, and only once every submission
+// of what record() recorded has finished: it frees everything at once, without waiting.
 class StandardTier {
   public:
     // RGB radiance in nits, A illuminance in lux (above). 32-bit floats: half floats would

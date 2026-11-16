@@ -120,10 +120,12 @@ float4 fragment_main(Varyings input, uniform ForwardPush push) : SV_Target {
 }
 
 // ---- For tests ----------------------------------------------------------------------------------
+// Here rather than in a shader of its own, as this task may change only this file; no pipeline of
+// the tier is made from it.
 
 struct CheckPush {
     LightData* lights; // a LightTable: the lights, then the profiles
-    float3* directions; // world directions from the light, of any non-zero length
+    float4* directions; // xyz: world directions from the light, of any non-zero length
     float* intensities; // written: intensity_cd(lights[light], direction), in candela
     uint light_count;
     uint light;
@@ -138,5 +140,5 @@ void check_intensity(uint3 id : SV_DispatchThreadID, uniform CheckPush push) {
         return;
     push.intensities[id.x] = intensity_cd(push.lights[push.light],
                                           light_profiles(push.lights, push.light_count),
-                                          push.directions[id.x]);
+                                          push.directions[id.x].xyz);
 }

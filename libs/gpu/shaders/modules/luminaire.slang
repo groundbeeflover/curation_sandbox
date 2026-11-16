@@ -45,8 +45,10 @@ public float intensity_cd(LightData light, float* profiles, float3 world_directi
     const float y = dot(d, light.axis_y);
     const float z = dot(d, light.axis_z);
     // 1 - cos(theta) without cancelling near the axis, and w = sin(theta / 2): the table's index.
+    // Straight behind the fixture, rounding can take z just below -1; at most 2 keeps w at most 1,
+    // so that a light lit all round is not dark there.
     const float one_minus_cos = z > 0.0 ? (x * x + y * y) / (1.0 + z) : 1.0 - z;
-    const float w = sqrt(0.5 * one_minus_cos);
+    const float w = sqrt(0.5 * min(one_minus_cos, 2.0));
     if (!(w <= light.lit_end))
         return 0.0;
     float* table = profiles + light.profile;
