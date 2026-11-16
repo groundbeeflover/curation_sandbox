@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace cs::engine {
@@ -25,8 +26,13 @@ bool is_sha256(std::string_view text) {
            });
 }
 
-std::string key(const world::AssetRef& asset) {
-    return asset.sha256 + "." + asset.extension;
+std::pair<std::string, std::string> key(const world::AssetRef& asset) {
+    return {asset.sha256, asset.extension};
+}
+
+// The texture of a painting's photograph, or null.
+const assets::Texture* texture_of(const world::PaintingSurface& surface, const Textures* textures) {
+    return surface.image && textures != nullptr ? textures->find(*surface.image) : nullptr;
 }
 
 // Albedos outside [0, 1] would create energy, or a negative one; NaN becomes 0.
@@ -77,9 +83,7 @@ const assets::Texture* Textures::find(const world::AssetRef& asset) const {
 
 const assets::Texture* photograph_of(const world::Material& material, const Textures* textures) {
     const auto* surface = std::get_if<world::PaintingSurface>(&material);
-    return surface != nullptr && surface->image && textures != nullptr
-               ? textures->find(*surface->image)
-               : nullptr;
+    return surface != nullptr ? texture_of(*surface, textures) : nullptr;
 }
 
 glm::dvec3 sample_bilinear(const assets::Texture& texture, glm::dvec2 uv) {
@@ -100,9 +104,7 @@ glm::dvec3 sample_bilinear(const assets::Texture& texture, glm::dvec2 uv) {
 
 glm::dvec3 painting_base_colour(const world::PaintingSurface& surface, glm::dvec2 uv,
                                 const Textures* textures) {
-    const assets::Texture* photograph =
-        textures != nullptr && surface.image ? textures->find(*surface.image) : nullptr;
-    if (photograph != nullptr) {
+    if (const assets::Texture* photograph = texture_of(surface, textures)) {
         return sample_bilinear(*photograph, uv);
     }
     return surface.parameters.base.color;
@@ -155,7 +157,7 @@ std::filesystem::path asset_path(const std::filesystem::path& assets_dir,
 
 LoadedTextures load_textures(const world::World& world, const std::filesystem::path& assets_dir) {
     LoadedTextures loaded;
-    std::set<std::string> seen;
+    std::set<std::pair<std::string, std::string>> seen;
     for (const world::Material& material : world.materials) {
         const auto* surface = std::get_if<world::PaintingSurface>(&material);
         if (surface == nullptr || !surface->image) {

@@ -144,8 +144,8 @@ Arguments parse_arguments(int argc, char* argv[]) {
     if (arguments.project.empty()) {
         throw UsageError("no project folder");
     }
-    if (arguments.out.empty()) {
-        throw UsageError("no --out prefix");
+    if (!arguments.out.has_filename()) {
+        throw UsageError("--out is a path prefix ending in a name, such as build/out/skeleton");
     }
     return arguments;
 }
@@ -309,7 +309,8 @@ int run(const Arguments& arguments) {
     cs::write_png(image, png, ev100);
     {
         std::ofstream file(lux_json, std::ios::binary | std::ios::trunc);
-        file << report.dump(2) << '\n';
+        // Paths in problem reasons may not be UTF-8; replace such bytes rather than fail.
+        file << report.dump(2, ' ', false, json::error_handler_t::replace) << '\n';
         if (!file) {
             throw std::runtime_error("cannot write " + lux_json.string());
         }

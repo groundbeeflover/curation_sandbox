@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace cs::engine {
@@ -49,7 +50,7 @@ class Textures {
     std::size_t size() const { return textures_.size(); }
 
   private:
-    std::map<std::string, assets::Texture> textures_; // by "<sha256>.<extension>"
+    std::map<std::pair<std::string, std::string>, assets::Texture> textures_; // (sha256, extension)
 };
 
 // The texture of a material's photograph: for a painting whose image `textures` holds, that
