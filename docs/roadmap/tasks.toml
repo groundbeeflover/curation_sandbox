@@ -1752,18 +1752,19 @@ size = "S"
 owner = "agent"
 blocked_by = ["M1-20", "M1-06"]
 touches = ["libs/gpu/shaders/modules/colour.slang", "libs/gpu/shaders/tonemap.slang", "libs/gpu/shaders/colour_check.slang", "libs/gpu/include/cs/gpu/tonemap.hpp", "libs/gpu/src/tonemap.cpp", "libs/gpu/tests/test_tonemap.cpp"]
-goal = "The GPU shows exactly the colours the engine computes: EV100 exposure, PBR Neutral, sRGB and colour temperature ported from libs/core, in a tone-mapping pass, so that the Standard tier's images differ from the engine's only in light."
+goal = "The GPU shows exactly the colours the engine computes: EV100 exposure, PBR Neutral and sRGB ported from libs/core, in a tone-mapping pass, so that the Standard tier's images differ from the engine's only in light."
 context = [
   "libs/core/include/cs/core/colour.hpp (M1-06, #136): exposure_scale(ev100) and the ev100_* constants, pbr_neutral (negative and NaN channels count as 0), cct_to_linear_rgb (1667 to 25000 K); libs/core/tests/test_colour.cpp's PBR Neutral case and its 10 inputs",
   "Shared shader code goes in libs/gpu/shaders/modules/, the folder `import` searches; every file directly in libs/gpu/shaders/ needs an entry point (cmake/CsShaders.cmake, M1-20)",
   "M1-20's offscreen target and readback (libs/gpu/include/cs/gpu/offscreen.hpp)",
+  "M1-22's output, as its session settled it on 16 November 2026: one RGBA32F image, linear radiance in nits in RGB and illuminance in lux in A, left in SHADER_READ_ONLY_OPTIMAL with its writes visible to fragment and compute shader reads. Luminaire colours come from cs::cct_to_linear_rgb on the CPU, as the owner's comment on #78 of 2026-11-13 allowed, so no shader needs a port of it",
   "Split from M1-22 by the groom of 16 November 2026, from the owner's comments on #78 of 2026-11-13 and 2026-11-15. The area is core because that lane is free and the work ports libs/core; the files are libs/gpu's, so the gpu-reviewer and physics-reviewer subagents review it",
 ]
 acceptance = [
-  "libs/gpu/shaders/modules/colour.slang ports libs/core's exposure (EV100 and its constants), pbr_neutral (negative and NaN channels as 0) and cct_to_linear_rgb",
-  "[gpu][accuracy] A compute shader (colour_check.slang) evaluates the ported functions; at the 10 inputs of test_colour.cpp's PBR Neutral case and at 2700, 3000 and 6500 K they match libs/core within 1e-4 (float on the GPU)",
-  "A tone-mapping pass reads a linear radiance image (nits) and writes the display image: exposure at a given EV100, PBR Neutral, then sRGB encoding (in the shader or by an _SRGB target format)",
-  "[gpu] Patches of known luminance, written into a linear image and tone mapped on the GPU, match libs/core's CPU pipeline within 1/255 per channel at EV100 6, 8 and 10",
+  "libs/gpu/shaders/modules/colour.slang ports libs/core's exposure (EV100 and its constants) and pbr_neutral (negative and NaN channels as 0)",
+  "[gpu][accuracy] A compute shader (colour_check.slang) evaluates the ported functions; at the 10 inputs of test_colour.cpp's PBR Neutral case, and for the exposure scale at EV100 6, 8 and 10, they match libs/core within 1e-4 (float on the GPU)",
+  "A tone-mapping pass reads M1-22's RGBA32F image (radiance in nits in RGB; the illuminance in A is ignored, never treated as alpha) and writes the display image: exposure at a given EV100, PBR Neutral, then sRGB encoding (in the shader or by an _SRGB target format)",
+  "[gpu] Patches of known luminance, written into an RGBA32F image with an arbitrary lux value in A and tone mapped on the GPU, match libs/core's CPU pipeline within 1/255 per channel at EV100 6, 8 and 10",
   "[gpu] Validation-clean on lavapipe; `ctest --preset debug -L gpu` passes",
 ]
 out_of_scope = ["Lighting (M1-22)", "Automatic exposure (M2-39)", "The swapchain and the viewport (M1-23, M1-26)"]
