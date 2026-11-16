@@ -15,14 +15,16 @@ namespace {
 template <class Key, class T>
 detail::Edit<T>& edit_of(std::map<Key, detail::Edit<T>>& edits, const std::map<Key, T>& values,
                          const Key& id) {
-    const auto [it, inserted] = edits.try_emplace(id);
-    if (inserted) {
-        if (const auto value = values.find(id); value != values.end()) {
-            it->second.before = value->second;
-            it->second.after = value->second;
-        }
+    if (const auto edit = edits.find(id); edit != edits.end()) {
+        return edit->second;
     }
-    return it->second;
+    // Copied before the edit is inserted, so that a copy that throws leaves no edit behind.
+    detail::Edit<T> edit;
+    if (const auto value = values.find(id); value != values.end()) {
+        edit.before = value->second;
+        edit.after = value->second;
+    }
+    return edits.emplace(id, std::move(edit)).first->second;
 }
 
 // The value as the edits leave it, else as the document holds it; nullptr when there is none.

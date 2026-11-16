@@ -115,8 +115,9 @@ class ReferenceError : public std::runtime_error {
 // Checks the references of `data` by the rules load_project_folder applies to a file: each
 // reference to a work, an entity or a fixture type names one the document holds; an entity
 // referenced as a wall (or a room, or a track) has that component; and OnHost placements form no
-// cycle. Throws ReferenceError for the first problem, taking entities in order of id. Values'
-// ranges are not checked here; loading checks them.
+// cycle. Throws ReferenceError for the first problem: the first dangling reference, taking
+// entities in order of id, else the first cycle. Values' ranges are not checked here; loading
+// checks them.
 void check_references(const DocumentData& data);
 
 // The same, without files: parse_project_json reads the text of a project.json (throwing
