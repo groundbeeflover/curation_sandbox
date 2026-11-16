@@ -33,8 +33,9 @@
 // exactly, for comparisons with it.
 //
 // Materials: Lambert surfaces reflect with their albedo. A painting reflects with its
-// PaintingBrdf; its photograph's texels are not read yet (M1-17), its base colour stands in, as in
-// the lux meter. Albedos are clamped to [0, 1]. Both sides of a surface reflect (scene.hpp).
+// PaintingBrdf, its base colour read texel by texel from its photograph in options.textures
+// (engine::painting_base_colour, textures.hpp), as in the lux meter; without one, its base colour
+// stands in. Albedos are clamped to [0, 1]. Both sides of a surface reflect (scene.hpp).
 // Surfaces reflect about their interpolated normal; a path whose next direction, drawn about
 // that normal, falls below the triangle itself ends there, as in PBRT, so smooth normals on a
 // coarse mesh can only darken it a little (0.01% on the furnace's 96 x 48 sphere, about 1% on
@@ -60,6 +61,8 @@ class ThreadPool;
 
 namespace cs::engine {
 
+class Textures; // textures.hpp
+
 // Keeps the path tracer's random numbers apart from the lux meter's (lux_dimension), as
 // hash_seed's `dimension`.
 inline constexpr std::uint32_t path_dimension = 0x7061'7401; // "pat" and 1
@@ -72,15 +75,16 @@ struct RenderOptions {
     int height = 144; // pixels, likewise; width * height at most max_image_pixels
     std::uint32_t samples_per_pixel = 64; // at least 1; render only
     std::uint64_t seed = 1;
-    bool direct_only = false;      // see above
-    double environment_nits = 0.0; // uniform white light all around; finite and at least 0
-    ThreadPool* pool = nullptr;    // runs the rows; none: all on the calling thread
+    bool direct_only = false;           // see above
+    double environment_nits = 0.0;      // uniform white light all around; finite and at least 0
+    ThreadPool* pool = nullptr;         // runs the rows; none: all on the calling thread
+    const Textures* textures = nullptr; // the paintings' photographs; none: their base colours
 };
 
 // A render that improves as samples are added: add_samples runs more samples on every pixel, and
-// image() is the mean of all samples so far. It refers to the scene and to options.pool, which
-// must outlive it, and copies the camera and the other options. A render moved from may only be
-// destroyed or assigned to.
+// image() is the mean of all samples so far. It refers to the scene, options.pool and
+// options.textures, which must outlive it, and copies the camera and the other options. A render
+// moved from may only be destroyed or assigned to.
 class ProgressiveRender {
   public:
     // Throws std::invalid_argument for a size outside the limits above, an environment_nits that

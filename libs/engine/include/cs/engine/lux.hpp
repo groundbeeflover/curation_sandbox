@@ -52,6 +52,8 @@ class ThreadPool;
 
 namespace cs::engine {
 
+class Textures; // textures.hpp
+
 // The gap a shadow ray leaves before a light d metres away: 1e-4 of d plus 1e-5 m, so 0.36 mm
 // over the 3.5 m from the skeleton's ceiling spot to the floor. The relative part covers
 // Embree's single-precision hit distances, which are good to about 1e-6 of d; the absolute part
@@ -92,6 +94,10 @@ struct LuxOptions {
     // so the cap costs nothing until albedos near 1, whose indirect light diverges.
     std::uint32_t max_bounces = 1024;
     ThreadPool* pool = nullptr; // runs the samples; none: all on the calling thread
+    // The paintings' photographs, which the indirect paths reflect texel by texel
+    // (textures.hpp); none: every painting reflects its base colour. Direct light does not
+    // depend on them.
+    const Textures* textures = nullptr;
 };
 
 struct Estimate {

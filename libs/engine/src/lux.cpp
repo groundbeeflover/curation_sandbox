@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cs/engine/lux.hpp>
+#include <cs/engine/textures.hpp>
 
 #include <cs/core/colour.hpp>
 #include <cs/core/math.hpp>
@@ -19,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <variant>
@@ -54,34 +56,6 @@ std::vector<Lamp> lamps_of(const world::World& world) {
         lamps.push_back({&light.luminaire, y > 0.0 ? rgb / y : glm::dvec3(1.0)});
     }
     return lamps;
-}
-
-// Albedos outside [0, 1] would create energy, or a negative one; NaN becomes 0.
-glm::dvec3 clamp_albedo(glm::dvec3 albedo) {
-    const auto unit = [](double x) { return std::isnan(x) ? 0.0 : std::clamp(x, 0.0, 1.0); };
-    return {unit(albedo.r), unit(albedo.g), unit(albedo.b)};
-}
-
-// One BRDF per world material.
-std::vector<std::unique_ptr<material::Brdf>> brdfs_of(const world::World& world) {
-    std::vector<std::unique_ptr<material::Brdf>> brdfs;
-    brdfs.reserve(world.materials.size());
-    for (const world::Material& material : world.materials) {
-        brdfs.push_back(std::visit(
-            [](const auto& m) -> std::unique_ptr<material::Brdf> {
-                using M = std::decay_t<decltype(m)>;
-                if constexpr (std::is_same_v<M, world::LambertMaterial>) {
-                    return std::make_unique<material::LambertianBrdf>(clamp_albedo(m.albedo));
-                } else {
-                    // The photograph's texels are not read yet (M1-16): its base colour stands in.
-                    material::PaintingMaterial parameters = m.parameters;
-                    parameters.base.color = clamp_albedo(parameters.base.color);
-                    return std::make_unique<material::PaintingBrdf>(parameters);
-                }
-            },
-            material));
-    }
-    return brdfs;
 }
 
 // Calls add(lamp, wi, illuminance_lux) for every lamp that lights the point: in front of
@@ -124,7 +98,7 @@ double sensor_direct_lux(const Scene& scene, const std::vector<Lamp>& lamps, glm
 // What the indirect paths need of the world, made once per reading.
 struct Lighting {
     std::vector<Lamp> lamps;
-    std::vector<std::unique_ptr<material::Brdf>> brdfs; // one per world material
+    MaterialBrdfs brdfs;
 };
 
 // One indirect path from the sensor: pi times the luminance found in a cosine-distributed
@@ -154,8 +128,9 @@ double indirect_sample(const Scene& scene, const Lighting& lighting, glm::dvec3 
         }
         const Onb<double> frame = onb_from_normal(shading);
         const glm::dvec3 wo_local = frame.to_local(wo);
+        std::optional<material::PaintingBrdf> painting;
         const material::Brdf& brdf =
-            *lighting.brdfs[scene.world().instances[hit->instance].material];
+            lighting.brdfs.at(scene.world().instances[hit->instance].material, hit->uv, painting);
 
         // Next-event estimation: the lamps' direct light, reflected towards wo.
         for_each_lamp_lighting(scene, lighting.lamps, hit->position_m, shading, side,
@@ -267,7 +242,8 @@ LuxReading lux_at(const Scene& scene, glm::dvec3 point_m, glm::dvec3 normal,
         throw std::invalid_argument("lux_at: samples must be at least 1");
     }
     const Onb<double> sensor = onb_from_normal(n);
-    const Lighting lighting{lamps_of(scene.world()), brdfs_of(scene.world())};
+    const Lighting lighting{lamps_of(scene.world()),
+                            MaterialBrdfs(scene.world(), options.textures)};
 
     LuxReading reading;
     reading.direct_lux.value = sensor_direct_lux(scene, lighting.lamps, point_m, n);

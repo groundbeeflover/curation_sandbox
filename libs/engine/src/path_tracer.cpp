@@ -9,6 +9,7 @@
 #include <cs/core/random.hpp>
 #include <cs/core/thread_pool.hpp>
 #include <cs/engine/lux.hpp>
+#include <cs/engine/textures.hpp>
 #include <cs/light/luminaire.hpp>
 #include <cs/material/brdf.hpp>
 #include <cs/material/painting_material.hpp>
@@ -46,41 +47,18 @@ struct Lamp {
     glm::dvec3 colour; // linear RGB of luminance 1: radiance per nit
 };
 
-// Albedos outside [0, 1] would create energy, or a negative one; NaN becomes 0.
-glm::dvec3 clamp_albedo(glm::dvec3 albedo) {
-    const auto unit = [](double x) { return std::isnan(x) ? 0.0 : std::clamp(x, 0.0, 1.0); };
-    return {unit(albedo.r), unit(albedo.g), unit(albedo.b)};
-}
-
-// What the paths need of the world: its lamps and one BRDF per material. The lux meter makes
-// the same from the same world (lux.cpp); M2-28 is to cache both on the scene for the two.
+// What the paths need of the world: its lamps and its materials' BRDFs. The lux meter makes the
+// same from the same world (lux.cpp); M2-28 is to cache both on the scene for the two.
 struct Lighting {
     std::vector<Lamp> lamps;
-    std::vector<std::unique_ptr<material::Brdf>> brdfs;
+    MaterialBrdfs brdfs;
 
-    explicit Lighting(const world::World& world) {
+    Lighting(const world::World& world, const Textures* textures) : brdfs(world, textures) {
         lamps.reserve(world.lights.size());
         for (const world::Light& light : world.lights) {
             const glm::dvec3 rgb = cct_to_linear_rgb(light.colour_temperature_k);
             const double y = luminance(rgb);
             lamps.push_back({&light.luminaire, y > 0.0 ? rgb / y : glm::dvec3(1.0)});
-        }
-        brdfs.reserve(world.materials.size());
-        for (const world::Material& material : world.materials) {
-            brdfs.push_back(std::visit(
-                [](const auto& m) -> std::unique_ptr<material::Brdf> {
-                    using M = std::decay_t<decltype(m)>;
-                    if constexpr (std::is_same_v<M, world::LambertMaterial>) {
-                        return std::make_unique<material::LambertianBrdf>(clamp_albedo(m.albedo));
-                    } else {
-                        // The photograph's texels are not read yet (M1-17): its base colour
-                        // stands in.
-                        material::PaintingMaterial parameters = m.parameters;
-                        parameters.base.color = clamp_albedo(parameters.base.color);
-                        return std::make_unique<material::PaintingBrdf>(parameters);
-                    }
-                },
-                material));
         }
     }
 };
@@ -184,8 +162,9 @@ glm::dvec3 trace(const Scene& scene, const Lighting& lighting, CameraRays::Ray r
         }
         const Onb<double> frame = onb_from_normal(shading);
         const glm::dvec3 wo_local = frame.to_local(wo);
+        std::optional<material::PaintingBrdf> painting;
         const material::Brdf& brdf =
-            *lighting.brdfs[scene.world().instances[hit->instance].material];
+            lighting.brdfs.at(scene.world().instances[hit->instance].material, hit->uv, painting);
 
         // Next-event estimation, with the lux meter's shadow rays.
         for (const Lamp& lamp : lighting.lamps) {
@@ -258,7 +237,8 @@ const RenderOptions& checked_options(const RenderOptions& options) {
 struct ProgressiveRender::Impl {
     Impl(const Scene& scene_, const world::Camera& camera, const RenderOptions& options_)
         : scene(&scene_), options(checked_options(options_)),
-          camera_rays(camera, options.width, options.height), lighting(scene_.world()),
+          camera_rays(camera, options.width, options.height),
+          lighting(scene_.world(), options.textures),
           sums(static_cast<std::size_t>(options.width) * static_cast<std::size_t>(options.height),
                glm::dvec3(0.0)) {}
 
