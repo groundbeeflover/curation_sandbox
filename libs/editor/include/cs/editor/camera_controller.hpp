@@ -56,14 +56,15 @@ class OrbitController {
     static constexpr double min_distance_m = 0.3;
     static constexpr double max_distance_m = 1000.0; // [C]
 
-    // Looking at `target_m` from `distance_m` away, in the direction (yaw_rad, pitch_rad); the
-    // distance and pitch are clamped to their limits.
+    // Looking at `target_m` from `distance_m` away, in the direction (yaw_rad, pitch_rad), all
+    // finite; the distance and pitch are clamped to their limits, and a field of view outside
+    // (0, pi) becomes default_vertical_fov_rad.
     OrbitController(glm::dvec3 target_m, double distance_m, double yaw_rad, double pitch_rad,
                     double vertical_fov_rad = default_vertical_fov_rad);
 
-    // Orbiting the point `distance_m` ahead of `camera` (perspective, with up perpendicular to
-    // forward, as World's are), from where it is, with its field of view. A camera that looks
-    // steeper than max_pitch_rad moves round the point to that pitch.
+    // Orbiting the point `distance_m` ahead of `camera` (finite, with up perpendicular to forward,
+    // as World's are), from where it is, with its field of view if it has one. A camera that
+    // looks steeper than max_pitch_rad moves round the point to that pitch.
     OrbitController(const world::Camera& camera, double distance_m);
 
     // Turns with the pointer and zooms with the wheel; the movement keys do nothing.
@@ -95,7 +96,9 @@ WalkRoom walk_room(const doc::Room& room);
 
 // Walking at eye height: the pointer looks round, the keys walk along the floor at
 // walk_speed_m_per_s, and the eye stays inside the room, wall_clearance_m from its walls, sliding
-// along a wall it walks into. Free walls and openings are not walls here until M2-14.
+// along a wall it walks into. Where the room is narrower than twice that, the eye keeps as clear
+// as it can, and it does not walk into such a gap. Free walls and openings are not walls here
+// until M2-14.
 class WalkController {
   public:
     static constexpr double walk_speed_m_per_s = 1.4;
@@ -104,10 +107,10 @@ class WalkController {
     static constexpr double max_elapsed_s = 1.0;
 
     // Standing where `camera` is in plan, with the eye at the settings' eye height above the
-    // floor, looking where `camera` looks (perspective, with up perpendicular to forward, as
-    // World's are) with its field of view. A camera nearer a wall than wall_clearance_m stands
-    // that far from it; one outside the room stands that far in from the nearest point of a wall
-    // where that is inside and clear of the others.
+    // floor, looking where `camera` looks (finite, with up perpendicular to forward, as World's
+    // are) with its field of view if it has one. A camera nearer a wall than wall_clearance_m
+    // stands that far from it, where the room is wide enough; one outside the room stands that
+    // far in from the nearest point of a wall where that is inside.
     WalkController(const WalkRoom& room, const doc::ProjectSettings& settings,
                    const world::Camera& camera);
 

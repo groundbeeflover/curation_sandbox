@@ -428,6 +428,39 @@ TEST_CASE("camera controller: one long update does not step through a thin wall 
     CHECK_THAT(other_arm.eye_m().y, WithinAbs(2.7, 1e-9));
 }
 
+TEST_CASE("camera controller: in a room narrower than twice the clearance the eye stays inside "
+          "and still walks",
+          "[editor]") {
+    // A passage 4 m long and 0.2 m wide: no place in it is 0.25 m from both sides.
+    const WalkRoom room{.outline_m = {{0.0, 0.0}, {4.0, 0.0}, {4.0, 0.2}, {0.0, 0.2}},
+                        .floor_z_m = 0.0};
+
+    SECTION("starting inside, it stays where it is and walks along") {
+        WalkController walk(room, doc::ProjectSettings{}, camera_at({1.0, 0.1, 0.0}, 0.0, 0.0));
+        CHECK_THAT(walk.eye_m().x, WithinAbs(1.0, 1e-12));
+        CHECK_THAT(walk.eye_m().y, WithinAbs(0.1, 1e-12));
+        walk.update(hold_forward(1.0));
+        CHECK_THAT(walk.eye_m().x, WithinAbs(2.4, 1e-9));
+        CHECK(inside(dvec2(walk.eye_m()), room));
+        // On to the end wall, and no further.
+        walk.update(hold_forward(1.0));
+        walk.update(hold_forward(1.0));
+        CHECK(inside(dvec2(walk.eye_m()), room));
+        CHECK(walk.eye_m().x > 3.8);
+    }
+    SECTION("starting outside, where no place in it is clear, it stands in it and stays in") {
+        WalkController walk(room, doc::ProjectSettings{},
+                            camera_at({1.0, -0.95, 0.0}, pi / 2.0, 0.0));
+        CHECK(inside(dvec2(walk.eye_m()), room));
+        walk.update(hold_forward(1.0));
+        CHECK(inside(dvec2(walk.eye_m()), room));
+        walk.update(drag({90.0 * deg / turn_rad_per_px, 0.0})); // a quarter turn right, east
+        walk.update(hold_forward(1.0));
+        CHECK(inside(dvec2(walk.eye_m()), room));
+        CHECK(walk.eye_m().x > 1.0);
+    }
+}
+
 TEST_CASE("camera controller: an outline that encloses no area has no walls", "[editor]") {
     WalkRoom room;
     room.floor_z_m = 0.2;
@@ -523,6 +556,17 @@ TEST_CASE("camera controller: each wheel notch zooms by 10%, down to 0.3 m", "[e
 
     const OrbitController too_near(target, 0.1, 0.0, 0.0);
     CHECK(too_near.distance_m() == 0.3);
+}
+
+TEST_CASE("camera controller: a field of view outside (0, pi) becomes the default", "[editor]") {
+    const double fov_rad = GENERATE(0.0, -0.5, pi, 4.0, std::numeric_limits<double>::quiet_NaN());
+    CHECK(OrbitController({0.0, 0.0, 0.0}, 2.0, 0.0, 0.0, fov_rad).camera().vertical_fov_rad ==
+          default_vertical_fov_rad);
+    const world::Camera camera = camera_at({3.0, 2.0, 1.6}, 0.0, 0.0, fov_rad);
+    CHECK(OrbitController(camera, 2.0).camera().vertical_fov_rad == default_vertical_fov_rad);
+    CHECK(WalkController(rectangle_room(), doc::ProjectSettings{}, camera)
+              .camera()
+              .vertical_fov_rad == default_vertical_fov_rad);
 }
 
 TEST_CASE("camera controller: an orbit made from a camera keeps its position and view",

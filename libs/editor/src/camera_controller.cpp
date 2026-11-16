@@ -22,6 +22,12 @@ constexpr double two_pi = 2.0 * std::numbers::pi;
 // that a step from a clear place cannot reach a wall, let alone cross it. [C]
 constexpr double max_step_m = 0.1;
 
+// keep_clear's passes round the walls stop when no wall is nearer than the clearance by more than
+// this, or after max_clear_passes. Eight passes settle a corner of 45 degrees to well under a
+// millimetre; sharper corners than a room has may stop a little nearer. [C]
+constexpr double clear_tolerance_m = 1e-9;
+constexpr int max_clear_passes = 8;
+
 double finite_or_zero(double value) {
     return std::isfinite(value) ? value : 0.0;
 }
@@ -66,11 +72,14 @@ std::pair<double, double> view_angles(const world::Camera& camera) {
     return {std::atan2(heading.y, heading.x), clamp_pitch(std::atan2(forward.z, up.z))};
 }
 
+double usable_fov(double vertical_fov_rad) {
+    return vertical_fov_rad > 0.0 && vertical_fov_rad < std::numbers::pi ? vertical_fov_rad
+                                                                         : default_vertical_fov_rad;
+}
+
 double field_of_view(const world::Camera& camera) {
-    const double fov_rad = camera.vertical_fov_rad;
-    const bool usable = camera.projection == world::Projection::perspective && fov_rad > 0.0 &&
-                        fov_rad < std::numbers::pi;
-    return usable ? fov_rad : default_vertical_fov_rad;
+    return camera.projection == world::Projection::perspective ? usable_fov(camera.vertical_fov_rad)
+                                                               : default_vertical_fov_rad;
 }
 
 } // namespace
@@ -81,7 +90,7 @@ OrbitController::OrbitController(glm::dvec3 target_m, double distance_m, double 
                                  double pitch_rad, double vertical_fov_rad)
     : target_m_(target_m), distance_m_(clamp_distance(distance_m)),
       yaw_rad_(std::remainder(yaw_rad, two_pi)), pitch_rad_(clamp_pitch(pitch_rad)),
-      vertical_fov_rad_(vertical_fov_rad) {}
+      vertical_fov_rad_(usable_fov(vertical_fov_rad)) {}
 
 OrbitController::OrbitController(const world::Camera& camera, double distance_m)
     : OrbitController(camera.position_m + clamp_distance(distance_m) * camera.forward, distance_m,
@@ -141,16 +150,24 @@ WalkController::WalkController(const WalkRoom& room, const doc::ProjectSettings&
     }
 
     if (inside(position_m_)) {
-        position_m_ = keep_clear(position_m_);
+        // Where the room is too narrow to keep clear, the eye stays where it is.
+        if (const glm::dvec2 clear = keep_clear(position_m_); inside(clear)) {
+            position_m_ = clear;
+        }
         return;
     }
-    // From outside the room: of the places wall_clearance_m in from each wall's nearest point and
-    // clear of the other walls, the nearest that is inside. A sharp corner can leave the place
-    // off one wall outside, behind the next.
+    // From outside the room: of the places wall_clearance_m in from each wall's nearest point,
+    // cleared of the other walls where the room is wide enough, the nearest that is inside. A
+    // sharp corner can leave the place off one wall outside, behind the next; with no place
+    // inside, the eye stays outside, free to walk in.
     double nearest_m = std::numeric_limits<double>::infinity();
     const glm::dvec2 from = position_m_;
     for (const Wall& wall : walls_) {
-        const glm::dvec2 place = keep_clear(wall.nearest_to(from) + wall_clearance_m * wall.inward);
+        const glm::dvec2 in_from_wall = wall.nearest_to(from) + wall_clearance_m * wall.inward;
+        glm::dvec2 place = keep_clear(in_from_wall);
+        if (!inside(place)) {
+            place = in_from_wall;
+        }
         if (const double distance_m = glm::length(place - from);
             distance_m < nearest_m && inside(place)) {
             nearest_m = distance_m;
@@ -176,12 +193,18 @@ void WalkController::update(const CameraInput& input) {
         return;
     }
     // In steps short enough not to cross a wall, each pushed back off the walls it nears, which
-    // slides the eye along a wall it walks into.
+    // slides the eye along a wall it walks into. A push that would leave the room (where it is
+    // narrower than twice the clearance, or from outside) gives way to the plain step, and a step
+    // that leaves the room ends the walk: the eye stops before a gap too narrow to keep clear in.
     const int steps = static_cast<int>(std::ceil(glm::length(walk_m) / max_step_m));
     for (int step = 0; step < steps; ++step) {
-        const glm::dvec2 next = keep_clear(position_m_ + walk_m / double(steps));
+        const glm::dvec2 stepped = position_m_ + walk_m / double(steps);
+        glm::dvec2 next = keep_clear(stepped);
+        if (!inside(next)) {
+            next = stepped;
+        }
         if (!inside(next) && inside(position_m_)) {
-            break; // a gap narrower than twice the clearance: the eye stops before it
+            break;
         }
         position_m_ = next;
     }
@@ -204,17 +227,22 @@ glm::dvec2 WalkController::Wall::nearest_to(glm::dvec2 p) const {
 // wall's nearest point, which rounds the inside of a corner that juts into the room; a point on a
 // wall goes in along its normal. It moves p only by what it lacks, so p must be in front of the
 // walls near it, as a short step from a clear place is. A push off one wall can bring p nearer
-// the next at a corner, so it goes round a few times.
+// the next at a corner, so it goes round again until nothing moves.
 glm::dvec2 WalkController::keep_clear(glm::dvec2 p) const {
-    for (int pass = 0; pass < 4; ++pass) {
+    for (int pass = 0; pass < max_clear_passes; ++pass) {
+        bool pushed = false;
         for (const Wall& wall : walls_) {
             const glm::dvec2 nearest = wall.nearest_to(p);
             const glm::dvec2 away = p - nearest;
             const double distance_m = glm::length(away);
-            if (distance_m < wall_clearance_m) {
+            if (distance_m < wall_clearance_m - clear_tolerance_m) {
                 p = nearest +
                     wall_clearance_m * (distance_m > 0.0 ? away / distance_m : wall.inward);
+                pushed = true;
             }
+        }
+        if (!pushed) {
+            break;
         }
     }
     return p;
