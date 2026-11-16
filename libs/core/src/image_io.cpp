@@ -246,26 +246,24 @@ Image read_exr_from_memory(std::span<const std::byte> bytes) {
     return image;
 }
 
-void write_png(const Image& image, const std::filesystem::path& path, double ev100) {
+namespace {
+
+// Writes the image as an 8-bit sRGB PNG, each pixel's display-referred linear RGB in [0, 1] made
+// by `display` from its linear value.
+template <typename Display>
+void write_srgb8_png(const Image& image, const std::filesystem::path& path, Display display) {
     const int width = image.width();
     const int height = image.height();
-    if (!std::isfinite(ev100)) {
-        throw std::invalid_argument("cannot write " + path.string() +
-                                    ": the exposure must be finite, got EV100 " +
-                                    std::to_string(ev100));
-    }
-    const float scale = static_cast<float>(exposure_scale(ev100));
-
     std::vector<unsigned char> pixels(static_cast<std::size_t>(width) *
                                       static_cast<std::size_t>(height) * 3);
     std::size_t i = 0;
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             const Rgb& rgb = image.at(x, y);
-            const glm::vec3 display = pbr_neutral(glm::vec3(rgb.r, rgb.g, rgb.b) * scale);
-            pixels[i++] = linear_to_srgb8(display.r);
-            pixels[i++] = linear_to_srgb8(display.g);
-            pixels[i++] = linear_to_srgb8(display.b);
+            const glm::vec3 shown = display(glm::vec3(rgb.r, rgb.g, rgb.b));
+            pixels[i++] = linear_to_srgb8(shown.r);
+            pixels[i++] = linear_to_srgb8(shown.g);
+            pixels[i++] = linear_to_srgb8(shown.b);
         }
     }
 
@@ -279,6 +277,22 @@ void write_png(const Image& image, const std::filesystem::path& path, double ev1
         throw std::runtime_error("cannot encode " + path.string() + " as PNG");
     }
     write_bytes(path, file.data(), file.size());
+}
+
+} // namespace
+
+void write_png(const Image& image, const std::filesystem::path& path, double ev100) {
+    if (!std::isfinite(ev100)) {
+        throw std::invalid_argument("cannot write " + path.string() +
+                                    ": the exposure must be finite, got EV100 " +
+                                    std::to_string(ev100));
+    }
+    const float scale = static_cast<float>(exposure_scale(ev100));
+    write_srgb8_png(image, path, [scale](glm::vec3 rgb) { return pbr_neutral(rgb * scale); });
+}
+
+void write_display_png(const Image& image, const std::filesystem::path& path) {
+    write_srgb8_png(image, path, [](glm::vec3 rgb) { return rgb; });
 }
 
 } // namespace cs

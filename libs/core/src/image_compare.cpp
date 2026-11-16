@@ -53,35 +53,43 @@ bool find_exposures(FLIP::image<FLIP::color3>& image, FLIP::Parameters& paramete
     return true;
 }
 
-double mean_flip(const Image& reference, const Image& test) {
+// FLIP's error at every pixel, in [0, 1]: what mean_flip averages and flip_heat_map shows.
+FLIP::image<float> flip_errors(const Image& reference, const Image& test) {
     FLIP::image<FLIP::color3> flip_reference = to_flip(reference);
     FLIP::image<FLIP::color3> flip_test = to_flip(test);
+    FLIP::image<float> errors(reference.width(), reference.height(), 0.0f);
 
     FLIP::Parameters parameters; // The tool's defaults: 67 pixels per degree, ACES.
     if (!find_exposures(flip_reference, parameters) && !find_exposures(flip_test, parameters)) {
         // Both are black once FLIP's inputs are made light, so they look the same.
-        return 0.0;
+        return errors;
     }
+    FLIP::evaluate(flip_reference, flip_test, true, parameters, errors);
+    return errors;
+}
 
-    FLIP::image<float> error_map(reference.width(), reference.height(), 0.0f);
-    FLIP::evaluate(flip_reference, flip_test, true, parameters, error_map);
-
+double mean_flip(const Image& reference, const Image& test) {
+    const FLIP::image<float> errors = flip_errors(reference, test);
     double sum = 0.0;
-    for (int y = 0; y < error_map.getHeight(); ++y) {
-        for (int x = 0; x < error_map.getWidth(); ++x) {
-            sum += error_map.get(x, y);
+    for (int y = 0; y < errors.getHeight(); ++y) {
+        for (int x = 0; x < errors.getWidth(); ++x) {
+            sum += errors.get(x, y);
         }
     }
-    return sum / (static_cast<double>(error_map.getWidth()) * error_map.getHeight());
+    return sum / (static_cast<double>(errors.getWidth()) * errors.getHeight());
+}
+
+void check_same_size(const Image& reference, const Image& test) {
+    if (reference.width() != test.width() || reference.height() != test.height()) {
+        throw std::invalid_argument("cannot compare images of different sizes: the reference is " +
+                                    size_text(reference) + ", the test " + size_text(test));
+    }
 }
 
 } // namespace
 
 ImageComparison compare(const Image& reference, const Image& test) {
-    if (reference.width() != test.width() || reference.height() != test.height()) {
-        throw std::invalid_argument("cannot compare images of different sizes: the reference is " +
-                                    size_text(reference) + ", the test " + size_text(test));
-    }
+    check_same_size(reference, test);
 
     // In double, so that sums of float differences are exact for small images and NaN carries.
     double sum = 0.0;
@@ -105,6 +113,27 @@ ImageComparison compare(const Image& reference, const Image& test) {
     result.max_error = std::isnan(sum) ? std::numeric_limits<double>::quiet_NaN() : max;
     result.mean_flip = mean_flip(reference, test);
     return result;
+}
+
+Image flip_heat_map(const Image& reference, const Image& test) {
+    check_same_size(reference, test);
+    const FLIP::image<float> errors = flip_errors(reference, test);
+
+    constexpr int entries = 256;
+    Image heat_map(reference.width(), reference.height());
+    for (int y = 0; y < heat_map.height(); ++y) {
+        for (int x = 0; x < heat_map.width(); ++x) {
+            // As FLIP's own image::colorMap picks the entry. FLIP's errors are in [0, 1]; the
+            // clamp keeps anything else, NaN included, inside the table.
+            const float error = errors.get(x, y);
+            const float clamped = error > 0.0f ? std::min(error, 1.0f) : 0.0f;
+            const int i = static_cast<int>(clamped * float(entries - 1) + 0.5f);
+            // The map is defined in sRGB.
+            const FLIP::color3 linear = FLIP::color3::sRGBToLinearRGB(FLIP::MapMagma[i]);
+            heat_map.at(x, y) = Rgb{linear.r, linear.g, linear.b};
+        }
+    }
+    return heat_map;
 }
 
 } // namespace cs

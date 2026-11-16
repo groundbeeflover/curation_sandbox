@@ -2,7 +2,8 @@
 
 // Tests of image_io.hpp (M1-07): linear EXR files, written as 32-bit or 16-bit float channels and
 // read back, display PNGs through the exposure, tone mapping and sRGB pipeline of colour.hpp, and
-// EXR input from outside, which is hostile.
+// EXR input from outside, which is hostile; and (M1-18) PNGs of images that are already
+// display-referred, such as the golden-image runner's FLIP heat map, through the sRGB curve alone.
 
 #include <cs/core/colour.hpp>
 #include <cs/core/image.hpp>
@@ -38,6 +39,10 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+
+// The reference implementation's magma map, FLIP::MapMagma, for the display PNG of a heat map.
+// Last, as it defines the macros Max and Min.
+#include <FLIP.h>
 
 namespace {
 
@@ -759,4 +764,268 @@ TEST_CASE("read_exr refuses a header whose data window is empty or overflows int
                                         std::numeric_limits<std::int32_t>::max(), 0});
     CAPTURE(window.xmin, window.ymin, window.xmax, window.ymax);
     CHECK_THROWS_AS(cs::read_exr_from_memory(handmade_exr(window, bgr, {})), std::runtime_error);
+}
+
+// --- Display PNG (M1-18) -------------------------------------------------------------------------
+//
+// write_display_png writes an image that is already display-referred linear RGB, such as the FLIP
+// heat map the golden-image runner writes as flip.png on a failure (M1-18, acceptance criterion
+// 2): every channel through linear_to_srgb8 alone, with no exposure and no tone mapping.
+
+namespace {
+
+// An 8-bit PNG read back with stb_image.
+struct Png {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    bool sixteen_bit = false;
+    std::vector<unsigned char> bytes;
+
+    int at(int x, int y, int c) const {
+        return bytes[static_cast<std::size_t>((y * width + x) * channels + c)];
+    }
+};
+
+Png read_png(const std::filesystem::path& path) {
+    const std::string name = path.string();
+    Png png;
+    png.sixteen_bit = stbi_is_16_bit(name.c_str()) != 0;
+    const std::unique_ptr<unsigned char, StbiFree> data(
+        stbi_load(name.c_str(), &png.width, &png.height, &png.channels, 0));
+    INFO((data ? "" : stbi_failure_reason()));
+    REQUIRE(data != nullptr);
+    png.bytes.assign(data.get(), data.get() + static_cast<std::size_t>(png.width) * png.height *
+                                                  static_cast<std::size_t>(png.channels));
+    return png;
+}
+
+float channel_of(const cs::Rgb& rgb, int c) {
+    return c == 0 ? rgb.r : (c == 1 ? rgb.g : rgb.b);
+}
+
+// The first channel the PNG does not store as linear_to_srgb8 of the image's, or "" if it stores
+// every one so. The PNG must have the image's size and 3 channels.
+std::string first_display_difference(const cs::Image& image, const Png& png) {
+    REQUIRE(png.width == image.width());
+    REQUIRE(png.height == image.height());
+    REQUIRE(png.channels == 3);
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            for (int c = 0; c < 3; ++c) {
+                const float value = channel_of(image.at(x, y), c);
+                const int expected = cs::linear_to_srgb8(value);
+                const int stored = png.at(x, y, c);
+                if (stored != expected) {
+                    std::ostringstream out;
+                    out.precision(9);
+                    out << "pixel (" << x << ", " << y << ") channel " << c << ": " << value
+                        << " stored as " << stored << ", linear_to_srgb8 gives " << expected;
+                    return out.str();
+                }
+            }
+        }
+    }
+    return "";
+}
+
+// The sRGB decoding curve of IEC 61966-2-1, in double.
+double srgb_to_linear(double encoded) {
+    return encoded <= 0.04045 ? encoded / 12.92 : std::pow((encoded + 0.055) / 1.055, 2.4);
+}
+
+} // namespace
+
+TEST_CASE("M1-18 AC2: write_display_png stores every channel as linear_to_srgb8 of it, exactly",
+          "[core][image_io]") {
+    constexpr int width = 64;
+    constexpr int height = 6;
+    cs::Image image(width, height);
+    for (int x = 0; x < width; ++x) {
+        const float t = static_cast<float>(x) / 63.0f;
+        // A grey ramp over [0, 1].
+        image.at(x, 0) = {t, t, t};
+        // Three different ramps, so a swapped channel or a transposed image shows.
+        image.at(x, 1) = {t, 1.0f - t, static_cast<float>((x * 37) % 64) / 63.0f};
+        cs::Rng rng(cs::hash_seed(90, static_cast<std::uint32_t>(x), 0, 0, 0));
+        // Random values in [0, 1).
+        const float r = rng.next_float();
+        const float g = rng.next_float();
+        const float b = rng.next_float();
+        image.at(x, 2) = {r, g, b};
+        // Random dark values, many below 0.0031308, where the sRGB curve is linear.
+        const float u = rng.next_float();
+        const float v = rng.next_float();
+        const float w = rng.next_float();
+        image.at(x, 3) = {u * u * u * u, v * v * v * v, w * w * w * w};
+        // The edges of [0, 1] and just inside them.
+        image.at(x, 4) = {0.0f, 1.0f, (x % 2 == 0) ? 1e-6f : 0.999999f};
+        // Different values in every pixel of the last row, for a flipped image.
+        image.at(x, 5) = {1.0f - t, t * t, 0.5f * t};
+    }
+
+    const TempFile file("display_exact.png");
+    cs::write_display_png(image, file.path());
+    const Png png = read_png(file.path());
+    CHECK_FALSE(png.sixteen_bit);
+    const std::string difference = first_display_difference(image, png);
+    INFO(difference);
+    CHECK(difference.empty());
+}
+
+TEST_CASE("M1-18 AC2: write_display_png applies no exposure or tone mapping: mid grey 0.2 is 124, "
+          "(0.9, 0.05, 0.02) is (243, 63, 39)",
+          "[core][image_io]") {
+    // The sRGB curve alone, 255 (1.055 v^(1/2.4) - 0.055) rounded to the nearest integer:
+    //   0.2  -> 123.555 -> 124
+    //   0.9  -> 243.445 -> 243
+    //   0.05 ->  63.189 ->  63
+    //   0.02 ->  38.684 ->  39
+    // each at least 0.05 from a rounding boundary, far more than float arithmetic moves it.
+    // write_png's pipeline would change both: even at the exposure that leaves the values as they
+    // are (scale 1, EV100 = log2(1 / 1.2)), PBR Neutral lowers 0.2 by its offset 0.04 to 0.16,
+    // stored as 111, and compresses and desaturates the saturated colour to (0.841, 0.036, 0.0076),
+    // stored as (236, 53, 21).
+    cs::Image image(2, 1);
+    image.at(0, 0) = {0.2f, 0.2f, 0.2f};
+    image.at(1, 0) = {0.9f, 0.05f, 0.02f};
+
+    const TempFile file("display_no_tone_mapping.png");
+    cs::write_display_png(image, file.path());
+    const Png png = read_png(file.path());
+    REQUIRE(png.width == 2);
+    REQUIRE(png.height == 1);
+    REQUIRE(png.channels == 3);
+    CHECK(png.at(0, 0, 0) == 124);
+    CHECK(png.at(0, 0, 1) == 124);
+    CHECK(png.at(0, 0, 2) == 124);
+    CHECK(png.at(1, 0, 0) == 243);
+    CHECK(png.at(1, 0, 1) == 63);
+    CHECK(png.at(1, 0, 2) == 39);
+    // And the same as linear_to_srgb8, which the header names.
+    const std::string difference = first_display_difference(image, png);
+    INFO(difference);
+    CHECK(difference.empty());
+}
+
+TEST_CASE("M1-18 AC2: write_display_png stores values above 1 as 255, and negative and NaN values "
+          "as 0",
+          "[core][image_io]") {
+    constexpr float nan = std::numeric_limits<float>::quiet_NaN();
+    constexpr float inf = std::numeric_limits<float>::infinity();
+    constexpr float largest = std::numeric_limits<float>::max();
+    cs::Image image(4, 2);
+    // Above 1, up to infinity; 1 itself is 255 too.
+    image.at(0, 0) = {1.0000001f, 1.5f, 2.0f};
+    image.at(1, 0) = {1e30f, largest, inf};
+    image.at(2, 0) = {65504.0f, 255.0f, 1.0f};
+    image.at(3, 0) = {inf, 1.0f, 3.0f};
+    // Negative, down to minus infinity, and NaN; 0 and negative zero are 0 too.
+    image.at(0, 1) = {-0.0f, -1e-30f, -0.5f};
+    image.at(1, 1) = {-1e30f, -inf, nan};
+    image.at(2, 1) = {nan, nan, nan};
+    image.at(3, 1) = {-1.0f, 0.0f, -largest};
+
+    const TempFile file("display_clamp.png");
+    cs::write_display_png(image, file.path());
+    const Png png = read_png(file.path());
+    REQUIRE(png.width == 4);
+    REQUIRE(png.height == 2);
+    REQUIRE(png.channels == 3);
+    for (int x = 0; x < 4; ++x) {
+        for (int c = 0; c < 3; ++c) {
+            CAPTURE(x, c);
+            CHECK(png.at(x, 0, c) == 255);
+            CHECK(png.at(x, 1, c) == 0);
+        }
+    }
+}
+
+TEST_CASE("M1-18 AC2: write_display_png writes an 8-bit PNG with 3 channels and the image's size",
+          "[core][image_io]") {
+    // 128 x 72 is the size of the skeleton golden image; the others catch a transposed width and
+    // height, and the smallest image.
+    const std::pair<int, int> size =
+        GENERATE(values<std::pair<int, int>>({{1, 1}, {3, 2}, {2, 3}, {37, 23}, {128, 72}}));
+    const int width = size.first;
+    const int height = size.second;
+    CAPTURE(width, height);
+    cs::Image image(width, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            // Different in every pixel and channel, so the positions are checked too.
+            image.at(x, y) = {static_cast<float>(x) / static_cast<float>(width),
+                              static_cast<float>(y) / static_cast<float>(height),
+                              static_cast<float>(x + y) / static_cast<float>(width + height)};
+        }
+    }
+
+    const TempFile file("display_size.png");
+    cs::write_display_png(image, file.path());
+    const Png png = read_png(file.path());
+    CHECK(png.width == width);
+    CHECK(png.height == height);
+    CHECK(png.channels == 3);
+    CHECK_FALSE(png.sixteen_bit);
+    const std::string difference = first_display_difference(image, png);
+    INFO(difference);
+    CHECK(difference.empty());
+}
+
+TEST_CASE("M1-18 AC2: magma's colours as linear RGB are written as magma's 8-bit sRGB colours",
+          "[core][image_io]") {
+    // The heat map holds FLIP's magma map, defined in sRGB, as linear RGB (image_compare.hpp);
+    // written with write_display_png it must show the map's own colours: 255 c rounded, for each
+    // sRGB channel c of each entry. The channel closest to a rounding boundary, entry 160's red
+    // (255 * 0.31961 = 81.50055), is 5.5e-4 from it; the round trip through float linear RGB moves
+    // 255 c by about 1e-5. Allowing 0.51 accepts either neighbour there and nothing else.
+    cs::Image image(256, 1);
+    for (int i = 0; i < 256; ++i) {
+        // color3's constructor sets x, y and z, which are its r, g and b.
+        const FLIP::color3& srgb = FLIP::MapMagma[i];
+        image.at(i, 0) = {static_cast<float>(srgb_to_linear(srgb.x)),
+                          static_cast<float>(srgb_to_linear(srgb.y)),
+                          static_cast<float>(srgb_to_linear(srgb.z))};
+    }
+
+    const TempFile file("display_magma.png");
+    cs::write_display_png(image, file.path());
+    const Png png = read_png(file.path());
+    REQUIRE(png.width == 256);
+    REQUIRE(png.height == 1);
+    REQUIRE(png.channels == 3);
+
+    int failures = 0;
+    for (int i = 0; i < 256; ++i) {
+        const FLIP::color3& srgb = FLIP::MapMagma[i];
+        const std::array<double, 3> expected = {255.0 * srgb.x, 255.0 * srgb.y, 255.0 * srgb.z};
+        for (int c = 0; c < 3; ++c) {
+            const int stored = png.at(i, 0, c);
+            if (!(std::abs(stored - expected[static_cast<std::size_t>(c)]) <= 0.51)) {
+                if (failures == 0) {
+                    UNSCOPED_INFO("magma entry " << i << " channel " << c << ": stored " << stored
+                                                 << ", expected "
+                                                 << expected[static_cast<std::size_t>(c)]);
+                }
+                ++failures;
+            }
+        }
+    }
+    CHECK(failures == 0);
+}
+
+TEST_CASE("M1-18: write_display_png throws std::runtime_error when the file cannot be written",
+          "[core][image_io]") {
+    const cs::Image image(2, 2);
+    SECTION("in a directory that does not exist") {
+        CHECK_THROWS_AS(cs::write_display_png(image, missing_directory() / "image.png"),
+                        std::runtime_error);
+    }
+    SECTION("at a path that is a directory") {
+        CHECK_THROWS_AS(cs::write_display_png(image, std::filesystem::temp_directory_path()),
+                        std::runtime_error);
+    }
+    SECTION("at an empty path") {
+        CHECK_THROWS_AS(cs::write_display_png(image, std::filesystem::path()), std::runtime_error);
+    }
 }
