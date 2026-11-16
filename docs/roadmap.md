@@ -23,8 +23,8 @@ picture, and `/groom` updates its progress section weekly.
 
 | Milestone | Goal | Journeys | Tasks | Target date |
 | --- | --- | --- | --- | --- |
-| [M1 Walking skeleton](#m1-walking-skeleton) | The app opens, a room is built, one painting hangs at true size under one spotlight in candela, you walk around and read its lux | first steps of J1, J2 | 34 | 4 Dec 2026 |
-| [M2 Build and hang](#m2-build-and-hang) | Walls, frames, imports and checklists, hanging with snapping, save, undo and recovery, a 50-work gallery in budget | J1, J3; J5's undo and Save As | 37 | 8 Jan 2027 |
+| [M1 Walking skeleton](#m1-walking-skeleton) | The app opens, a room is built, one painting hangs at true size under one spotlight in candela, you walk around and read its lux | first steps of J1, J2 | 45 | 27 Nov 2026 |
+| [M2 Build and hang](#m2-build-and-hang) | Walls, frames, imports and checklists, hanging with snapping, save, undo and recovery, a 50-work gallery in budget | J1, J3; J5's undo and Save As | 41 | 18 Dec 2026 |
 | [M3 Light it right](#m3-light-it-right) | Real fixtures, painting materials and glazing, bounced light, conservation, stills | J2, J4 (stills) | about 32 | 12 Feb 2027 |
 | [M4 Curator alpha](#m4-curator-alpha) | The catalogue, installation documents, portable builds; v0.1.0 to curators | J1 to J4 | about 32 | 19 Mar 2027 |
 | [M5 Ray-traced tier](#m5-ray-traced-tier) | Ray-traced shadows, reflections and bounced light; the GPU path tracer | all, faster and finer | about 28 | 30 Apr 2027 |
@@ -176,28 +176,30 @@ Bold IDs are on the critical path.
 | M1-19 | Vulkan device bootstrap, headless, with validation as test failure | gpu | feature | M | agent | M1-02, M1-36 | `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/test_device.cpp`, `libs/gpu/tests/main.cpp`, `.claude/agents/gpu-reviewer.md`, `tools/sanitizers/lsan.supp` |
 | M1-20 | Slang shaders at build time and an offscreen triangle | gpu | feature | M | agent | M1-19 | `cmake/CsShaders.cmake`, `libs/gpu/CMakeLists.txt`, `libs/gpu/shaders/`, `libs/gpu/include/cs/gpu/pipeline.hpp`, `libs/gpu/src/pipeline.cpp`, `libs/gpu/include/cs/gpu/offscreen.hpp`, `libs/gpu/src/offscreen.cpp`, `libs/gpu/tests/test_offscreen.cpp` |
 | M1-21 | Upload the render world: meshes, materials and textures | gpu | feature | M | agent | M1-20, M1-13, M1-14 | `libs/gpu/include/cs/gpu/scene.hpp`, `libs/gpu/src/scene.cpp`, `libs/gpu/src/upload.cpp`, `libs/gpu/tests/test_scene.cpp` |
-| M1-22 | Standard tier: exact direct light from spotlights | gpu | feature | M | agent | M1-21, M1-06, M1-11, M1-15, M1-34 | `libs/gpu/shaders/standard.slang`, `libs/gpu/shaders/common/`, `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/tests/test_standard_tier.cpp`, `tests/integration/test_standard_vs_engine.cpp` |
-| M1-23 | Swapchain presenter for a window surface | gpu | feature | S | agent | M1-20 | `libs/gpu/include/cs/gpu/presenter.hpp`, `libs/gpu/src/presenter.cpp`, `libs/gpu/tests/test_presenter.cpp` |
+| M1-22 | Standard tier: exact direct light from spotlights | gpu | feature | M | agent | M1-21, M1-06, M1-11, M1-15, M1-34 | `libs/gpu/shaders/standard.slang`, `libs/gpu/shaders/modules/lighting.slang`, `libs/gpu/shaders/modules/luminaire.slang`, `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/tests/test_standard_tier.cpp`, `tests/integration/test_standard_vs_engine.cpp`, `tests/integration/gpu_validation.cpp` |
+| M1-23 | Swapchain presenter for a window surface | ui | feature | S | agent | M1-20 | `libs/gpu/include/cs/gpu/presenter.hpp`, `libs/gpu/src/presenter.cpp`, `libs/gpu/tests/test_presenter.cpp` |
 | M1-24 | Orbit and walk camera controllers | editor | feature | S | agent | M1-13 | `libs/editor/include/cs/editor/camera_controller.hpp`, `libs/editor/src/camera_controller.cpp`, `libs/editor/tests/test_camera_controller.cpp` |
 | M1-25 | Commands and tools: new room, add a painting, light it | editor | feature | M | agent | M1-09, M1-10 | `libs/editor/include/cs/editor/commands/`, `libs/editor/src/commands/`, `libs/editor/include/cs/editor/tool.hpp`, `libs/editor/src/tool.cpp`, `libs/editor/tests/test_commands.cpp`, `libs/editor/tests/test_tool.cpp` |
-| M1-26 | Application shell with the Vulkan viewport | ui | feature | M | agent | M1-04, M1-22, M1-23, M1-34 | `libs/ui/`, `apps/curation/`, `cmake/CsQt.cmake` |
+| M1-26 | Application shell with the Vulkan viewport | ui | feature | M | agent | M1-04, M1-22, M1-23, M1-34, M1-44, M1-45 | `libs/ui/`, `apps/curation/`, `cmake/CsQt.cmake` |
 | M1-27 | Walking skeleton: build a room, hang a painting, light it, walk | ui | feature | M | agent | M1-26, M1-24, M1-25, M1-15, M1-17, M1-43 | `libs/ui/src/features/skeleton_commands.cpp`, `libs/ui/src/features/camera_input.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_walking_skeleton.cpp`, `.claude/agents/ux-reviewer.md`, `docs/product/screens/m1-walking-skeleton.png` |
-| M1-28 | cs-bench, the empty-room scene and the first baseline | build | test | M | agent | M1-22, M1-33 | `apps/cs-bench/`, `bench/scenes/empty-room/`, `bench/baselines/` |
-| **M1-29** | GPU and golden tests on lavapipe in CI | build | test | S | agent | M1-03, M1-18, M1-22 | `.github/workflows/gpu.yml`, `apps/cs-render/`, `tests/golden/skeleton-standard/` |
+| M1-28 | cs-bench, the empty-room scene and the first baseline | build | test | M | agent | M1-22, M1-33, M1-44 | `apps/cs-bench/`, `bench/scenes/empty-room/`, `bench/baselines/` |
+| **M1-29** | GPU and golden tests on lavapipe in CI | ci | test | S | agent | M1-03, M1-18, M1-22 | `.github/workflows/gpu.yml`, `apps/cs-render/`, `tests/golden/skeleton-standard/` |
 | M1-30 | CI: binary caches and the full compiler matrix | build | chore | S | agent | M1-02 | `.github/workflows/ci.yml` |
-| **M1-31** | The app in CI: builds on Windows and Linux, UI tests on lavapipe | build | chore | S | agent | M1-26, M1-29, M1-30, M1-39 | `.github/workflows/ci.yml`, `.github/workflows/gpu.yml` |
+| **M1-31** | The app in CI: builds on Windows and Linux, UI tests on lavapipe | ci | chore | S | agent | M1-26, M1-29, M1-30, M1-39 | `.github/workflows/ci.yml`, `.github/workflows/gpu.yml` |
 | **M1-32** | The skeleton test scene and its test chart | doc | test | S | agent | M1-08 | `tests/scenes/skeleton/`, `tools/test-chart/`, `libs/doc/tests/test_skeleton_scene.cpp` |
 | M1-33 | Budgets as data and the benchmark comparison script | build | test | S | agent | - | `bench/budgets.json`, `scripts/perf-compare.py`, `scripts/tests/test_perf_compare.py` |
 | M1-34 | Generated registries and the integration-test executable | build | chore | S | agent | M1-01 | `cmake/CsRegistry.cmake`, `cmake/CsIntegration.cmake`, `tests/integration/` |
 | M1-35 | Re-exported module dependencies (EXPORTS in cs_add_module) | build | chore | S | agent | M1-01, M1-36 | `cmake/CsModule.cmake`, `cmake/tests/module_glob.cmake`, `cmake/tests/module_glob/`, `libs/world/CMakeLists.txt`, `docs/product/blueprint.md`, `CLAUDE.md` |
 | M1-36 | Fix the lavapipe manifest path in CLAUDE.md and /ship | gpu | chore | S | agent | - | `CLAUDE.md`, `.claude/skills/ship/SKILL.md` |
 | M1-37 | Per-run temporary folders in the doc tests | doc | bug | S | agent | M1-32 | `libs/doc/tests/test_project_io.cpp`, `libs/doc/tests/test_skeleton_scene.cpp`, `libs/doc/tests/temp_folder.hpp` |
-| M1-38 | CI: check installed dependency versions and test the test chart | build | chore | S | agent | M1-30, M1-32, M1-02 | `.github/workflows/ci.yml` |
-| M1-39 | Build Embree and Slang in release only, through overlay triplets | build | chore | S | agent | M1-38 | `triplets/`, `vcpkg-configuration.json`, `.github/workflows/ci.yml`, `docs/dependencies.md` |
+| M1-38 | CI: check installed dependency versions and test the test chart | ci | chore | S | agent | M1-30, M1-32, M1-02 | `.github/workflows/ci.yml` |
+| M1-39 | Build Embree and Slang in release only, through overlay triplets | ci | chore | S | agent | M1-38 | `triplets/`, `vcpkg-configuration.json`, `.github/workflows/ci.yml`, `docs/dependencies.md` |
 | M1-40 | Private external libraries, and third_party/ from the root | build | chore | S | agent | M1-35, M1-02, M1-41 | `cmake/CsModule.cmake`, `cmake/tests/module_glob.cmake`, `cmake/tests/module_glob/`, `CMakeLists.txt`, `third_party/`, `libs/core/CMakeLists.txt`, `libs/assets/CMakeLists.txt`, `docs/product/blueprint.md`, `CLAUDE.md` |
 | M1-41 | Link vcpkg's libtiff, not the system's, and check every vcpkg library | build | bug | S | agent | M1-02 | `libs/assets/CMakeLists.txt`, `cmake/CsVcpkgPackages.cmake` |
 | M1-42 | Defaulted equality for meshes, materials and spots | world | chore | S | agent | M1-13 | `libs/geom/include/cs/geom/mesh.hpp`, `libs/material/include/cs/material/painting_material.hpp`, `libs/light/include/cs/light/distribution.hpp`, `libs/world/include/cs/world/world.hpp`, `libs/world/src/world.cpp`, `libs/world/tests/test_determinism.cpp` |
 | M1-43 | One check for asset file names, in libs/assets | assets | chore | S | agent | M1-17, M1-21, M1-34 | `libs/assets/include/cs/assets/asset_file.hpp`, `libs/assets/src/asset_file.cpp`, `libs/assets/tests/test_asset_file.cpp`, `libs/engine/include/cs/engine/textures.hpp`, `libs/engine/src/textures.cpp`, `libs/engine/tests/test_textures.cpp`, `libs/gpu/include/cs/gpu/scene.hpp`, `libs/gpu/src/scene.cpp`, `libs/gpu/tests/test_scene.cpp`, `tests/integration/test_asset_names.cpp` |
+| M1-44 | Colour pipeline in Slang and the tone-mapping pass | core | feature | S | agent | M1-20, M1-06 | `libs/gpu/shaders/modules/colour.slang`, `libs/gpu/shaders/tonemap.slang`, `libs/gpu/shaders/colour_check.slang`, `libs/gpu/include/cs/gpu/tonemap.hpp`, `libs/gpu/src/tonemap.cpp`, `libs/gpu/tests/test_tonemap.cpp` |
+| M1-45 | Relative pointer mode for walking: Wayland lock and grab fallback | ui | feature | S | agent | M1-04, M1-01 | `cmake/CsQt.cmake`, `libs/ui/CMakeLists.txt`, `libs/ui/src/viewport/`, `libs/ui/tests/main.cpp`, `libs/ui/tests/test_pointer_lock.cpp` |
 
 ### Task graph
 
@@ -247,6 +249,7 @@ graph LR
     M1_22["M1-22 Standard tier: exact direct ligh..."]
     M1_23["M1-23 Swapchain presenter for a window..."]
     M1_29["M1-29 GPU and golden tests on lavapipe..."]
+    M1_44["M1-44 Colour pipeline in Slang and the..."]
   end
   subgraph E1_5["E1.5 Walk around it"]
     M1_04["M1-04 Spike: Qt Widgets shell around a..."]
@@ -255,6 +258,7 @@ graph LR
     M1_26["M1-26 Application shell with the Vulka..."]
     M1_27["M1-27 Walking skeleton: build a room, ..."]
     M1_31["M1-31 The app in CI: builds on Windows..."]
+    M1_45["M1-45 Relative pointer mode for walkin..."]
   end
   M1_01 --> M1_02
   M1_01 --> M1_05
@@ -301,6 +305,8 @@ graph LR
   M1_22 --> M1_26
   M1_23 --> M1_26
   M1_34 --> M1_26
+  M1_44 --> M1_26
+  M1_45 --> M1_26
   M1_26 --> M1_27
   M1_24 --> M1_27
   M1_25 --> M1_27
@@ -309,6 +315,7 @@ graph LR
   M1_43 --> M1_27
   M1_22 --> M1_28
   M1_33 --> M1_28
+  M1_44 --> M1_28
   M1_03 --> M1_29
   M1_18 --> M1_29
   M1_22 --> M1_29
@@ -334,9 +341,13 @@ graph LR
   M1_17 --> M1_43
   M1_21 --> M1_43
   M1_34 --> M1_43
+  M1_20 --> M1_44
+  M1_06 --> M1_44
+  M1_04 --> M1_45
+  M1_01 --> M1_45
   classDef crit stroke:#b60205,stroke-width:3px
   class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_31 crit
-  linkStyle 4,14,17,20,21,25,54,58,61 stroke:#b60205,stroke-width:3px
+  linkStyle 4,14,17,20,21,25,57,61,64 stroke:#b60205,stroke-width:3px
 ```
 
 The critical path is ten tasks: the module layout, the document store, the skeleton scene, the
@@ -353,12 +364,19 @@ A lane is a group of tasks that touch different files, so they can run in parall
 | --- | --- | --- |
 | 0 | at once | build (M1-01, M1-33), gpu spike (M1-03), ui spike (M1-04) |
 | 1 | M1-01 merged | build (M1-02, M1-34, M1-35), core (M1-05, M1-06), doc (M1-08), geom (M1-10), light (M1-11), gpu (M1-36, once M1-03 frees the lane), editor (M2-10, M2-12 from M2, which need only the layout) |
-| 2 | M1-02, M1-05, M1-08, M1-36 merged | core (M1-07), doc (M1-32 → M1-37, M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30 → M1-38 → M1-39, M1-41 → M1-40) |
-| 3 | M1-13 merged | engine (M1-15 → M1-17), gpu (M1-21 → M1-22, M1-23), editor (M1-24, M1-25), world (M1-42) |
-| 4 | M1-22 merged | ui (M1-26 → M1-27), build (M1-18, M1-28, M1-29 → M1-31) |
+| 2 | M1-02, M1-05, M1-08, M1-36 merged | core (M1-07), doc (M1-32 → M1-37, M1-09), material (M1-12), assets (M1-14), gpu (M1-19 → M1-20), build (M1-30, M1-33, M1-41 → M1-40), ci (M1-38 → M1-39) |
+| 3 | M1-13 merged | engine (M1-15 → M1-17), gpu (M1-21 → M1-22), editor (M1-24, M1-25), world (M1-42), ui (M1-23 → M1-45), core (M1-44), assets (M1-43, once M1-17 and M1-21 merge) |
+| 4 | M1-22 merged | ui (M1-26 → M1-27), build (M1-18, M1-28), ci (M1-29 → M1-31) |
 
 Three sessions are never short of work after stage 0: from stage 1 on, at least five lanes are
 open.
+
+The groom of 16 November 2026 changed three lanes. The workflow tasks (M1-29, M1-31, M1-38,
+M1-39) moved from build to a lane of their own, ci, because build held nine of the sixteen M1
+tasks not yet started and would have set the milestone's end. M1-23 moved to the ui lane, idle
+until M1-26 can start, so that the presenter M1-26 needs is not queued behind M1-22 in the gpu
+lane. M1-22 gave its colour pipeline to M1-44 (in the core lane, also idle), and M1-26 its
+pointer plumbing to M1-45, so that the two largest tasks between today and the app are smaller.
 
 ## M2 Build and hang
 
@@ -391,7 +409,7 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 
 | ID | Title | Area | Type | Size | Owner | Blocked by | Touches |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| M2-01 | Walls with thickness, joined corners and openings | geom | feature | M | agent | M1-10 | `libs/geom/include/cs/geom/walls.hpp`, `libs/geom/src/walls.cpp`, `libs/geom/tests/test_walls.cpp` |
+| M2-01 | Walls with thickness, joined corners and openings | geom | feature | M | agent | M1-10 | `libs/geom/include/cs/geom/walls.hpp`, `libs/geom/src/walls.cpp`, `libs/geom/tests/test_walls.cpp`, `libs/geom/include/cs/geom/room.hpp`, `libs/geom/src/room.cpp`, `libs/geom/tests/test_room.cpp` |
 | M2-02 | Wall tool: draw walls with typed lengths and snapping | editor | feature | M | agent | M1-25 | `libs/editor/include/cs/editor/tools/wall_tool.hpp`, `libs/editor/src/tools/wall_tool.cpp`, `libs/editor/tests/test_wall_tool.cpp` |
 | M2-03 | Openings and wall finishes | editor | feature | S | agent | M1-25, M2-06 | `libs/editor/include/cs/editor/commands/openings.hpp`, `libs/editor/src/commands/openings.cpp`, `libs/editor/include/cs/editor/commands/finishes.hpp`, `libs/editor/src/commands/finishes.cpp`, `libs/editor/tests/test_openings.cpp`, `data/finishes/wall-` |
 | M2-04 | Plan view and wall drawing in the app | ui | feature | M | agent | M2-02, M2-18, M2-31, M1-27 | `libs/ui/src/features/walls.cpp`, `libs/ui/src/widgets/measurements_box.cpp`, `libs/ui/include/cs/ui/widgets/measurements_box.hpp`, `libs/ui/tests/test_walls_ui.cpp`, `docs/product/screens/m2-walls.png` |
@@ -418,8 +436,8 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-25 | Save, open, recent files, undo, redo and recovery in the app | ui | feature | M | agent | M2-21, M2-23, M1-27, M2-41 | `libs/ui/src/features/project_menu.cpp`, `libs/ui/src/features/edit_menu.cpp`, `libs/ui/tests/test_project_ui.cpp`, `libs/ui/src/features/file_menu.cpp`, `docs/product/screens/m2-recovery.png` |
 | M2-26 | Spotlight shadow maps, cached while lights are still | gpu | feature | M | agent | M1-22, M1-29, M1-34 | `libs/gpu/include/cs/gpu/shadows.hpp`, `libs/gpu/src/shadows.cpp`, `libs/gpu/shaders/shadow.slang`, `libs/gpu/shaders/standard.slang`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/tests/test_shadows.cpp`, `tests/golden/skeleton-standard/`, `tests/integration/test_shadows_vs_engine.cpp` |
 | M2-27 | Texture residency by on-screen size, within a budget | gpu | feature | M | agent | M1-21, M2-26, M1-43 | `libs/gpu/include/cs/gpu/residency.hpp`, `libs/gpu/src/residency.cpp`, `libs/gpu/src/scene.cpp`, `libs/gpu/tests/test_residency.cpp`, `libs/gpu/shaders/standard.slang` |
-| M2-28 | Lux on every work, recomputed in the background | engine | feature | M | agent | M1-15, M2-24, M1-28, M2-29 | `libs/engine/include/cs/engine/lux_service.hpp`, `libs/engine/src/lux_service.cpp`, `libs/engine/tests/test_lux_service.cpp`, `apps/cs-bench/` |
-| M2-29 | The gallery-50 benchmark scene and a memory check in CI | build | test | M | agent | M1-28, M1-29, M2-08, M2-27, M2-31, M1-31 | `apps/cs-bench/`, `bench/baselines/`, `.github/workflows/gpu.yml` |
+| M2-28 | Lux on every work, recomputed in the background | engine | feature | M | agent | M1-15, M2-24, M1-28, M2-29 | `libs/engine/include/cs/engine/lux_service.hpp`, `libs/engine/src/lux_service.cpp`, `libs/engine/tests/test_lux_service.cpp`, `apps/cs-bench/`, `libs/engine/src/lighting.hpp`, `libs/engine/src/lux.cpp`, `libs/engine/src/path_tracer.cpp` |
+| M2-29 | The gallery-50 benchmark scene and a memory check in CI | ci | test | M | agent | M1-28, M1-29, M2-08, M2-27, M2-31, M1-31 | `apps/cs-bench/`, `bench/baselines/`, `.github/workflows/gpu.yml` |
 | M2-30 | Journey J1 as an automated test | editor | test | S | agent | M2-02, M2-03, M2-33, M2-15, M2-16, M2-17, M2-21 | `libs/editor/tests/test_journey_j1.cpp`, `libs/editor/tests/data/journeys/` |
 | **M2-31** | Walls, openings, finishes and placeholders in the render world | world | feature | M | agent | M2-01, M2-06, M1-13 | `libs/world/src/compile.cpp`, `libs/world/src/walls.cpp`, `libs/world/tests/test_walls_world.cpp` |
 | M2-32 | TIFF import and fuzz targets for every image loader | assets | feature | S | agent | M2-09, M1-41, M1-43 | `libs/assets/src/tiff.cpp`, `libs/assets/tests/test_import_tiff.cpp`, `libs/assets/tests/data/tiff/`, `libs/assets/fuzz/`, `libs/assets/src/asset_file.cpp` |
@@ -570,7 +588,7 @@ assets (M2-09), editor (M2-10 and M2-12 if not already done during M1), gpu (M2-
 | gpu | M2-19; M2-26 → M2-27 → M2-36; M2-39 (after M1-27) |
 | engine | M2-28 after M2-29 |
 | ui | M2-11 → M2-13 → M2-37; M2-04 → M2-34; M2-20 → M2-35; M2-25 |
-| build | M2-29 |
+| ci | M2-29 |
 
 ## M3 Light it right
 
@@ -594,10 +612,20 @@ bake preview at most 2 s and full at most 30 s on the reference CPU (`cs-bench -
 15 min on the reference CPU (`cs-bench --still`); lux readings
 identical with the denoiser on and off; journey J2 as an automated test.
 
-**Spikes:** which manufacturers allow their IES files to be redistributed (before E3.1);
-lightmaps against probes for frames and works (before E3.3); which CIE 171 test cases can be
-rebuilt and checked against Radiance. **Owner:** apply for free open-source code signing
+**Spikes**, filed as tasks on 16 November 2026 so that their records are ready when the
+milestone is decomposed, at about 70% of M2: which manufacturers allow their IES files to be
+redistributed (M3-01, before E3.1; the owner sends the requests it drafts); lightmaps against
+probes for frames and works (M3-02, before E3.3); which CIE 171 test cases can be rebuilt and
+checked against Radiance (M3-03). **Owner:** apply for free open-source code signing
 (ADR 0009).
+
+### Spikes filed
+
+| ID | Title | Area | Type | Size | Owner | Blocked by | Touches |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| M3-01 | Spike: which manufacturers' IES files we may ship | light | spike | S | agent | - | `docs/adr/0012-fixture-library-sources.md` |
+| M3-02 | Spike: lightmaps against probes for frames and works | engine | spike | M | agent | M1-16, M1-17 | `docs/adr/0013-bounced-light-on-frames-and-works.md` |
+| **M3-03** | Spike: CIE 171 test cases and Radiance as a second reference | engine | spike | S | agent | M1-16 | `docs/adr/0014-external-validation.md` |
 
 ## M4 Curator alpha
 
@@ -671,9 +699,9 @@ locally; friends' machines at milestone ends); memory and correctness in CI.
 | --- | --- | --- | --- |
 | Vulkan tests in CI on lavapipe | M1-03 | How GPU tests and goldens run in CI | ADR 0010 |
 | Qt Widgets around a Vulkan viewport | M1-04 | Confirms or replaces the toolkit | ADR 0011 |
-| IES file licences | M3 | Which real fixtures ship | ADR |
-| Lightmaps against probes for frames and works | M3 | How the Standard tier gets bounced light | ADR |
-| CIE 171 cases and Radiance | M3 | Which external validation the engine runs | ADR |
+| IES file licences | M3-01 | Which real fixtures ship | ADR 0012 |
+| Lightmaps against probes for frames and works | M3-02 | How the Standard tier gets bounced light | ADR 0013 |
+| CIE 171 cases and Radiance | M3-03 | Which external validation the engine runs | ADR 0014 |
 | Real-gallery lux comparison | M4 | Whether shared errors (fixtures as points, photograph albedo) need work | report and ADR |
 | Many-light sampling and denoising | M5 | The Ray-traced tier's lighting | ADR |
 | GPU path tracer structure | M5 | Megakernel or wavefront; ray queries or pipelines | ADR |
@@ -698,8 +726,8 @@ Estimated from scratch for this way of working:
 
 | Milestone | Tasks | Weeks | Window |
 | --- | --- | --- | --- |
-| M1 | 34 | 3 | 16 Nov to 4 Dec 2026 |
-| M2 | 37 | 3.5 | 7 Dec 2026 to 8 Jan 2027 (with the break) |
+| M1 | 45 | 2.5 | 11 to 27 Nov 2026 (re-estimated) |
+| M2 | 41 | 5 | 16 Nov to 18 Dec 2026, beside M1 at first (re-estimated) |
 | M3 | about 32 | 5 | 11 Jan to 12 Feb 2027 |
 | M4 | about 32 | 5 | 15 Feb to 19 Mar 2027 (curator alpha) |
 | M5 | about 28 | 6 | 22 Mar to 30 Apr 2027 |
@@ -709,14 +737,24 @@ Later milestones carry more slack: they include spikes whose outcome is unknown 
 curator feedback. `/groom` recalculates the dates from the measured throughput after M1, and the
 milestones on GitHub move with it.
 
+**Re-estimated on 16 November 2026.** Work began on 11 November, and 20 tasks merged in the
+first week against the 15 planned. M1's end is set by its lanes more than by review: after the
+three pull requests in review, its longest lane (build and CI together) held nine tasks. With
+the ci lane split off, M1 should end around 24 November; 27 November leaves slack. M2's 41
+tasks take three to four weeks at 15 to 20 a week, and its M tasks have run larger than
+planned (S tasks stay within 400 lines of non-test code, M tasks typically about 700), so they
+take more review time; 18 December keeps it before the break. M3 to M6 stay as planned until
+M1 closes.
+
 ## Progress
 
 Updated by `/groom`.
 
 | Milestone | Done | Open | In progress | Notes |
 | --- | --- | --- | --- | --- |
-| M1 | 0 | 34 | 0 | not started |
-| M2 | 0 | 37 | 0 | not started |
+| M1 | 26 | 16 | 3 | 16 Nov: E1.2 closed; M1-21, M1-09 and M1-17 merged. Left: the GPU path, the app, goldens, benchmarks and CI. M1-18, M1-22 and M1-24 in progress; 20 tasks merged in the week to 15 Nov |
+| M2 | 0 | 41 | 0 | 16 Nov: 7 tasks ready (walls and frames, the frame library and the .curation file, museum text and CSV, colour-managed import) |
+| M3 | 0 | 3 | 0 | 16 Nov: its three spikes filed; the rest is decomposed at about 70% of M2 |
 
 ## The task file
 
