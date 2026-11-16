@@ -140,5 +140,5 @@ void check_intensity(uint3 id : SV_DispatchThreadID, uniform CheckPush push) {
         return;
     push.intensities[id.x] = intensity_cd(push.lights[push.light],
                                           light_profiles(push.lights, push.light_count),
-                                          push.directions[id.x].xyz);
+                                          normalize(push.directions[id.x].xyz));
 }

@@ -37,13 +37,11 @@ float interpolate(float* table, float position, uint count) {
     return lerp(table[below], table[below + 1], clamped - float(below));
 }
 
-// The light's intensity in candela towards a world direction, which need not be of unit length
-// but must not be zero.
-public float intensity_cd(LightData light, float* profiles, float3 world_direction) {
-    const float3 d = normalize(world_direction);
-    const float x = dot(d, light.axis_x);
-    const float y = dot(d, light.axis_y);
-    const float z = dot(d, light.axis_z);
+// The light's intensity in candela towards a unit world direction.
+public float intensity_cd(LightData light, float* profiles, float3 direction) {
+    const float x = dot(direction, light.axis_x);
+    const float y = dot(direction, light.axis_y);
+    const float z = dot(direction, light.axis_z);
     // 1 - cos(theta) without cancelling near the axis, and w = sin(theta / 2): the table's index.
     // Straight behind the fixture, rounding can take z just below -1; at most 2 keeps w at most 1,
     // so that a light lit all round is not dark there.

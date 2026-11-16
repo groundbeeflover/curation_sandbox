@@ -38,6 +38,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -246,6 +247,49 @@ class MappedBuffer {
     VkDeviceAddress address_ = 0;
 };
 
+// Records commands with `record` into a one-time command buffer, submits it to the device's
+// queue and waits for it, then frees the pool and fence.
+void submit_and_wait(const Device& gpu, const std::function<void(VkCommandBuffer)>& record) {
+    const VkDevice device = gpu.device();
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    const Cleanup cleanup([&] {
+        vkDestroyFence(device, fence, nullptr);
+        vkDestroyCommandPool(device, pool, nullptr);
+    });
+    VkCommandPoolCreateInfo pool_info{};
+    pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_info.queueFamilyIndex = gpu.queue_family();
+    REQUIRE(vkCreateCommandPool(device, &pool_info, nullptr, &pool) == VK_SUCCESS);
+    VkCommandBufferAllocateInfo command_info{};
+    command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_info.commandPool = pool;
+    command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_info.commandBufferCount = 1;
+    VkCommandBuffer commands = VK_NULL_HANDLE;
+    REQUIRE(vkAllocateCommandBuffers(device, &command_info, &commands) == VK_SUCCESS);
+    VkFenceCreateInfo fence_info{};
+    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    REQUIRE(vkCreateFence(device, &fence_info, nullptr, &fence) == VK_SUCCESS);
+
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    REQUIRE(vkBeginCommandBuffer(commands, &begin) == VK_SUCCESS);
+    record(commands);
+    REQUIRE(vkEndCommandBuffer(commands) == VK_SUCCESS);
+
+    VkCommandBufferSubmitInfo command_submit{};
+    command_submit.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    command_submit.commandBuffer = commands;
+    VkSubmitInfo2 submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    submit.commandBufferInfoCount = 1;
+    submit.pCommandBufferInfos = &command_submit;
+    REQUIRE(vkQueueSubmit2(gpu.queue(), 1, &submit, fence) == VK_SUCCESS);
+    REQUIRE(vkWaitForFences(device, 1, &fence, VK_TRUE, 60'000'000'000ull) == VK_SUCCESS);
+}
+
 // The intensity, in candela, that the shader's intensity_cd gives for light `light` of the table
 // towards each world direction, run by standard.slang's compute entry point check_intensity.
 std::vector<float> shader_intensities(const Device& gpu, const LightTable& table,
@@ -270,11 +314,7 @@ std::vector<float> shader_intensities(const Device& gpu, const LightTable& table
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkShaderModule module = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkCommandPool pool = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
     const Cleanup cleanup([&] {
-        vkDestroyFence(device, fence, nullptr);
-        vkDestroyCommandPool(device, pool, nullptr);
         vkDestroyPipeline(device, pipeline, nullptr);
         vkDestroyShaderModule(device, module, nullptr);
         vkDestroyPipelineLayout(device, layout, nullptr);
@@ -304,26 +344,6 @@ std::vector<float> shader_intensities(const Device& gpu, const LightTable& table
     REQUIRE(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr,
                                      &pipeline) == VK_SUCCESS);
 
-    VkCommandPoolCreateInfo pool_info{};
-    pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    pool_info.queueFamilyIndex = gpu.queue_family();
-    REQUIRE(vkCreateCommandPool(device, &pool_info, nullptr, &pool) == VK_SUCCESS);
-    VkCommandBufferAllocateInfo command_info{};
-    command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    command_info.commandPool = pool;
-    command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    command_info.commandBufferCount = 1;
-    VkCommandBuffer commands = VK_NULL_HANDLE;
-    REQUIRE(vkAllocateCommandBuffers(device, &command_info, &commands) == VK_SUCCESS);
-    VkFenceCreateInfo fence_info{};
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    REQUIRE(vkCreateFence(device, &fence_info, nullptr, &fence) == VK_SUCCESS);
-
-    VkCommandBufferBeginInfo begin{};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    REQUIRE(vkBeginCommandBuffer(commands, &begin) == VK_SUCCESS);
-    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     CheckPush push;
     push.lights = lights.address();
     push.directions = inputs.address();
@@ -331,31 +351,23 @@ std::vector<float> shader_intensities(const Device& gpu, const LightTable& table
     push.light_count = static_cast<std::uint32_t>(table.lights.size());
     push.light = light;
     push.count = static_cast<std::uint32_t>(directions.size());
-    vkCmdPushConstants(commands, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
-    vkCmdDispatch(commands, (push.count + 63) / 64, 1, 1);
-    // The shader's writes, then the host's reads after the fence.
-    VkMemoryBarrier2 to_host{};
-    to_host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    to_host.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    to_host.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-    to_host.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
-    to_host.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-    VkDependencyInfo dependency{};
-    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.memoryBarrierCount = 1;
-    dependency.pMemoryBarriers = &to_host;
-    vkCmdPipelineBarrier2(commands, &dependency);
-    REQUIRE(vkEndCommandBuffer(commands) == VK_SUCCESS);
-
-    VkCommandBufferSubmitInfo command_submit{};
-    command_submit.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    command_submit.commandBuffer = commands;
-    VkSubmitInfo2 submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    submit.commandBufferInfoCount = 1;
-    submit.pCommandBufferInfos = &command_submit;
-    REQUIRE(vkQueueSubmit2(gpu.queue(), 1, &submit, fence) == VK_SUCCESS);
-    REQUIRE(vkWaitForFences(device, 1, &fence, VK_TRUE, 60'000'000'000ull) == VK_SUCCESS);
+    submit_and_wait(gpu, [&](VkCommandBuffer commands) {
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+        vkCmdPushConstants(commands, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+        vkCmdDispatch(commands, (push.count + 63) / 64, 1, 1);
+        // The shader's writes, then the host's reads after the fence.
+        VkMemoryBarrier2 to_host{};
+        to_host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        to_host.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        to_host.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        to_host.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        to_host.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &to_host;
+        vkCmdPipelineBarrier2(commands, &dependency);
+    });
 
     outputs.invalidate();
     std::vector<float> intensities(directions.size());
@@ -973,62 +985,28 @@ TEST_CASE("standard: record() into the caller's command buffer, twice in a row, 
     const StandardTier tier(*gpu, scene, w.lights, 32, 18);
     const world::Camera camera = looking_down(0.0, 0.0, 1.0, 2.0);
 
-    const VkDevice device = gpu->device();
-    VkCommandPool pool = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
-    const Cleanup cleanup([&] {
-        vkDestroyFence(device, fence, nullptr);
-        vkDestroyCommandPool(device, pool, nullptr);
+    submit_and_wait(*gpu, [&](VkCommandBuffer commands) {
+        tier.record(commands, camera);
+        tier.record(commands, camera);
+        // The image is in SHADER_READ_ONLY_OPTIMAL: a transition from it to GENERAL is valid only
+        // if it is, which the validation layer checks at submission.
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = tier.hdr_image();
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.imageMemoryBarrierCount = 1;
+        dependency.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(commands, &dependency);
     });
-    VkCommandPoolCreateInfo pool_info{};
-    pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    pool_info.queueFamilyIndex = gpu->queue_family();
-    REQUIRE(vkCreateCommandPool(device, &pool_info, nullptr, &pool) == VK_SUCCESS);
-    VkCommandBufferAllocateInfo command_info{};
-    command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    command_info.commandPool = pool;
-    command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    command_info.commandBufferCount = 1;
-    VkCommandBuffer commands = VK_NULL_HANDLE;
-    REQUIRE(vkAllocateCommandBuffers(device, &command_info, &commands) == VK_SUCCESS);
-    VkFenceCreateInfo fence_info{};
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    REQUIRE(vkCreateFence(device, &fence_info, nullptr, &fence) == VK_SUCCESS);
-
-    VkCommandBufferBeginInfo begin{};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    REQUIRE(vkBeginCommandBuffer(commands, &begin) == VK_SUCCESS);
-    tier.record(commands, camera);
-    tier.record(commands, camera);
-    // The image is in SHADER_READ_ONLY_OPTIMAL: a transition from it to GENERAL is valid only if
-    // it is, which the validation layer checks at submission.
-    VkImageMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = tier.hdr_image();
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    VkDependencyInfo dependency{};
-    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.imageMemoryBarrierCount = 1;
-    dependency.pImageMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(commands, &dependency);
-    REQUIRE(vkEndCommandBuffer(commands) == VK_SUCCESS);
-
-    VkCommandBufferSubmitInfo command_submit{};
-    command_submit.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    command_submit.commandBuffer = commands;
-    VkSubmitInfo2 submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    submit.commandBufferInfoCount = 1;
-    submit.pCommandBufferInfos = &command_submit;
-    REQUIRE(vkQueueSubmit2(gpu->queue(), 1, &submit, fence) == VK_SUCCESS);
-    REQUIRE(vkWaitForFences(device, 1, &fence, VK_TRUE, 60'000'000'000ull) == VK_SUCCESS);
 
     // And render() still works after the image was left in GENERAL: every frame starts from
     // UNDEFINED.
