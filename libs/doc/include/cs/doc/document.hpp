@@ -6,7 +6,8 @@
 // uses, the works, and the entities of the space, each a fixed set of optional components.
 //
 // A Document is read-only. It is made whole, from DocumentData (by load_project_folder, or by a
-// test), and changes only through the mutation API (ADR 0007).
+// test), and changes only through the mutation API (ADR 0007): a Transaction, committed, undone
+// and redone by a History (transaction.hpp, history.hpp).
 
 #include <cs/doc/components.hpp>
 #include <cs/doc/library.hpp>
@@ -15,6 +16,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -115,10 +117,18 @@ class Document {
     const Entity* find_entity(const Uuid& id) const;
     const Work* find_work(const Uuid& id) const;
 
-    bool operator==(const Document&) const = default;
+    // How many times this document has changed since it was made: each commit, undo and redo
+    // adds one. A Transaction is made for one revision of one document.
+    std::uint64_t revision() const { return revision_; }
+
+    // Equal data; the revisions may differ.
+    bool operator==(const Document& other) const { return data_ == other.data_; }
 
   private:
+    friend class History; // applies committed transactions
+
     DocumentData data_;
+    std::uint64_t revision_ = 0;
 };
 
 } // namespace cs::doc

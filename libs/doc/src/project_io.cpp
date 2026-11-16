@@ -32,6 +32,11 @@ ProjectError::ProjectError(const std::string& where, const std::string& json_pat
     : std::runtime_error(where + ": " + (json_path.empty() ? "" : json_path + ": ") + problem),
       json_path_(json_path) {}
 
+ReferenceError::ReferenceError(const Uuid& entity, const std::string& member,
+                               const std::string& problem)
+    : std::runtime_error("entity " + entity.to_string() + ": " + member + ": " + problem),
+      entity_(entity), member_(member) {}
+
 namespace {
 
 using Json = nlohmann::json;
@@ -69,8 +74,9 @@ struct LibraryIdText {};
 struct Sha256Text {};
 struct ExtensionText {};
 
-// A reference to something else in the document, checked once everything is read: a work, an
-// entity (that has `component`, when one is given), or a library definition.
+// A reference to something else in the document, checked once everything is read (and on every
+// commit of a transaction) by check_references: a work, an entity (that has `component`, when one
+// is given), or a library definition.
 enum class Target { work, entity, fixture_type };
 
 struct Ref {
@@ -392,15 +398,8 @@ template <class... T> constexpr bool is_variant<std::variant<T...>> = true;
 
 // ---- Reading -----------------------------------------------------------------------------------
 
-struct PendingRef {
-    std::string path;
-    Ref ref;
-    Uuid id;              // for works and entities
-    LibraryId library_id; // for library definitions
-};
-
-// The state of one read: where it is in the file, for messages; the references to check once
-// everything is read; and the entities in the order of the file.
+// The state of one read: where it is in the file, for messages; and the entities in the order of
+// the file.
 class Reader {
   public:
     explicit Reader(std::string where) : where_(std::move(where)) {}
@@ -453,10 +452,6 @@ class Reader {
         return text;
     }
 
-    void add_ref(const Ref& ref, const Uuid& id) { refs_.push_back({path(), ref, id, {}}); }
-    void add_ref(const Ref& ref, const LibraryId& id) { refs_.push_back({path(), ref, {}, id}); }
-    const std::vector<PendingRef>& refs() const { return refs_; }
-
     std::vector<Uuid> entity_order; // entity ids in the order of the file
 
   private:
@@ -468,7 +463,6 @@ class Reader {
 
     std::string where_;
     std::vector<Segment> path_;
-    std::vector<PendingRef> refs_;
 };
 
 // A number as the file writes it, for messages.
@@ -734,9 +728,6 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
                        "'-', starting with a letter or digit");
             }
         }
-        if constexpr (std::is_same_v<C, Ref>) {
-            r.add_ref(check, out);
-        }
         if constexpr (std::is_same_v<C, Sha256Text>) {
             if (!is_sha256(out)) {
                 r.fail("expected a SHA-256 hash: 64 lowercase hexadecimal digits");
@@ -749,9 +740,6 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
         }
     } else if constexpr (std::is_same_v<T, Uuid>) {
         out = read_uuid(r, j);
-        if constexpr (std::is_same_v<C, Ref>) {
-            r.add_ref(check, out);
-        }
     } else if constexpr (std::is_enum_v<T>) {
         out = static_cast<T>(index_of(r, enum_names<T>, read_string(r, j)));
     } else if constexpr (std::is_same_v<T, Vec2>) {
@@ -794,43 +782,99 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
     }
 }
 
-std::string entity_path(const Reader& r, const Uuid& id, std::string_view rest) {
-    const auto it = std::find(r.entity_order.begin(), r.entity_order.end(), id);
-    return "entities[" + std::to_string(it - r.entity_order.begin()) + "]." + std::string(rest);
-}
+// ---- References --------------------------------------------------------------------------------
+// The rules are the Ref checks describe() gives, walked over the values rather than the file, so
+// that reading and check_references (on every commit) share them.
 
-void check_references(const Reader& r, const DocumentData& data) {
-    for (const PendingRef& pending : r.refs()) {
-        const Ref& ref = pending.ref;
-        switch (ref.target) {
-        case Target::fixture_type:
-            if (!data.library.find_fixture_type(pending.library_id)) {
-                r.fail_at(pending.path,
-                          "the library has no fixture type \"" + pending.library_id + '"');
+struct ReferenceProblem {
+    Uuid entity;
+    std::string member; // as in ReferenceError::member()
+    std::string problem;
+};
+
+// Walks one entity through describe() and stops at the first reference that does not resolve.
+class ReferenceFinder {
+  public:
+    ReferenceFinder(const DocumentData& data, const Uuid& entity) : data_(data), entity_(entity) {}
+
+    template <class T, class C = NoCheck>
+    void operator()(std::string_view key, const T& member, const C& check = {}) {
+        if (problem) {
+            return;
+        }
+        path_.push_back(key);
+        visit(member, check);
+        path_.pop_back();
+    }
+
+    void check(bool, std::string_view, std::string_view) {}
+    void kind(std::string_view) {}
+
+    std::optional<ReferenceProblem> problem;
+
+  private:
+    const DocumentData& data_;
+    Uuid entity_;
+    std::vector<std::string_view> path_;
+
+    template <class T, class C> void visit(const T& member, const C& check) {
+        if constexpr (is_optional<T>) {
+            if (member) {
+                visit(*member, check);
             }
-            break;
-        case Target::work:
-            if (!data.works.contains(pending.id)) {
-                r.fail_at(pending.path, "no work has the id " + pending.id.to_string());
-            }
-            break;
-        case Target::entity:
-            const auto it = data.entities.find(pending.id);
-            if (it == data.entities.end()) {
-                r.fail_at(pending.path, "no entity has the id " + pending.id.to_string());
-            }
-            if (ref.component && !it->second.has(*ref.component)) {
-                r.fail_at(pending.path, "the entity " + pending.id.to_string() + " has no " +
-                                            std::string(component_key(*ref.component)));
-            }
-            break;
+        } else if constexpr (std::is_same_v<C, Ref>) {
+            resolve(check, member);
+        } else if constexpr (is_variant<T>) {
+            std::visit([&](const auto& alternative) { describe(*this, alternative); }, member);
+        } else if constexpr (requires { describe(*this, member); }) {
+            describe(*this, member);
         }
     }
-}
 
-// Following OnHost placements from any entity must end. Only entities placed on a host are
-// walked, each once.
-void check_hosts(const Reader& r, const DocumentData& data) {
+    void resolve(const Ref& ref, const LibraryId& id) {
+        if (ref.target == Target::fixture_type && !data_.library.find_fixture_type(id)) {
+            fail("the library has no fixture type \"" + id + '"');
+        }
+    }
+
+    void resolve(const Ref& ref, const Uuid& id) {
+        if (ref.target == Target::work) {
+            if (!data_.works.contains(id)) {
+                fail("no work has the id " + id.to_string());
+            }
+            return;
+        }
+        const auto it = data_.entities.find(id);
+        if (it == data_.entities.end()) {
+            fail("no entity has the id " + id.to_string());
+        } else if (ref.component && !it->second.has(*ref.component)) {
+            fail("the entity " + id.to_string() + " has no " +
+                 std::string(component_key(*ref.component)));
+        }
+    }
+
+    void fail(std::string text) {
+        std::string member;
+        for (const std::string_view key : path_) {
+            member += (member.empty() ? "" : ".") + std::string(key);
+        }
+        problem = ReferenceProblem{entity_, std::move(member), std::move(text)};
+    }
+};
+
+// The first reference of `data` that does not resolve, taking entities in `order` (every id of
+// data.entities, once each); then the first cycle of OnHost placements.
+std::optional<ReferenceProblem> find_reference_problem(const DocumentData& data,
+                                                       const std::vector<Uuid>& order) {
+    for (const Uuid& id : order) {
+        ReferenceFinder finder(data, id);
+        describe(finder, data.entities.at(id));
+        if (finder.problem) {
+            return finder.problem;
+        }
+    }
+    // Following OnHost placements from any entity must end. Only entities placed on a host are
+    // walked, each once.
     const auto host_of = [&](const Uuid& id) -> const Uuid* {
         const Entity& entity = data.entities.at(id); // references are checked already
         const auto* on_host = entity.placement ? std::get_if<OnHost>(&*entity.placement) : nullptr;
@@ -839,14 +883,14 @@ void check_hosts(const Reader& r, const DocumentData& data) {
     enum class State { walking, done };
     std::map<Uuid, State> state;
     std::vector<Uuid> chain;
-    for (const Uuid& start : r.entity_order) {
+    for (const Uuid& start : order) {
         chain.clear();
         for (Uuid id = start; const Uuid* host = host_of(id); id = *host) {
             const auto [it, inserted] = state.try_emplace(id, State::walking);
             if (!inserted) {
                 if (it->second == State::walking) {
-                    r.fail_at(entity_path(r, id, "placement.host"),
-                              "the placement's hosts form a cycle");
+                    return ReferenceProblem{id, "placement.host",
+                                            "the placement's hosts form a cycle"};
                 }
                 break;
             }
@@ -856,6 +900,7 @@ void check_hosts(const Reader& r, const DocumentData& data) {
             state[walked] = State::done;
         }
     }
+    return std::nullopt;
 }
 
 // Fails if arrays and objects nest deeper than max_json_depth, counting brackets outside strings.
@@ -928,8 +973,12 @@ DocumentData read_document(const std::string& where, std::string_view text) {
     DocumentData data;
     describe(top, data);
     top.finish();
-    check_references(r, data);
-    check_hosts(r, data);
+    if (const auto problem = find_reference_problem(data, r.entity_order)) {
+        const auto it = std::find(r.entity_order.begin(), r.entity_order.end(), problem->entity);
+        r.fail_at("entities[" + std::to_string(it - r.entity_order.begin()) + "]." +
+                      problem->member,
+                  problem->problem);
+    }
     return data;
 }
 
@@ -1042,6 +1091,17 @@ void write_file(const std::filesystem::path& path, std::string_view text) {
 }
 
 } // namespace
+
+void check_references(const DocumentData& data) {
+    std::vector<Uuid> order;
+    order.reserve(data.entities.size());
+    for (const auto& [id, entity] : data.entities) {
+        order.push_back(id);
+    }
+    if (const auto problem = find_reference_problem(data, order)) {
+        throw ReferenceError(problem->entity, problem->member, problem->problem);
+    }
+}
 
 Document parse_project_json(std::string_view text) {
     return Document(read_document("project.json", text));
