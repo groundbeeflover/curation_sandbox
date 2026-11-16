@@ -651,6 +651,30 @@ TEST_CASE("scene: an asset the loader cannot give is a TextureProblem naming it,
         REQUIRE(scene.textures().size() == 1);
         CHECK(scene.material_data()[1].texture == 0);
     }
+
+    SECTION("a mip chain with more levels than the image's size allows is a problem") {
+        // From the gpu-reviewer: 4 x 4 needs 3 levels; two extra 1 x 1 levels would otherwise
+        // reach vkCreateImage with mipLevels 5 (VUID-VkImageCreateInfo-mipLevels-00958).
+        cs::assets::Texture padded = graded_texture(4, 4);
+        REQUIRE(padded.levels.size() == 3);
+        padded.levels.push_back(padded.levels.back());
+        padded.levels.push_back(padded.levels.back());
+        std::map<std::string, cs::assets::Texture> textures;
+        textures.emplace(asset('a').sha256, std::move(padded));
+        textures.emplace(asset('b').sha256, graded_texture(5, 3));
+        cs::world::World world;
+        world.meshes = {quad_mesh()};
+        world.materials.emplace_back(painting(asset('a')));
+        world.materials.emplace_back(painting(asset('b')));
+        world.instances = {instance(0, 0), instance(0, 1)};
+
+        const Scene scene(*gpu, world, loader_from(textures));
+        REQUIRE(scene.problems().size() == 1);
+        CHECK(scene.problems()[0].asset == asset('a'));
+        CHECK(scene.material_data()[0].texture == no_texture);
+        REQUIRE(scene.textures().size() == 1);
+        CHECK(scene.material_data()[1].texture == 0);
+    }
 }
 
 // ---- project_texture_loader checks the names a project file gives -------------------------------

@@ -7,6 +7,7 @@
 #include <glm/gtc/packing.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -88,6 +89,10 @@ std::string texture_problem(const assets::Texture& texture, VkPhysicalDevice phy
         return "the image is empty";
     const auto width = static_cast<std::uint32_t>(texture.width());
     const auto height = static_cast<std::uint32_t>(texture.height());
+    // Exactly the full chain: more levels would pass the checks below (each 1 x 1 level is half
+    // of 1 x 1, rounded up), and the image would be made with more levels than its size allows.
+    if (texture.levels.size() != static_cast<std::size_t>(std::bit_width(std::max(width, height))))
+        return "the mip chain does not have one level for each halving down to 1 x 1";
     const auto levels = static_cast<std::uint32_t>(texture.levels.size());
     for (std::uint32_t level = 0; level < levels; ++level) {
         const Image& image = texture.levels[level];
@@ -95,9 +100,6 @@ std::string texture_problem(const assets::Texture& texture, VkPhysicalDevice phy
             static_cast<std::uint32_t>(image.height()) != level_side(height, level))
             return "mip level " + std::to_string(level) + " is not half the level above";
     }
-    if (level_side(width, levels - 1) != 1 || level_side(height, levels - 1) != 1)
-        return "the mip chain stops before 1 x 1";
-
     VkImageFormatProperties properties{};
     if (vkGetPhysicalDeviceImageFormatProperties(physical_device, texture_format, VK_IMAGE_TYPE_2D,
                                                  VK_IMAGE_TILING_OPTIMAL, texture_usage, 0,
@@ -542,11 +544,14 @@ Image Scene::download_texture(std::uint32_t texture, std::uint32_t level) const 
 
     readback.invalidate();
     Image image(static_cast<int>(width), static_cast<int>(height));
-    const auto* texel = reinterpret_cast<const std::uint16_t*>(readback.data());
+    const std::byte* in = readback.data();
+    std::uint16_t texel[texture_channels];
     for (int y = 0; y < image.height(); ++y) {
-        for (int x = 0; x < image.width(); ++x, texel += texture_channels)
+        for (int x = 0; x < image.width(); ++x, in += sizeof texel) {
+            std::memcpy(texel, in, sizeof texel);
             image.at(x, y) = {glm::unpackHalf1x16(texel[0]), glm::unpackHalf1x16(texel[1]),
                               glm::unpackHalf1x16(texel[2])};
+        }
     }
     return image;
 }

@@ -12,7 +12,8 @@ namespace cs::gpu::detail {
 namespace {
 
 // A minute, as for a frame (offscreen.cpp): an upload of hundreds of megabytes takes seconds on
-// lavapipe. The bound only keeps a lost or hung device from blocking forever.
+// lavapipe. Past it, submit_and_wait throws, but the destructor still waits for the submission
+// before it frees anything, so a hung device blocks there; a lost one ends the wait at once.
 constexpr std::uint64_t submission_timeout_ns = 60'000'000'000;
 
 } // namespace

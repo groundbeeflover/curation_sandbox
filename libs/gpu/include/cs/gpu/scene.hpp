@@ -151,10 +151,13 @@ class Scene {
     // world, or a mesh has an index out of range or not one normal and uv per position;
     // std::length_error if the meshes have more vertices or indices together than 32-bit draws
     // can count; std::runtime_error on a Vulkan failure, when the upload is larger than the device
-    // can allocate as one buffer, or when it has not finished within a minute. Nothing is left
+    // can allocate as one buffer, or when it has not finished within a minute (the exception
+    // leaves once the GPU has finished with it, or the device is lost). Nothing is left
     // allocated when it throws. An image the loader cannot give, or the device cannot hold, is
     // not an error: see problems().
     Scene(const Device& device, const world::World& world, const TextureLoader& load_texture);
+    // Frees everything at once: every submission that reads the scene must have finished.
+    // Destroy it before its Device.
     ~Scene();
 
     Scene(const Scene&) = delete;
@@ -190,8 +193,8 @@ class Scene {
     // For tests and diagnostics: copies a buffer, or one mip level of a texture, back to the host
     // and waits for it. A texture level comes back as linear RGB (alpha dropped), row 0 at the
     // top. Throws std::out_of_range for a texture or level that does not exist, and
-    // std::runtime_error on a Vulkan failure. Not for use while another thread records commands
-    // that read the scene.
+    // std::runtime_error on a Vulkan failure. It submits to the device's queue, so not while
+    // another thread uses that queue.
     [[nodiscard]] std::vector<std::byte> download(SceneBufferKind which) const;
     [[nodiscard]] Image download_texture(std::uint32_t texture, std::uint32_t level) const;
 
