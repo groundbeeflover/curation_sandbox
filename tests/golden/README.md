@@ -27,7 +27,7 @@ tests/golden/<name>/
   "height": 72,
   "samplesPerPixel": 64,
   "seed": 1,
-  "tolerances": { "meanFlip": 0.02, "meanAbsoluteError_nits": 0.04 }
+  "tolerances": { "meanFlip": 0.02, "meanAbsoluteError_nits": 0.02 }
 }
 ```
 
@@ -121,11 +121,16 @@ tolerances therefore come from measurement: every build below against the refere
 | Clang 23.1, debug with sanitizers | 0.00087 | 0.0012 |
 | GCC release, Embree forced to AVX2 | 0.0015 | 0.0015 |
 | GCC release, Embree forced to SSE2 | 0.0017 | 0.0016 |
-| CI: GCC release, Clang debug, MSVC release | (measured in the pull request) | |
+| CI: GCC 13.3, release | 0.0015 | 0.0015 |
+| CI: Clang 18.1, debug with sanitizers | 0.00087 | 0.0012 |
+| CI: MSVC 19.44, release | 0.00087 | 0.0012 |
 
 The 0.00087 and 0.0012 that every identical render shows is the reference's rounding to half
-floats. Forcing Embree's other kernels made a couple of paths in the whole image diverge: two
-specks in the FLIP heat map.
+floats: MSVC and both compilers' debug builds reproduce the reference exactly. Embree's kernels are
+what differ. Forcing its AVX2 or SSE2 kernels on the reference's machine made a couple of paths in
+the whole image diverge: two specks in the FLIP heat map. CI's GCC job gave the forced AVX2 run's
+numbers to every digit, so its runner had no AVX-512. (Embree 4.4 takes its kernels only from the
+device's configuration string, so forcing them took a throwaway build, not part of the code.)
 
 What the tolerances must catch, from the same reference, with the spot's lumens raised:
 
@@ -140,7 +145,11 @@ For comparison, the same render with seed 2, in which every path differs, is 0.2
 platform's paths diverged wholesale, the test would fail there, and the answer would be more
 samples, not a looser tolerance.
 
-The tolerances, 0.02 mean FLIP and 0.04 nits, are (to be completed from CI's numbers).
+**The tolerances are 0.02 mean FLIP and 0.02 nits.** Each is about ten times the largest
+difference measured above (0.0017 and 0.0016, forced SSE2), rounded up. That leaves room for a
+platform whose paths diverge more often, and both stay below what the spot made 1% brighter gives,
+let alone 10%. 64 samples per pixel are enough for that, so the test stays fast: about 8 s in CI's
+debug job.
 
 ## Checks of the runner
 
