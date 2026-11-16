@@ -17,6 +17,7 @@
 #include <map>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -35,7 +36,7 @@ ProjectError::ProjectError(const std::string& where, const std::string& json_pat
 ReferenceError::ReferenceError(const Uuid& entity, const std::string& member,
                                const std::string& problem)
     : std::runtime_error("entity " + entity.to_string() + ": " + member + ": " + problem),
-      entity_(entity), member_(member) {}
+      entity_(entity), member_(member), problem_(problem) {}
 
 namespace {
 
@@ -786,12 +787,6 @@ template <class T, class C> void read_value(Reader& r, const Json& j, T& out, co
 // The rules are the Ref checks describe() gives, walked over the values rather than the file, so
 // that reading and check_references (on every commit) share them.
 
-struct ReferenceProblem {
-    Uuid entity;
-    std::string member; // as in ReferenceError::member()
-    std::string problem;
-};
-
 // Walks one entity through describe() and stops at the first reference that does not resolve.
 class ReferenceFinder {
   public:
@@ -810,7 +805,7 @@ class ReferenceFinder {
     void check(bool, std::string_view, std::string_view) {}
     void kind(std::string_view) {}
 
-    std::optional<ReferenceProblem> problem;
+    std::optional<ReferenceError> problem;
 
   private:
     const DocumentData& data_;
@@ -858,14 +853,13 @@ class ReferenceFinder {
         for (const std::string_view key : path_) {
             member += (member.empty() ? "" : ".") + std::string(key);
         }
-        problem = ReferenceProblem{entity_, std::move(member), std::move(text)};
+        problem.emplace(entity_, member, text);
     }
 };
 
-// The first reference of `data` that does not resolve, taking entities in `order` (every id of
-// data.entities, once each); then the first cycle of OnHost placements.
-std::optional<ReferenceProblem> find_reference_problem(const DocumentData& data,
-                                                       const std::vector<Uuid>& order) {
+// The first reference of `data` that does not resolve, taking entities in `order` (a range of
+// every id of data.entities, once each); then the first cycle of OnHost placements.
+std::optional<ReferenceError> find_reference_problem(const DocumentData& data, const auto& order) {
     for (const Uuid& id : order) {
         ReferenceFinder finder(data, id);
         describe(finder, data.entities.at(id));
@@ -889,8 +883,8 @@ std::optional<ReferenceProblem> find_reference_problem(const DocumentData& data,
             const auto [it, inserted] = state.try_emplace(id, State::walking);
             if (!inserted) {
                 if (it->second == State::walking) {
-                    return ReferenceProblem{id, "placement.host",
-                                            "the placement's hosts form a cycle"};
+                    return ReferenceError(id, "placement.host",
+                                          "the placement's hosts form a cycle");
                 }
                 break;
             }
@@ -974,10 +968,10 @@ DocumentData read_document(const std::string& where, std::string_view text) {
     describe(top, data);
     top.finish();
     if (const auto problem = find_reference_problem(data, r.entity_order)) {
-        const auto it = std::find(r.entity_order.begin(), r.entity_order.end(), problem->entity);
+        const auto it = std::find(r.entity_order.begin(), r.entity_order.end(), problem->entity());
         r.fail_at("entities[" + std::to_string(it - r.entity_order.begin()) + "]." +
-                      problem->member,
-                  problem->problem);
+                      problem->member(),
+                  problem->problem());
     }
     return data;
 }
@@ -1093,13 +1087,8 @@ void write_file(const std::filesystem::path& path, std::string_view text) {
 } // namespace
 
 void check_references(const DocumentData& data) {
-    std::vector<Uuid> order;
-    order.reserve(data.entities.size());
-    for (const auto& [id, entity] : data.entities) {
-        order.push_back(id);
-    }
-    if (const auto problem = find_reference_problem(data, order)) {
-        throw ReferenceError(problem->entity, problem->member, problem->problem);
+    if (auto problem = find_reference_problem(data, std::views::keys(data.entities))) {
+        throw std::move(*problem);
     }
 }
 

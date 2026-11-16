@@ -2,30 +2,14 @@
 
 #include <cs/doc/transaction.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <stdexcept>
-#include <tuple>
 #include <utility>
 
 namespace cs::doc {
 
 namespace {
-
-// Entity's component members, in the order of ComponentKind.
-constexpr auto component_members =
-    std::make_tuple(&Entity::wall, &Entity::opening, &Entity::room, &Entity::exhibit,
-                    &Entity::framing, &Entity::placement, &Entity::track, &Entity::luminaire,
-                    &Entity::lux_sensor, &Entity::viewpoint, &Entity::dimension);
-
-static_assert(std::tuple_size_v<decltype(component_members)> == component_kind_count,
-              "component_members lists every component");
-
-// Calls f(kind, member pointer) for every component, in the order of ComponentKind.
-template <class F> void for_each_component(F&& f) {
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (f(static_cast<ComponentKind>(I), std::get<I>(component_members)), ...);
-    }(std::make_index_sequence<component_kind_count>{});
-}
 
 // Starts an edit of the value at `id` in `values`, or returns the one already started.
 template <class Key, class T>
@@ -61,12 +45,17 @@ template <class Key, class T, class Change, class Make>
 void add_changes(const std::map<Key, detail::Edit<T>>& edits, bool forward,
                  std::vector<Change>& out, Make make) {
     for (const auto& [id, edit] : edits) {
-        const std::optional<T>& from = forward ? edit.before : edit.after;
-        const std::optional<T>& to = forward ? edit.after : edit.before;
-        if (from != to) {
-            out.push_back(make(id, kind_of(from.has_value(), to.has_value())));
+        if (edit.changed()) {
+            out.push_back(make(id, forward
+                                       ? kind_of(edit.before.has_value(), edit.after.has_value())
+                                       : kind_of(edit.after.has_value(), edit.before.has_value())));
         }
     }
+}
+
+template <class Key, class T> bool any_changed(const std::map<Key, detail::Edit<T>>& edits) {
+    return std::any_of(edits.begin(), edits.end(),
+                       [](const auto& entry) { return entry.second.changed(); });
 }
 
 } // namespace
@@ -75,19 +64,17 @@ namespace detail {
 
 ChangeList changes_of(const Edits& edits, bool forward) {
     ChangeList changes;
-    if (edits.settings) {
-        changes.settings = edits.settings->before != edits.settings->after;
-    }
+    changes.settings = edits.settings && edits.settings->changed();
     add_changes(edits.fixture_types, forward, changes.fixture_types,
                 [](const LibraryId& id, ChangeKind kind) { return FixtureTypeChange{id, kind}; });
     add_changes(edits.works, forward, changes.works,
                 [](const Uuid& id, ChangeKind kind) { return WorkChange{id, kind}; });
     for (const auto& [id, edit] : edits.entities) {
-        const std::optional<Entity>& from = forward ? edit.before : edit.after;
-        const std::optional<Entity>& to = forward ? edit.after : edit.before;
-        if (from == to) {
+        if (!edit.changed()) {
             continue;
         }
+        const std::optional<Entity>& from = forward ? edit.before : edit.after;
+        const std::optional<Entity>& to = forward ? edit.after : edit.before;
         if (!from || !to || from->name != to->name) {
             changes.entities.push_back({id, kind_of(from.has_value(), to.has_value())});
         }
@@ -239,6 +226,11 @@ const ProjectSettings& Transaction::settings() const {
 
 ChangeList Transaction::changes() const {
     return detail::changes_of(edits_, true);
+}
+
+bool Transaction::empty() const {
+    return !(edits_.settings && edits_.settings->changed()) && !any_changed(edits_.fixture_types) &&
+           !any_changed(edits_.works) && !any_changed(edits_.entities);
 }
 
 } // namespace cs::doc

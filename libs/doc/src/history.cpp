@@ -23,8 +23,7 @@ void apply_to(std::map<Key, T>& values, const std::map<Key, detail::Edit<T>>& ed
 // Leaves out the edits that change nothing, so that a record holds only what its change list
 // names.
 template <class Key, class T> void drop_unchanged(std::map<Key, detail::Edit<T>>& edits) {
-    std::erase_if(edits,
-                  [](const auto& entry) { return entry.second.before == entry.second.after; });
+    std::erase_if(edits, [](const auto& entry) { return !entry.second.changed(); });
 }
 
 } // namespace
@@ -46,7 +45,7 @@ ChangeList History::commit(Transaction transaction) {
                                     "this one");
     }
     detail::Edits& edits = transaction.edits_;
-    if (edits.settings && edits.settings->before == edits.settings->after) {
+    if (edits.settings && !edits.settings->changed()) {
         edits.settings.reset();
     }
     drop_unchanged(edits.fixture_types);
@@ -83,22 +82,22 @@ ChangeList History::undo() {
     if (undo_.empty()) {
         throw std::logic_error("there is nothing to undo");
     }
-    redo_.push_back(std::move(undo_.back()));
-    undo_.pop_back();
-    apply(redo_.back().edits, false);
-    ++document_.revision_;
-    return detail::changes_of(redo_.back().edits, false);
+    return step(undo_, redo_, false);
 }
 
 ChangeList History::redo() {
     if (redo_.empty()) {
         throw std::logic_error("there is nothing to redo");
     }
-    undo_.push_back(std::move(redo_.back()));
-    redo_.pop_back();
-    apply(undo_.back().edits, true);
+    return step(redo_, undo_, true);
+}
+
+ChangeList History::step(std::vector<Record>& from, std::vector<Record>& to, bool forward) {
+    to.push_back(std::move(from.back()));
+    from.pop_back();
+    apply(to.back().edits, forward);
     ++document_.revision_;
-    return detail::changes_of(undo_.back().edits, true);
+    return detail::changes_of(to.back().edits, forward);
 }
 
 } // namespace cs::doc

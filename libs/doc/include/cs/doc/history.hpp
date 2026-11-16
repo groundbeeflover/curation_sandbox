@@ -69,6 +69,8 @@ class History {
 
     // Writes the edits' after (forward) or before values into the document.
     void apply(const detail::Edits& edits, bool forward);
+    // Moves the last record of `from` to `to` and applies it: an undo or a redo.
+    ChangeList step(std::vector<Record>& from, std::vector<Record>& to, bool forward);
 };
 
 } // namespace cs::doc

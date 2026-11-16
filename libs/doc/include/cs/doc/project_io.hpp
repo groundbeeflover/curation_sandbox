@@ -103,10 +103,13 @@ class ReferenceError : public std::runtime_error {
     // The reference's path within the entity, written as in project.json: "placement.wall",
     // "luminaire.aim.target", "dimension.from.entity".
     const std::string& member() const { return member_; }
+    // What is wrong with it: "no entity has the id 0190f2a5-...".
+    const std::string& problem() const { return problem_; }
 
   private:
     Uuid entity_;
     std::string member_;
+    std::string problem_;
 };
 
 // Checks the references of `data` by the rules load_project_folder applies to a file: each

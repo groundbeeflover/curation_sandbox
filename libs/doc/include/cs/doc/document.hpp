@@ -21,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 namespace cs::doc {
@@ -87,6 +88,23 @@ struct Entity {
     bool has(ComponentKind kind) const;
     bool operator==(const Entity&) const = default;
 };
+
+// Entity's component members, in the order of ComponentKind.
+inline constexpr auto entity_components =
+    std::make_tuple(&Entity::wall, &Entity::opening, &Entity::room, &Entity::exhibit,
+                    &Entity::framing, &Entity::placement, &Entity::track, &Entity::luminaire,
+                    &Entity::lux_sensor, &Entity::viewpoint, &Entity::dimension);
+
+static_assert(std::tuple_size_v<decltype(entity_components)> == component_kind_count,
+              "entity_components lists every component");
+
+// Calls f(kind, member) for every component, in the order of ComponentKind; `member` points to
+// Entity's std::optional of that component.
+template <class F> constexpr void for_each_component(F&& f) {
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (f(static_cast<ComponentKind>(I), std::get<I>(entity_components)), ...);
+    }(std::make_index_sequence<component_kind_count>{});
+}
 
 // Everything a project file holds, as plain values. Maps are ordered by id, which is the order
 // they are written in.

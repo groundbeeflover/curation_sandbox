@@ -76,6 +76,7 @@ namespace detail {
 template <class T> struct Edit {
     std::optional<T> before;
     std::optional<T> after;
+    bool changed() const { return before != after; }
 };
 
 // Everything a transaction touched, by id.
@@ -153,7 +154,7 @@ class Transaction {
     // What committing would change, before reference checks.
     ChangeList changes() const;
     // True when committing would change nothing.
-    bool empty() const { return changes().empty(); }
+    bool empty() const;
 
   private:
     friend class History;
