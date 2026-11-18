@@ -51,9 +51,10 @@ struct AddedSpot {
 //   along the face. It is named "Track <the wall's label>". A track already in the document whose
 //   two points and height are each within 1 mm of these is used instead of a new one.
 // - The spot is a luminaire of type generic_spot_id at full output, aimed at the exhibit (an
-//   AimAtEntity), on the track (OnTrack), named "Spot <n>", where n is one more than the number
-//   of luminaires in the document. It sits where its aim at the centre of the work's face is
-//   cci_aim_from_vertical_rad from vertical. That centre is out from the wall's face by the
+//   AimAtEntity), on the track (OnTrack), named "Spot <n>" for the lowest n from 1 that no
+//   entity of the document is named with, so that, as with wall letters, no two share a name and
+//   a deleted spot's number is used again. It sits where its aim at the centre of the work's face
+//   is cci_aim_from_vertical_rad from vertical. That centre is out from the wall's face by the
 //   stand-off plus the work's depth, but at least world::min_face_offset_m, as world::compile
 //   puts it. From the point of the track opposite that centre, the spot is slid towards the
 //   track's first point (so that, seen facing the work, the light comes from the upper left),

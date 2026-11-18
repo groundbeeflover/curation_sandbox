@@ -935,6 +935,39 @@ TEST_CASE("add_spot_for: a luminaire, Spot 1, of generic-spot-800 at full output
     CHECK_FALSE(track.luminaire.has_value());
 }
 
+// From the code review: a count of luminaires repeated a name once a spot was deleted.
+TEST_CASE("add_spot_for: spots take the lowest unused number, so no two share a name",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const Gallery gallery = commit_gallery(history, ids);
+    const SpotIds first = commit_add_spot(history, ids, gallery.work.exhibit);
+    const SpotIds second = commit_add_spot(history, ids, gallery.work.exhibit);
+    CHECK(entity_of(history.document(), first.spot).name == "Spot 1");
+    CHECK(entity_of(history.document(), second.spot).name == "Spot 2");
+
+    // Spot 1 deleted: its number is used again, then the next free one is 3.
+    doc::Transaction remove(history.document(), "Delete Spot 1");
+    remove.remove_entity(first.spot);
+    history.commit(std::move(remove));
+    const SpotIds again = commit_add_spot(history, ids, gallery.work.exhibit);
+    CHECK(entity_of(history.document(), again.spot).name == "Spot 1");
+
+    // Any entity's name counts, a renamed spot's or a viewpoint's; names that are not
+    // "Spot <n>" do not.
+    doc::Entity viewpoint;
+    viewpoint.name = "Spot 3";
+    viewpoint.viewpoint = doc::Viewpoint{};
+    doc::Transaction rename(history.document(), "Rename");
+    rename.rename_entity(second.spot, "Window wash");
+    rename.add_entity(ids.next(), std::move(viewpoint));
+    history.commit(std::move(rename));
+    const SpotIds after = commit_add_spot(history, ids, gallery.work.exhibit);
+    CHECK(entity_of(history.document(), after.spot).name == "Spot 2");
+    const SpotIds last = commit_add_spot(history, ids, gallery.work.exhibit);
+    CHECK(entity_of(history.document(), last.spot).name == "Spot 4");
+}
+
 TEST_CASE("add_spot_for: the library gains generic-spot-800, unless it holds a fixture type of "
           "that id, which the spot uses as it is",
           "[editor][commands]") {

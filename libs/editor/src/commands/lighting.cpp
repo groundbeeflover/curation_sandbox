@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <variant>
@@ -67,6 +68,23 @@ std::optional<doc::Uuid> matching_track(const doc::Document& document, const doc
         }
     }
     return std::nullopt;
+}
+
+// The name of the spot add_spot_for adds: "Spot <n>" for the lowest n from 1 that no entity is
+// named with, as walls take the first unused letter. It ends within one more try than there are
+// such names.
+std::string spot_name(const doc::Document& document) {
+    std::set<std::string> taken;
+    for (const auto& [id, entity] : document.entities()) {
+        if (entity.name.starts_with("Spot ")) {
+            taken.insert(entity.name);
+        }
+    }
+    for (std::size_t n = 1;; ++n) {
+        if (std::string name = "Spot " + std::to_string(n); !taken.contains(name)) {
+            return name;
+        }
+    }
 }
 
 } // namespace
@@ -173,10 +191,8 @@ AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
         transaction.add_entity(*track_id, std::move(track_entity));
     }
 
-    const auto luminaires = std::ranges::count_if(
-        document.entities(), [](const auto& pair) { return pair.second.luminaire.has_value(); });
     doc::Entity spot;
-    spot.name = "Spot " + std::to_string(luminaires + 1);
+    spot.name = spot_name(document);
     spot.placement = doc::OnTrack{.track = *track_id, .distance_m = along_m};
     doc::Luminaire& luminaire = spot.luminaire.emplace();
     luminaire.fixture_type = generic_spot_id;
