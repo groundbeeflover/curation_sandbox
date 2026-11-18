@@ -2,15 +2,13 @@
 
 #include <cs/editor/commands/room.hpp>
 
-#include "commands/checks.hpp"
+#include "commands/common.hpp"
 
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
 
 #include <algorithm>
-#include <functional>
 #include <set>
-#include <stdexcept>
 #include <utility>
 
 namespace cs::editor {
@@ -31,7 +29,7 @@ std::string wall_label(std::size_t index) {
 }
 
 std::vector<std::string> unused_wall_labels(const doc::Document& document, std::size_t count) {
-    std::set<std::string, std::less<>> used;
+    std::set<std::string> used;
     for (const auto& [id, entity] : document.entities()) {
         if (entity.wall) {
             used.insert(entity.wall->label);
@@ -77,8 +75,8 @@ NewRoom new_room(const doc::Document& document, doc::IdGenerator& ids, double wi
     const std::vector<std::string> labels = unused_wall_labels(document, 4);
     std::array<doc::Uuid, 4> wall_ids;
     for (std::size_t i = 0; i < 4; ++i) {
-        const glm::dvec2 a{room.outline_m[i].x, room.outline_m[i].y};
-        const glm::dvec2 b{room.outline_m[(i + 1) % 4].x, room.outline_m[(i + 1) % 4].y};
+        const glm::dvec2 a = detail::to_glm(room.outline_m[i]);
+        const glm::dvec2 b = detail::to_glm(room.outline_m[(i + 1) % 4]);
         const glm::dvec2 along = glm::normalize(b - a);
         // The outline runs anticlockwise, so the room is on the left of each side, and face A,
         // on the left of the wall's line, faces into it when the line is half a thickness out.

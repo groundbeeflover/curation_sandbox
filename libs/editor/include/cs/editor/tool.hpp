@@ -142,7 +142,8 @@ struct ToolResponse {
 
 // A tool that edits the document through input events. Implementations keep only the state of
 // the action in progress (where a drag started, the points clicked so far); the document comes
-// with every event.
+// with every event, and what else a tool needs, such as the doc::IdGenerator for the ids of what
+// it adds, it is given when it is made.
 class Tool {
   public:
     virtual ~Tool() = default;

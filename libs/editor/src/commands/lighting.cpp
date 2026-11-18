@@ -2,6 +2,8 @@
 
 #include <cs/editor/commands/lighting.hpp>
 
+#include "commands/common.hpp"
+
 #include <cs/doc/components.hpp>
 #include <cs/doc/work.hpp>
 #include <cs/geom/wall_face.hpp>
@@ -16,7 +18,6 @@
 #include <cstddef>
 #include <numbers>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -31,8 +32,10 @@ constexpr double degree = std::numbers::pi / 180.0;
 // How near an existing track must be to the one add_spot_for would make for the spot to go on it.
 constexpr double same_track_m = 0.001;
 
-glm::dvec2 to_glm(const doc::Vec2& v) {
-    return {v.x, v.y};
+using detail::to_glm;
+
+[[noreturn]] void refuse(const std::string& problem) {
+    detail::refuse("add_spot_for", problem);
 }
 
 // Whether `point` is inside the polygon `outline` (even-odd rule), in plan.
@@ -66,17 +69,14 @@ std::optional<doc::Uuid> matching_track(const doc::Document& document, const doc
     return std::nullopt;
 }
 
-[[noreturn]] void refuse(const std::string& problem) {
-    throw std::invalid_argument("add_spot_for: " + problem);
-}
-
 } // namespace
 
 double cci_track_distance_m(double ceiling_height_m) {
     if (!std::isfinite(ceiling_height_m) || !(ceiling_height_m > cci_reference_height_m)) {
-        throw std::invalid_argument(
-            "cci_track_distance_m: the ceiling must be finite and higher than 1.6 m, not " +
-            std::to_string(ceiling_height_m) + " m");
+        // cci_reference_height_m, written as a curator reads it.
+        detail::refuse("cci_track_distance_m",
+                       "the ceiling must be finite and more than 1.6 m above the floor, not " +
+                           std::to_string(ceiling_height_m) + " m");
     }
     return (ceiling_height_m - cci_reference_height_m) * std::tan(cci_aim_from_vertical_rad);
 }
@@ -107,9 +107,7 @@ AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
         refuse("the exhibit is not hung on a wall");
     }
     const doc::Wall& wall = *wall_entity->wall;
-    const geom::FaceFrame face = geom::wall_face_frame(
-        to_glm(wall.start_m), to_glm(wall.end_m), wall.thickness_m,
-        on_wall->face == doc::WallFace::a ? geom::WallFace::a : geom::WallFace::b);
+    const geom::FaceFrame face = detail::face_frame(wall, on_wall->face);
     // As world::compile puts the work's face.
     const double face_out_m =
         std::max(on_wall->stand_off_m + work->form.depth_m.value_or(0.0), world::min_face_offset_m);
@@ -125,9 +123,6 @@ AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
             ceiling_z_m = other.room->ceiling_height_m;
             break;
         }
-    }
-    if (!(ceiling_z_m - floor_z_m > cci_reference_height_m)) {
-        refuse("the ceiling is no higher than 1.6 m above the floor, too low for a track");
     }
     const double track_out_m = cci_track_distance_m(ceiling_z_m - floor_z_m);
     if (!(track_out_m > face_out_m)) {

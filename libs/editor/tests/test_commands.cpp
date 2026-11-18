@@ -1145,6 +1145,14 @@ TEST_CASE("add_spot_for: the work's depth and stand-off move the aim point out f
                WithinAbs(30.0 * deg, issue_aim_rad));
     const double slide_m = std::abs(on_track_of(entity_of(document, spot.spot)).distance_m - 3.0);
     CHECK_THAT(slide_m, WithinAbs(cci_slide_m(2.0, cci_distance_m(3.5) - offset_m), issue_m));
+
+    // add_spot_for repeats world::compile's rule for where the work's face is; the World must
+    // agree, so that the light aims at the point the slide was worked out for.
+    const world::World compiled = world::compile(document);
+    check_near(exhibit_of(compiled, gallery.work.exhibit).face_centre_m, centre, exact_m);
+    const dvec3 axis = light_of(compiled, spot.spot).luminaire.axis();
+    CHECK_THAT(std::atan2(std::hypot(axis.x, axis.y), -axis.z),
+               WithinAbs(30.0 * deg, issue_aim_rad));
 }
 
 TEST_CASE("add_spot_for: with the project's centre line at 1.45 m the aim is still 30 degrees",

@@ -2,9 +2,10 @@
 
 #include <cs/editor/tool.hpp>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
-#include <cmath>
+#include <cstddef>
 #include <string_view>
 #include <system_error>
 
@@ -12,39 +13,20 @@ namespace cs::editor {
 
 namespace {
 
-bool is_space(char c) {
-    return c == ' ' || c == '\t';
-}
+constexpr std::string_view spaces = " \t";
 
 std::string_view trim_left(std::string_view text) {
-    while (!text.empty() && is_space(text.front())) {
-        text.remove_prefix(1);
-    }
-    return text;
+    const std::size_t first = text.find_first_not_of(spaces);
+    return first == std::string_view::npos ? std::string_view{} : text.substr(first);
 }
 
 std::string_view trim(std::string_view text) {
     text = trim_left(text);
-    while (!text.empty() && is_space(text.back())) {
-        text.remove_suffix(1);
-    }
-    return text;
+    return text.substr(0, text.find_last_not_of(spaces) + 1);
 }
 
 char lower(char c) {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-}
-
-bool equal_ignoring_case(std::string_view a, std::string_view b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        if (lower(a[i]) != lower(b[i])) {
-            return false;
-        }
-    }
-    return true;
 }
 
 // A unit's length in metres as a fraction at most 1, divided first so that no finite number
@@ -67,8 +49,9 @@ std::optional<TypedValue> parse_typed_value(std::string_view text) {
     std::string_view rest = trim(text);
 
     TypedValue typed;
-    if (!rest.empty() && (lower(rest.front()) == 'u' || lower(rest.front()) == 'h')) {
-        typed.field = lower(rest.front()) == 'u' ? TypedField::u : TypedField::h;
+    if (const char field = rest.empty() ? '\0' : lower(rest.front());
+        field == 'u' || field == 'h') {
+        typed.field = field == 'u' ? TypedField::u : TypedField::h;
         rest = trim_left(rest.substr(1));
         if (rest.empty() || rest.front() != '=') {
             return std::nullopt;
@@ -93,12 +76,10 @@ std::optional<TypedValue> parse_typed_value(std::string_view text) {
     }
     rest = trim_left(rest.substr(static_cast<std::size_t>(end - rest.data())));
 
+    // Finite: from_chars refuses what a double cannot hold, and no unit is longer than a metre.
     for (const Unit& unit : units) {
-        if (equal_ignoring_case(rest, unit.name)) {
+        if (std::ranges::equal(rest, unit.name, {}, lower)) {
             typed.value_m = unit.to_metres(negative ? -number : number);
-            if (!std::isfinite(typed.value_m)) {
-                return std::nullopt;
-            }
             return typed;
         }
     }
