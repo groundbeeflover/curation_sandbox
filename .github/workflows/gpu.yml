@@ -4,7 +4,8 @@
 # - Linux, debug (Clang with ASan and UBSan): `ctest -L gpu`, the validation layer required
 #   (ADR 0011) and LeakSanitizer on;
 # - Linux, release (GCC): `ctest -L golden`;
-# - Windows, debug (MSVC): `ctest -L gpu`, the validation layer required.
+# - Windows, debug (MSVC): `ctest -L gpu`, the validation layer required, building only what it
+#   runs.
 #
 # CS_REQUIRE_GPU=1 makes a missing device, or in a debug build a missing validation layer, a
 # failure rather than a skip. A golden test that fails, or skips for want of a reference for
@@ -272,9 +273,12 @@ jobs:
           cmake --preset debug -DCMAKE_CXX_COMPILER=cl -DVCPKG_TARGET_TRIPLET=x64-windows \
             -DVCPKG_INSTALL_OPTIONS=--clean-after-build -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded \
             -DCS_WARNINGS_AS_ERRORS=ON $launcher
+      # Only what `-L gpu` runs: the gpu module's tests, the integration tests and cs-render (its
+      # checks and the Standard tier's golden tests). CTest lists Catch2's tests by running their
+      # executables, so the others, which ci.yml builds and runs in release, are simply absent.
       - name: Build
         id: build
-        run: cmake --build --preset debug
+        run: cmake --build --preset debug --target cs_gpu_tests cs_integration_tests cs-render
 
       - name: Device report
         run: ./build/debug/apps/cs-render/cs-render.exe --device-report
