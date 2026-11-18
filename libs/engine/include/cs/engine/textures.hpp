@@ -100,13 +100,6 @@ class MaterialBrdfs {
     std::vector<Entry> entries_; // one per material
 };
 
-// The file of an asset in a project's assets folder: <assets_dir>/<sha256>.<extension>. Throws
-// std::invalid_argument unless sha256 is 64 lowercase hexadecimal digits and the extension is
-// one of "png", "jpg", "tif" and "exr", so that a project file cannot name a path outside the
-// folder.
-std::filesystem::path asset_path(const std::filesystem::path& assets_dir,
-                                 const world::AssetRef& asset);
-
 // A photograph the world names that load_textures could not load, and why.
 struct TextureProblem {
     world::AssetRef asset;
@@ -119,9 +112,10 @@ struct LoadedTextures {
 };
 
 // Loads the photograph of every painting of the world from assets_dir, each asset once, with
-// assets::load_texture. An asset whose name is not valid (asset_path), whose file is missing or
-// cannot be decoded is left out and reported in problems; its painting then shows its base
-// colour. Never throws for a missing or bad file.
+// assets::load_texture, at the path assets::asset_file makes of its name, as the GPU tiers do. An
+// asset whose name asset_file refuses, whose file is missing or cannot be decoded is left out and
+// reported in problems; its painting then shows its base colour. Never throws for a missing or
+// bad file.
 LoadedTextures load_textures(const world::World& world, const std::filesystem::path& assets_dir);
 
 } // namespace cs::engine

@@ -6,9 +6,9 @@
 // photograph or its texture the material's base colour stands in. The acceptance test renders a
 // 2 x 2-texel texture face-on and finds each texel's colour in its quadrant, the right way round.
 //
-// Asset names come from project files, which are hostile (CLAUDE.md): asset_path accepts only 64
-// lowercase hexadecimal digits and a known extension, and load_textures reports what it cannot
-// load instead of throwing.
+// Asset names come from project files, which are hostile (CLAUDE.md): load_textures checks them
+// with assets::asset_file (tested in libs/assets/tests/test_asset_file.cpp, issue #154) and
+// reports what it cannot load instead of throwing.
 //
 // Written from the issue and the public headers only (test-author), without the implementation.
 
@@ -59,7 +59,6 @@
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
-using cs::engine::asset_path;
 using cs::engine::load_textures;
 using cs::engine::LoadedTextures;
 using cs::engine::painting_base_colour;
@@ -392,75 +391,6 @@ TEST_CASE("painting_base_colour: returns the texel as the texture holds it, uncl
     check_colour(painting_base_colour(surface, {0.5, 0.5}, &textures), {1.5, 0.5, 0.0});
 }
 
-// ---- asset_path --------------------------------------------------------------------------------
-
-TEST_CASE("asset_path: <assets_dir>/<sha256>.<extension> for a valid name", "[engine][textures]") {
-    const std::filesystem::path dir = "project/assets";
-    for (const char* extension : {"png", "jpg", "tif", "exr"}) {
-        INFO("extension " << extension);
-        CHECK(asset_path(dir, world::AssetRef{valid_sha, extension}) ==
-              dir / (valid_sha + "." + extension));
-    }
-    // Every hexadecimal digit is allowed.
-    const std::string all_digits(64, 'f');
-    CHECK(asset_path(dir, world::AssetRef{all_digits, "png"}) == dir / (all_digits + ".png"));
-    CHECK(asset_path(dir, world::AssetRef{std::string(64, '0'), "jpg"}) ==
-          dir / (std::string(64, '0') + ".jpg"));
-}
-
-TEST_CASE("asset_path: a hash that is not 64 lowercase hexadecimal digits throws "
-          "std::invalid_argument",
-          "[engine][textures]") {
-    const std::filesystem::path dir = "project/assets";
-    std::string uppercase = valid_sha;
-    uppercase[10] = 'A'; // 'a' would be valid
-    std::string embedded_nul = valid_sha;
-    embedded_nul[20] = '\0';
-
-    const std::vector<std::pair<std::string, std::string>> bad = {
-        {"uppercase hexadecimal", uppercase},
-        {"all uppercase", "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"},
-        {"63 digits", valid_sha.substr(1)},
-        {"65 digits", valid_sha + "0"},
-        {"empty", ""},
-        {"a letter past f", std::string(63, 'a') + "g"},
-        {"a parent directory, 64 characters long", "../" + valid_sha.substr(3)},
-        {"a parent directory, shorter", "../secret"},
-        {"a path separator", valid_sha.substr(0, 32) + "/" + valid_sha.substr(33)},
-        {"a backslash", valid_sha.substr(0, 32) + "\\" + valid_sha.substr(33)},
-        {"an absolute path", "/" + valid_sha.substr(1)},
-        {"a NUL character", embedded_nul},
-        {"a space", " " + valid_sha.substr(1)},
-    };
-    for (const auto& [why, sha] : bad) {
-        INFO(why);
-        CHECK_THROWS_AS(asset_path(dir, world::AssetRef{sha, "png"}), std::invalid_argument);
-    }
-}
-
-TEST_CASE("asset_path: an extension other than png, jpg, tif and exr throws std::invalid_argument",
-          "[engine][textures]") {
-    const std::filesystem::path dir = "project/assets";
-    const std::vector<std::string> bad = {"",
-                                          "PNG",
-                                          "Png",
-                                          "jpeg",
-                                          "tiff",
-                                          "gif",
-                                          "../png",
-                                          "png/..",
-                                          "png/../../x",
-                                          ".png",
-                                          "png ",
-                                          "exr\\..",
-                                          std::string("png\0", 4)};
-    for (const std::string& extension : bad) {
-        INFO("extension '" << extension << "'");
-        CHECK_THROWS_AS(asset_path(dir, world::AssetRef{valid_sha, extension}),
-                        std::invalid_argument);
-    }
-}
-
 // ---- load_textures -----------------------------------------------------------------------------
 
 namespace {
@@ -596,7 +526,7 @@ TEST_CASE("load_textures: a missing file, a file that is not an image and an inv
     const std::string garbage_sha(64, 'c');
     const world::AssetRef garbage{garbage_sha, "png"};
     write_file(dir.path() / (garbage_sha + ".png"), Bytes{'n', 'o', 't', ' ', 'a', ' ', 'p', 'n'});
-    // A name that would leave the folder; asset_path refuses it, and nothing is read.
+    // A name that would leave the folder; assets::asset_file refuses it, and nothing is read.
     const world::AssetRef escaping{"../" + valid_sha.substr(3), "png"};
     std::string upper = valid_sha;
     upper[0] = 'F';
@@ -643,6 +573,30 @@ TEST_CASE("load_textures: an assets folder that does not exist reports every pho
         CHECK(p.asset == world::AssetRef{valid_sha, "png"});
         CHECK_FALSE(p.reason.empty());
     }
+}
+
+TEST_CASE("load_textures: a .jpeg photograph loads; an .exr one is a problem, even with an image "
+          "in its file",
+          "[engine][textures]") {
+    // The extensions are assets::asset_file's, as the GPU's are (issue #154): the engine used to
+    // refuse .jpeg, which the GPU showed, and take .tif and .exr, which load_texture cannot
+    // decode (.tif waits for M2-32). Both files hold the same PNG, which load_texture reads
+    // whatever the name says, so only the name decides.
+    const TempDir dir("extensions");
+    const Bytes image = png8(1, 1, {10, 20, 30});
+    const world::AssetRef jpeg{valid_sha, "jpeg"};
+    const world::AssetRef exr{valid_sha, "exr"};
+    for (const world::AssetRef& ref : {jpeg, exr}) {
+        write_file(dir.path() / (ref.sha256 + "." + ref.extension), image);
+    }
+
+    const world::World w = paintings_world({painting_with(jpeg), painting_with(exr)});
+    LoadedTextures loaded;
+    REQUIRE_NOTHROW(loaded = load_textures(w, dir.path()));
+    CHECK(loaded.textures.find(jpeg) != nullptr);
+    CHECK(loaded.textures.find(exr) == nullptr);
+    REQUIRE(loaded.problems.size() == 1);
+    CHECK(loaded.problems[0].asset == exr);
 }
 
 // ---- The acceptance test: a 2 x 2 texture rendered face-on -------------------------------------

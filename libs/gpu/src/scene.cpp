@@ -4,6 +4,8 @@
 
 #include "upload.hpp"
 
+#include <cs/assets/asset_file.hpp>
+
 #include <glm/gtc/packing.hpp>
 
 #include <algorithm>
@@ -170,12 +172,6 @@ std::string texture_problem(const assets::Texture& texture, VkPhysicalDevice phy
     return {};
 }
 
-bool is_sha256(const std::string& text) {
-    return text.size() == 64 && std::ranges::all_of(text, [](char c) {
-               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-           });
-}
-
 // ---- Staging -----------------------------------------------------------------------------------
 
 // One buffer's bytes in the staging buffer. Only buffers with something to hold have one.
@@ -275,14 +271,7 @@ void record_upload(VkCommandBuffer cmd, VkBuffer staging, std::span<const Sectio
 
 TextureLoader project_texture_loader(std::filesystem::path assets_folder) {
     return [folder = std::move(assets_folder)](const world::AssetRef& asset) {
-        // Both names come from a project file: nothing in them may climb out of the folder.
-        if (!is_sha256(asset.sha256))
-            throw std::runtime_error("the asset name is not a SHA-256 of 64 lowercase "
-                                     "hexadecimal digits");
-        if (asset.extension != "png" && asset.extension != "jpg" && asset.extension != "jpeg")
-            throw std::runtime_error("only PNG and JPEG images can be loaded (the asset's "
-                                     "extension is not png, jpg or jpeg)");
-        return assets::load_texture(folder / (asset.sha256 + "." + asset.extension));
+        return assets::load_texture(assets::asset_file(folder, asset.sha256, asset.extension));
     };
 }
 
@@ -306,11 +295,13 @@ Scene::Scene(const Device& device, const world::World& world, const TextureLoade
     }
 
     // Materials, and the textures they name: each asset loaded once, or reported once.
-    std::vector<PendingTexture> pending;             // parallel to textures_
-    std::map<std::string, std::uint32_t> texture_of; // "<sha256>.<extension>", or no_texture
+    // By (sha256, extension), as the engine keeps them: two refused names that join to the same
+    // "<sha256>.<extension>" are still two assets, reported twice.
+    std::vector<PendingTexture> pending; // parallel to textures_
+    std::map<std::pair<std::string, std::string>, std::uint32_t> texture_of; // or no_texture
     const auto texture_for = [&](const world::AssetRef& asset) {
         const auto [entry, added] =
-            texture_of.try_emplace(asset.sha256 + "." + asset.extension, no_texture);
+            texture_of.try_emplace(std::pair(asset.sha256, asset.extension), no_texture);
         if (!added)
             return entry->second;
         std::string reason;
