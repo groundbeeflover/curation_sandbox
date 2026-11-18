@@ -1,21 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// cs-render: a project folder to a path-traced image and a lux report, headless.
+// cs-render: a project folder to an image and a lux report, headless.
 //
-//   cs-render <project-folder> --tier path --size 256x144 --spp 64 --seed 1 --out <prefix>
+//   cs-render <project-folder> --tier path|standard --size 256x144 --spp 64 --seed 1 --out <prefix>
 //
 // writes <prefix>.exr (linear Rec. 709 radiance in nits), <prefix>.png (exposed at the
 // viewpoint's EV100, or metered from the image when it has none, tone mapped with PBR Neutral,
 // sRGB) and <prefix>.lux.json (per exhibit, the lux on its 5 x 5 grid, engine::work_lux_grid).
-// The image is the first viewpoint's. Everything is seeded: the same command gives the same
-// files whatever the machine's thread count.
+// The image is the first viewpoint's, path traced by the engine on the CPU (--tier path, the
+// default) or drawn by the Standard tier on the GPU (--tier standard: one frame, offscreen, so
+// --spp is the path tier's alone). The lux always comes from the engine, never from pixels.
+// Everything is seeded: the same command gives the same files whatever the machine's thread
+// count.
 //
 //   cs-render golden <test-folder> [--update]
 //
-// runs a golden-image test instead (golden.hpp, tests/golden/README.md).
+// runs a golden-image test instead (golden.hpp, tests/golden/README.md), and
+//
+//   cs-render --device-report
+//
+// prints the report of the Vulkan device the Standard tier renders on, for bug reports and CI's
+// logs, and the name of its golden references.
 
 #include "common.hpp"
 #include "golden.hpp"
+#include "standard.hpp"
 
 #include <cs/core/image.hpp>
 #include <cs/core/image_io.hpp>
@@ -24,6 +33,7 @@
 #include <cs/engine/lux.hpp>
 #include <cs/engine/scene.hpp>
 #include <cs/engine/work_lux.hpp>
+#include <cs/gpu/device.hpp>
 #include <cs/world/world.hpp>
 
 #include <nlohmann/json.hpp>
@@ -36,6 +46,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -47,13 +58,22 @@ using cs_render::UsageError;
 using nlohmann::json;
 
 constexpr std::string_view usage =
-    "usage: cs-render <project-folder> --out <prefix> [--tier path] [--size 256x144]\n"
-    "                 [--spp 64] [--seed 1] [--lux-samples 1024] [--threads <n>]\n"
+    "usage: cs-render <project-folder> --out <prefix> [--tier path|standard] [--size 256x144]\n"
+    "                 [--spp 64] [--seed 1] [--direct-only] [--lux-samples 1024]\n"
+    "                 [--threads <n>]\n"
     "       cs-render golden <test-folder> [--update] [--out <folder>] [--threads <n>]\n"
+    "       cs-render --device-report\n"
     "\n"
     "Writes <prefix>.exr (linear nits), <prefix>.png (EV100 exposure, PBR Neutral, sRGB) and\n"
-    "<prefix>.lux.json (the lux on every exhibit). The Standard tier arrives with M1-29.\n"
-    "`cs-render golden --help` explains the golden-image tests.\n";
+    "<prefix>.lux.json (the lux on every exhibit, from the engine).\n"
+    "\n"
+    "--tier path traces the image on the CPU with --spp samples per pixel; with --direct-only,\n"
+    "only the light that reflects once, which the Standard tier evaluates. --tier standard\n"
+    "draws it on the GPU, one frame. --device-report prints the Vulkan device the Standard\n"
+    "tier uses (CS_GPU_DEVICE chooses one). `cs-render golden --help` explains the golden-image\n"
+    "tests.\n";
+
+enum class Tier { path, standard };
 
 // Bounds on what the command line may ask for.
 constexpr std::uint32_t max_lux_samples = 1u << 24;
@@ -61,6 +81,7 @@ constexpr std::uint32_t max_lux_samples = 1u << 24;
 struct Arguments {
     fs::path project;
     fs::path out;
+    Tier tier = Tier::path;
     cs_render::ImageSettings image;
     std::uint32_t lux_samples = 1024;
     unsigned threads = 0; // 0: the machine's
@@ -75,6 +96,13 @@ Arguments parse_arguments(int argc, char* argv[]) {
             std::cout << usage;
             std::exit(0);
         }
+        if (arg == "--device-report") {
+            throw UsageError("--device-report takes nothing else: cs-render --device-report");
+        }
+        if (arg == "--direct-only") {
+            arguments.image.direct_only = true; // the Standard tier's light is only direct anyway
+            continue;
+        }
         if (!arg.starts_with("--")) {
             if (!arguments.project.empty()) {
                 throw UsageError("more than one project folder: \"" + std::string(arg) + "\"");
@@ -87,11 +115,11 @@ Arguments parse_arguments(int argc, char* argv[]) {
         }
         const std::string_view value = argv[++i];
         if (arg == "--tier") {
-            if (value == "standard") {
-                throw UsageError(
-                    "the Standard tier is not in cs-render yet (M1-29); use --tier path");
-            }
-            if (value != "path") {
+            if (value == "path") {
+                arguments.tier = Tier::path;
+            } else if (value == "standard") {
+                arguments.tier = Tier::standard;
+            } else {
                 throw UsageError("--tier is path or standard, not \"" + std::string(value) + "\"");
             }
         } else if (arg == "--size") {
@@ -180,8 +208,20 @@ int run(const Arguments& arguments) {
     const cs::engine::Scene scene(world);
     const double load_s = seconds_since(start);
 
+    // The Standard tier draws one frame; the device lives only while it does.
+    const bool standard = arguments.tier == Tier::standard;
+    const std::uint32_t samples_per_pixel = standard ? 1 : arguments.image.samples_per_pixel;
+    std::optional<cs::gpu::DeviceReport> device_report;
     const auto render_start = std::chrono::steady_clock::now();
-    const cs::Image image = cs_render::render_view(project, scene, arguments.image, pool);
+    const cs::Image image = [&] {
+        if (!standard) {
+            return cs_render::render_view(project, scene, arguments.image, pool);
+        }
+        const cs::gpu::Device device(cs_render::device_options());
+        device_report = device.report();
+        return cs_render::render_standard(device, project, arguments.image.width,
+                                          arguments.image.height);
+    }();
     const double render_s = seconds_since(render_start);
 
     const auto lux_start = std::chrono::steady_clock::now();
@@ -225,8 +265,8 @@ int run(const Arguments& arguments) {
         problems.push_back({{"asset", problem.asset.sha256 + "." + problem.asset.extension},
                             {"reason", problem.reason}});
     }
-    const json report = {
-        {"tier", "path"},
+    json report = {
+        {"tier", standard ? "standard" : "path"},
         {"seed", arguments.image.seed},
         {"luxSamples", arguments.lux_samples},
         {"luxGrid",
@@ -234,11 +274,18 @@ int run(const Arguments& arguments) {
         {"image",
          {{"width", arguments.image.width},
           {"height", arguments.image.height},
-          {"samplesPerPixel", arguments.image.samples_per_pixel},
+          {"samplesPerPixel", samples_per_pixel},
+          {"directOnly", standard || arguments.image.direct_only},
           {"ev100", ev100},
           {"automaticExposure", automatic}}},
         {"exhibits", std::move(exhibits)},
         {"problems", std::move(problems)}};
+    if (device_report) {
+        report["device"] = {{"name", device_report->name},
+                            {"driver", device_report->driver},
+                            {"driverInfo", device_report->driver_info},
+                            {"validation", device_report->validation}};
+    }
 
     if (arguments.out.has_parent_path()) {
         fs::create_directories(arguments.out.parent_path());
@@ -257,12 +304,26 @@ int run(const Arguments& arguments) {
         }
     }
 
-    std::cout << "cs-render: " << arguments.image.width << " x " << arguments.image.height << " at "
-              << arguments.image.samples_per_pixel << " spp on " << threads << " threads: load "
-              << load_s << " s, render " << render_s << " s, lux " << lux_s << " s, total "
-              << seconds_since(start) << " s\n"
+    std::cout << "cs-render: " << arguments.image.width << " x " << arguments.image.height;
+    if (standard) {
+        std::cout << ", Standard tier on " << device_report->name << ", lux on " << threads
+                  << " threads";
+    } else {
+        std::cout << " at " << samples_per_pixel << " spp on " << threads << " threads";
+    }
+    std::cout << ": load " << load_s << " s, render " << render_s << " s, lux " << lux_s
+              << " s, total " << seconds_since(start) << " s\n"
               << "  " << exr.string() << "\n  " << png.string() << " (EV100 " << ev100
               << (automatic ? ", automatic" : "") << ")\n  " << lux_json.string() << '\n';
+    return 0;
+}
+
+// The device the Standard tier renders on, as cs::gpu::DeviceReport::to_string prints it, and the
+// name of its golden references.
+int print_device_report() {
+    const cs::gpu::Device device(cs_render::device_options());
+    std::cout << device.report().to_string() << "\ngolden references: ref."
+              << cs_render::driver_label(device.report()) << ".exr\n";
     return 0;
 }
 
@@ -273,10 +334,16 @@ int main(int argc, char* argv[]) {
         return cs_render::golden_main(argc - 1, argv + 1);
     }
     try {
+        if (argc == 2 && std::string_view(argv[1]) == "--device-report") {
+            return print_device_report();
+        }
         return run(parse_arguments(argc, argv));
     } catch (const UsageError& error) {
         std::cerr << "cs-render: " << error.what() << "\n\n" << usage;
         return cs_render::exit_usage;
+    } catch (const cs::gpu::NoDeviceError& error) {
+        std::cerr << "cs-render: no Vulkan device: " << error.what() << '\n';
+        return cs_render::exit_failure;
     } catch (const std::exception& error) {
         std::cerr << "cs-render: " << error.what() << '\n';
         return cs_render::exit_failure;

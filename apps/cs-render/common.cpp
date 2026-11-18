@@ -33,7 +33,7 @@ Project load_project(const std::filesystem::path& folder) {
         std::cerr << "cs-render: warning: image " << problem.asset.sha256 << "."
                   << problem.asset.extension << " is shown as grey: " << problem.reason << '\n';
     }
-    return Project{std::move(document), std::move(world), std::move(textures)};
+    return Project{folder, std::move(document), std::move(world), std::move(textures)};
 }
 
 cs::Image render_view(const Project& project, const cs::engine::Scene& scene,
@@ -43,6 +43,7 @@ cs::Image render_view(const Project& project, const cs::engine::Scene& scene,
     options.height = settings.height;
     options.samples_per_pixel = settings.samples_per_pixel;
     options.seed = settings.seed;
+    options.direct_only = settings.direct_only;
     options.pool = &pool;
     options.textures = &project.textures.textures;
     return cs::engine::render(scene, project.camera(), options);
