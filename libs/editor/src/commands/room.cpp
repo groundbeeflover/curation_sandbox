@@ -59,16 +59,17 @@ NewRoom new_room(const doc::Document& document, doc::IdGenerator& ids, double wi
     detail::check_length("new_room", "the depth", depth_m);
     detail::check_length("new_room", "the height", height_m);
 
-    doc::Room room;
-    room.outline_m = {{0.0, 0.0}, {width_m, 0.0}, {width_m, depth_m}, {0.0, depth_m}};
-    room.floor_height_m = 0.0;
-    room.ceiling_height_m = height_m;
+    const std::array<doc::Vec2, 4> outline{
+        {{0.0, 0.0}, {width_m, 0.0}, {width_m, depth_m}, {0.0, depth_m}}};
 
     doc::Transaction transaction(document, "New room");
     const doc::Uuid room_id = ids.next();
     doc::Entity room_entity;
     room_entity.name = "Room";
-    room_entity.room = room;
+    doc::Room& room = room_entity.room.emplace();
+    room.outline_m.assign(outline.begin(), outline.end());
+    room.floor_height_m = 0.0;
+    room.ceiling_height_m = height_m;
     transaction.add_entity(room_id, std::move(room_entity));
 
     // The outline runs anticlockwise, so the room is on the left of each side, and face A, on the
@@ -81,8 +82,8 @@ NewRoom new_room(const doc::Document& document, doc::IdGenerator& ids, double wi
     const std::vector<std::string> labels = unused_wall_labels(document, 4);
     std::array<doc::Uuid, 4> wall_ids;
     for (std::size_t i = 0; i < 4; ++i) {
-        const glm::dvec2 a = detail::to_glm(room.outline_m[i]);
-        const glm::dvec2 b = detail::to_glm(room.outline_m[(i + 1) % 4]);
+        const glm::dvec2 a = detail::to_glm(outline[i]);
+        const glm::dvec2 b = detail::to_glm(outline[(i + 1) % 4]);
         const glm::dvec2 out = outward[i];
 
         doc::Wall wall;
