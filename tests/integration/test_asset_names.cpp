@@ -153,9 +153,10 @@ TEST_CASE("asset names: engine::load_textures and gpu::Scene load the same photo
         {"a PNG", {hash('1'), "png"}, true},
         {"a JPEG named .jpg", {hash('2'), "jpg"}, true, true},
         {"a JPEG named .jpeg", {hash('3'), "jpeg"}, true, true},
-        // Extensions the engine took and could not decode, with a PNG inside that it could.
-        {"tif (M2-32)", {hash('4'), "tif"}, false},
-        {"exr", {hash('5'), "exr"}, false},
+        // An extension the engine took and could not decode, with a PNG inside that it could;
+        // tif was another, until M2-32 decodes it.
+        {"exr", {hash('4'), "exr"}, false},
+        {"gif", {hash('5'), "gif"}, false},
         {"an extension in upper case", {hash('6'), "PNG"}, false},
         {"a hash in upper case", {hash('B'), "png"}, false},
         {"a hash of 63 digits", {std::string(63, '7'), "png"}, false},

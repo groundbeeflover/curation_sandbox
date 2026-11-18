@@ -575,32 +575,28 @@ TEST_CASE("load_textures: an assets folder that does not exist reports every pho
     }
 }
 
-TEST_CASE("load_textures: a .jpeg photograph loads; a .tif or .exr one is a problem, even with an "
-          "image in its file",
+TEST_CASE("load_textures: a .jpeg photograph loads; an .exr one is a problem, even with an image "
+          "in its file",
           "[engine][textures]") {
     // The extensions are assets::asset_file's, as the GPU's are (issue #154): the engine used to
     // refuse .jpeg, which the GPU showed, and take .tif and .exr, which load_texture cannot
-    // decode. Every file holds the same PNG, which load_texture reads whatever the name says, so
-    // only the name decides.
+    // decode (.tif waits for M2-32). Both files hold the same PNG, which load_texture reads
+    // whatever the name says, so only the name decides.
     const TempDir dir("extensions");
     const Bytes image = png8(1, 1, {10, 20, 30});
     const world::AssetRef jpeg{valid_sha, "jpeg"};
-    const world::AssetRef tif{valid_sha, "tif"};
     const world::AssetRef exr{valid_sha, "exr"};
-    for (const world::AssetRef& ref : {jpeg, tif, exr}) {
+    for (const world::AssetRef& ref : {jpeg, exr}) {
         write_file(dir.path() / (ref.sha256 + "." + ref.extension), image);
     }
 
-    const world::World w =
-        paintings_world({painting_with(jpeg), painting_with(tif), painting_with(exr)});
+    const world::World w = paintings_world({painting_with(jpeg), painting_with(exr)});
     LoadedTextures loaded;
     REQUIRE_NOTHROW(loaded = load_textures(w, dir.path()));
     CHECK(loaded.textures.find(jpeg) != nullptr);
-    CHECK(loaded.textures.find(tif) == nullptr);
     CHECK(loaded.textures.find(exr) == nullptr);
-    REQUIRE(loaded.problems.size() == 2);
-    CHECK(loaded.problems[0].asset == tif);
-    CHECK(loaded.problems[1].asset == exr);
+    REQUIRE(loaded.problems.size() == 1);
+    CHECK(loaded.problems[0].asset == exr);
 }
 
 // ---- The acceptance test: a 2 x 2 texture rendered face-on -------------------------------------

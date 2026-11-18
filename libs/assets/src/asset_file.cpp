@@ -3,6 +3,7 @@
 #include <cs/assets/asset_file.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
@@ -10,6 +11,10 @@
 namespace cs::assets {
 
 namespace {
+
+// The extensions of the images load_texture decodes, PNG and JPEG: the only ones asset_file
+// accepts, for every tier. TIFF decoding (M2-32) adds "tif" and "tiff".
+constexpr std::array<std::string_view, 3> texture_extensions = {"png", "jpg", "jpeg"};
 
 bool is_sha256(std::string_view text) {
     return text.size() == 64 && std::ranges::all_of(text, [](char c) {

@@ -169,27 +169,32 @@ TEST_CASE("asset_file: <folder>/<sha256>.<extension> for a valid name", "[assets
     CHECK(asset_file(folder, all_0, "jpg") == folder / (all_0 + ".jpg"));
 }
 
-TEST_CASE("asset_file: the extensions it accepts are exactly the ones load_texture decodes: png, "
-          "jpg and jpeg",
+TEST_CASE("asset_file: png, jpg and jpeg are accepted, in lowercase, and a real photograph under "
+          "each loads",
           "[assets][asset_file]") {
-    const std::vector<std::string> expected = {"png", "jpg", "jpeg"};
-    REQUIRE(cs::assets::texture_extensions.size() == expected.size());
-    for (std::size_t i = 0; i < expected.size(); ++i) {
-        CHECK(cs::assets::texture_extensions[i] == expected[i]);
-    }
-
-    // A real photograph under each of them, the JPEGs as JPEGs, loads through the path asset_file
-    // makes.
+    // load_texture decodes PNG and JPEG (texture.hpp). The JPEGs are JPEGs, so each extension is
+    // shown with the kind of file it names.
     const TempDir dir("decoded");
     for (const char* extension : {"png", "jpg", "jpeg"}) {
         INFO("extension " << extension);
-        const fs::path path = asset_file(dir.path(), valid_sha, extension);
+        fs::path path;
+        REQUIRE_NOTHROW(path = asset_file(dir.path(), valid_sha, extension));
         write_file(path, std::string(extension) == "png" ? png() : jpeg());
         cs::assets::Texture texture;
         REQUIRE_NOTHROW(texture = cs::assets::load_texture(path));
         CHECK(texture.width() == 2);
         CHECK(texture.height() == 1);
     }
+}
+
+TEST_CASE("asset_file: tif and tiff are refused until load_texture decodes TIFF (M2-32)",
+          "[assets][asset_file]") {
+    // The engine used to take tif, only to fail to decode it. M2-32 adds both to the list in
+    // asset_file.cpp and turns this test round.
+    check_planted_and_refused("tiff", {
+                                          {"tif", valid_sha, "tif"},
+                                          {"tiff", valid_sha, "tiff"},
+                                      });
 }
 
 // ---- Hostile names, each with a real image where it would point --------------------------------
@@ -229,32 +234,29 @@ TEST_CASE("asset_file: a sha256 that is not 64 lowercase hexadecimal digits is r
         });
 }
 
-TEST_CASE("asset_file: an extension other than png, jpg and jpeg is refused with "
+TEST_CASE("asset_file: an extension load_texture does not decode is refused with "
           "std::invalid_argument, even when a real image is where it points",
           "[assets][asset_file]") {
     check_planted_and_refused(
-        "extension",
-        {
-            {"empty", valid_sha, ""},
-            {"upper case", valid_sha, "PNG"},
-            {"mixed case", valid_sha, "Png"},
-            {"upper case JPEG", valid_sha, "JPEG"},
-            // An AssetRef's extension (world/ids.hpp) that load_texture does not decode yet
-            // (M2-32): the engine used to take it, only to fail to decode it.
-            {"tif", valid_sha, "tif"},
-            {"tiff", valid_sha, "tiff"},
-            {"exr", valid_sha, "exr"},
-            {"gif", valid_sha, "gif"},
-            {"exe", valid_sha, "exe"},
-            {"a leading dot", valid_sha, ".png"},
-            {"a trailing space", valid_sha, "png "},
-            {"a parent directory before it", valid_sha, "../png"},
-            {"a parent directory after it", valid_sha, "png/../../x"},
-            {"a separator before it", valid_sha, "/png"},
-            {"a backslash and a parent directory", valid_sha, "exr\\..\\x"},
-            // The file system reads <sha256>.png, a valid name's own file.
-            {"a NUL character after it", valid_sha, std::string("png\0", 4)},
-        });
+        "extension", {
+                         {"empty", valid_sha, ""},
+                         {"upper case", valid_sha, "PNG"},
+                         {"mixed case", valid_sha, "Png"},
+                         {"upper case JPEG", valid_sha, "JPEG"},
+                         // An AssetRef's extension (world/ids.hpp) that load_texture does not
+                         // decode: the engine used to take it, only to fail to decode it.
+                         {"exr", valid_sha, "exr"},
+                         {"gif", valid_sha, "gif"},
+                         {"exe", valid_sha, "exe"},
+                         {"a leading dot", valid_sha, ".png"},
+                         {"a trailing space", valid_sha, "png "},
+                         {"a parent directory before it", valid_sha, "../png"},
+                         {"a parent directory after it", valid_sha, "png/../../x"},
+                         {"a separator before it", valid_sha, "/png"},
+                         {"a backslash and a parent directory", valid_sha, "exr\\..\\x"},
+                         // The file system reads <sha256>.png, a valid name's own file.
+                         {"a NUL character after it", valid_sha, std::string("png\0", 4)},
+                     });
 }
 
 TEST_CASE("asset_file: names that cannot point at a file are refused all the same",
@@ -273,7 +275,7 @@ TEST_CASE("asset_file: the message says which name is wrong", "[assets][asset_fi
     const fs::path folder = "project/assets";
     CHECK_THROWS_WITH(asset_file(folder, "../secret", "png"), ContainsSubstring("SHA-256"));
     // It names the extensions that are accepted, so a curator knows what to convert to.
-    CHECK_THROWS_WITH(asset_file(folder, valid_sha, "tif"), ContainsSubstring("png") &&
+    CHECK_THROWS_WITH(asset_file(folder, valid_sha, "exr"), ContainsSubstring("png") &&
                                                                 ContainsSubstring("jpg") &&
                                                                 ContainsSubstring("jpeg"));
 }

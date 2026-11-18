@@ -757,11 +757,11 @@ TEST_CASE("scene: project_texture_loader checks names with assets::asset_file, r
                         std::invalid_argument);
     }
     SECTION("an extension load_texture does not decode") {
-        // tif is an AssetRef extension (ids.hpp) that waits for TIFF decoding (M2-32).
-        const std::filesystem::path assets = folder_for("tif");
-        plant(assets / (std::string(chart_sha256) + ".tif"));
+        // exr is an AssetRef extension (ids.hpp) for which no image loader exists.
+        const std::filesystem::path assets = folder_for("exr");
+        plant(assets / (std::string(chart_sha256) + ".exr"));
         CHECK_THROWS_AS(
-            cs::gpu::project_texture_loader(assets)(AssetRef{std::string(chart_sha256), "tif"}),
+            cs::gpu::project_texture_loader(assets)(AssetRef{std::string(chart_sha256), "exr"}),
             std::invalid_argument);
     }
 }
