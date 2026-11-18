@@ -108,9 +108,13 @@ inline DeviceOptions test_options() {
 
 // A device, or the test skips (no device) or fails (no device under CS_REQUIRE_GPU=1).
 // ValidationUnavailableError is not caught: it fails the test with its own message.
+// The device is returned from after the handler, on the path that made it: FAIL and SKIP throw,
+// so a return after them alone is unreachable (MSVC's warning C4702 in debug builds), while GCC
+// and Clang cannot always tell that they throw and want a return on every path.
 inline std::unique_ptr<Device> make_device(const DeviceOptions& options = test_options()) {
+    std::unique_ptr<Device> device;
     try {
-        return std::make_unique<Device>(options);
+        device = std::make_unique<Device>(options);
     } catch (const NoDeviceError& e) {
         if (gpu_required()) {
             FAIL("no Vulkan device was found, and CS_REQUIRE_GPU=1 requires one: " << e.what());
@@ -118,7 +122,7 @@ inline std::unique_ptr<Device> make_device(const DeviceOptions& options = test_o
             SKIP("no Vulkan device was found: " << e.what());
         }
     }
-    return nullptr;
+    return device;
 }
 
 // ---- Scope guards ------------------------------------------------------------------------------
