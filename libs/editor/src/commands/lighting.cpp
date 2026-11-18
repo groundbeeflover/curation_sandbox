@@ -5,6 +5,7 @@
 #include "commands/common.hpp"
 
 #include <cs/doc/components.hpp>
+#include <cs/doc/project_io.hpp>
 #include <cs/doc/work.hpp>
 #include <cs/geom/wall_face.hpp>
 #include <cs/world/compile.hpp>
@@ -163,6 +164,12 @@ AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
     // opposite.
     const glm::dvec3 first_m = face.point(0.0, ceiling_z_m, track_out_m);
     const glm::dvec3 last_m = face.point(face.length_m, ceiling_z_m, track_out_m);
+    // A wall near the end of a double's range can put the track beyond it, and the project file
+    // holds only finite numbers.
+    if (!std::isfinite(first_m.x) || !std::isfinite(first_m.y) || !std::isfinite(last_m.x) ||
+        !std::isfinite(last_m.y)) {
+        refuse("the track would be too far out to hold");
+    }
     doc::Track track;
     track.points_m = {{first_m.x, first_m.y}, {last_m.x, last_m.y}};
     track.height_m = ceiling_z_m;
@@ -186,7 +193,12 @@ AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
     if (!track_id) {
         track_id = ids.next();
         doc::Entity track_entity;
-        track_entity.name = wall.label.empty() ? "Track" : "Track " + wall.label;
+        // Named after the wall, unless its label is so long that the name would not fit in the
+        // project file.
+        track_entity.name = "Track " + wall.label;
+        if (wall.label.empty() || track_entity.name.size() > doc::max_string_bytes) {
+            track_entity.name = "Track";
+        }
         track_entity.track = std::move(track);
         transaction.add_entity(*track_id, std::move(track_entity));
     }

@@ -48,7 +48,8 @@ struct AddedSpot {
 // - The track is straight and parallel to the face, cci_track_distance_m of the ceiling's height
 //   above the floor out from it, at the ceiling's height, and as long as the face: its first
 //   point is opposite the face's left end (seen facing it), so that a distance along it is a u
-//   along the face. It is named "Track <the wall's label>". A track already in the document whose
+//   along the face. It is named "Track <the wall's label>", or "Track" when the label is empty
+//   or the name would be longer than doc::max_string_bytes. A track already in the document whose
 //   two points and height are each within 1 mm of these is used instead of a new one.
 // - The spot is a luminaire of type generic_spot_id at full output, aimed at the exhibit (an
 //   AimAtEntity), on the track (OnTrack), named "Spot <n>" for the lowest n from 1 that no
@@ -68,8 +69,8 @@ struct AddedSpot {
 //
 // Throws std::invalid_argument unless `exhibit` is such an entity with a placement on a wall
 // whose face geom::wall_face_frame accepts; the ceiling is more than cci_reference_height_m above
-// the floor; the track is further out from the wall's face than the work's face; and the centre of
-// the work's face is below the ceiling.
+// the floor; the track is further out from the wall's face than the work's face, and its points
+// are finite; and the centre of the work's face is below the ceiling.
 AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
                        const doc::Uuid& exhibit);
 

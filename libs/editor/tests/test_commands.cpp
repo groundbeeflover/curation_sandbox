@@ -1480,6 +1480,38 @@ TEST_CASE("add_spot_for: a document that dangles or holds a degenerate wall is r
     CHECK_THROWS_AS(add_spot_for(broken, ids, gallery.work.exhibit), std::invalid_argument);
 }
 
+// From the security review: what add_spot_for makes must be a document the project file can
+// hold, which takes only finite numbers and names of at most doc::max_string_bytes.
+TEST_CASE("add_spot_for: a track beyond the largest double is refused, and a wall label too long "
+          "to name the track after gives the name Track",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const Gallery gallery = commit_gallery(history, ids);
+    doc::Wall a = *entity_of(history.document(), gallery.room.walls[0]).wall;
+
+    SECTION("a wall at the edge of a double's range, its face towards +x and 1e306 m high with no "
+            "room round the work: the track, about 5.8e305 m out, would be beyond 1.798e308") {
+        a.start_m = {1.7976e308, 4.0};
+        a.end_m = {1.7976e308, 0.0};
+        a.height_m = 1e306;
+        commit_set(history, gallery.room.walls[0], a);
+        CHECK_THROWS_AS(add_spot_for(history.document(), ids, gallery.work.exhibit),
+                        std::invalid_argument);
+    }
+    SECTION("labels whose track name is just within the limit, and one byte over it") {
+        const std::size_t fits = doc::max_string_bytes - std::string_view("Track ").size();
+        const std::size_t length = GENERATE_COPY(fits, fits + 1);
+        CAPTURE(length);
+        a.label = std::string(length, 'A');
+        commit_set(history, gallery.room.walls[0], a);
+        const SpotIds spot = commit_add_spot(history, ids, gallery.work.exhibit);
+        const std::string& name = entity_of(history.document(), spot.track).name;
+        CHECK(name == (length == fits ? "Track " + a.label : std::string("Track")));
+        CHECK(name.size() <= doc::max_string_bytes);
+    }
+}
+
 // ==== Undo ====================================================================================
 
 TEST_CASE("commands: each undoes in one step, the document after undo serialising identical to "
