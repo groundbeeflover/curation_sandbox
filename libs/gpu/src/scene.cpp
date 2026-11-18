@@ -295,11 +295,13 @@ Scene::Scene(const Device& device, const world::World& world, const TextureLoade
     }
 
     // Materials, and the textures they name: each asset loaded once, or reported once.
-    std::vector<PendingTexture> pending;             // parallel to textures_
-    std::map<std::string, std::uint32_t> texture_of; // "<sha256>.<extension>", or no_texture
+    // By (sha256, extension), as the engine keeps them: two refused names that join to the same
+    // "<sha256>.<extension>" are still two assets, reported twice.
+    std::vector<PendingTexture> pending; // parallel to textures_
+    std::map<std::pair<std::string, std::string>, std::uint32_t> texture_of; // or no_texture
     const auto texture_for = [&](const world::AssetRef& asset) {
         const auto [entry, added] =
-            texture_of.try_emplace(asset.sha256 + "." + asset.extension, no_texture);
+            texture_of.try_emplace(std::pair(asset.sha256, asset.extension), no_texture);
         if (!added)
             return entry->second;
         std::string reason;

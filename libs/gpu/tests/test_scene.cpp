@@ -757,7 +757,7 @@ TEST_CASE("scene: project_texture_loader checks names with assets::asset_file, r
                         std::invalid_argument);
     }
     SECTION("an extension load_texture does not decode") {
-        // exr is an AssetRef extension (ids.hpp) for which no image loader exists.
+        // The document allows exr (doc/components.hpp), but load_texture does not decode it.
         const std::filesystem::path assets = folder_for("exr");
         plant(assets / (std::string(chart_sha256) + ".exr"));
         CHECK_THROWS_AS(

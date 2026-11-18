@@ -164,6 +164,10 @@ TEST_CASE("asset names: engine::load_textures and gpu::Scene load the same photo
         {"an extension that leaves the folder", {hash('9'), "png/../../x"}, false},
         {"a NUL in the hash", {nul_inside, "png"}, false},
         {"an absolute path", {(root.path() / "absolute").string(), "png"}, false},
+        // Two names that join to the same "<sha256>.<extension>" are two assets, and two problems,
+        // in both tiers.
+        {"a dot in the extension", {hash('c'), "png.x"}, false},
+        {"the same file, the dot in the hash", {hash('c') + ".png", "x"}, false},
     };
 
     // One painting per name, in that order; the scene needs no meshes to load its textures.

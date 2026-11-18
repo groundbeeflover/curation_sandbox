@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
 #include <stdexcept>
 #include <string>
 
@@ -22,18 +21,6 @@ bool is_sha256(std::string_view text) {
            });
 }
 
-// "png, jpg or jpeg", from the list itself.
-std::string accepted_extensions() {
-    std::string text;
-    for (std::size_t i = 0; i < texture_extensions.size(); ++i) {
-        if (i > 0) {
-            text += i + 1 == texture_extensions.size() ? " or " : ", ";
-        }
-        text += texture_extensions[i];
-    }
-    return text;
-}
-
 } // namespace
 
 std::filesystem::path asset_file(const std::filesystem::path& folder, std::string_view sha256,
@@ -44,8 +31,12 @@ std::filesystem::path asset_file(const std::filesystem::path& folder, std::strin
             "asset: the name is not a SHA-256 of 64 lowercase hexadecimal digits");
     }
     if (std::ranges::find(texture_extensions, extension) == texture_extensions.end()) {
+        std::string accepted; // "png, jpg, jpeg", from the list itself
+        for (std::string_view known : texture_extensions) {
+            accepted.append(accepted.empty() ? "" : ", ").append(known);
+        }
         throw std::invalid_argument("asset: the extension is not one the image import reads (" +
-                                    accepted_extensions() + ")");
+                                    accepted + ")");
     }
     std::string name;
     name.reserve(sha256.size() + 1 + extension.size());

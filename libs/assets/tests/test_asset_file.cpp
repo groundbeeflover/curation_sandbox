@@ -237,26 +237,26 @@ TEST_CASE("asset_file: a sha256 that is not 64 lowercase hexadecimal digits is r
 TEST_CASE("asset_file: an extension load_texture does not decode is refused with "
           "std::invalid_argument, even when a real image is where it points",
           "[assets][asset_file]") {
-    check_planted_and_refused(
-        "extension", {
-                         {"empty", valid_sha, ""},
-                         {"upper case", valid_sha, "PNG"},
-                         {"mixed case", valid_sha, "Png"},
-                         {"upper case JPEG", valid_sha, "JPEG"},
-                         // An AssetRef's extension (world/ids.hpp) that load_texture does not
-                         // decode: the engine used to take it, only to fail to decode it.
-                         {"exr", valid_sha, "exr"},
-                         {"gif", valid_sha, "gif"},
-                         {"exe", valid_sha, "exe"},
-                         {"a leading dot", valid_sha, ".png"},
-                         {"a trailing space", valid_sha, "png "},
-                         {"a parent directory before it", valid_sha, "../png"},
-                         {"a parent directory after it", valid_sha, "png/../../x"},
-                         {"a separator before it", valid_sha, "/png"},
-                         {"a backslash and a parent directory", valid_sha, "exr\\..\\x"},
-                         // The file system reads <sha256>.png, a valid name's own file.
-                         {"a NUL character after it", valid_sha, std::string("png\0", 4)},
-                     });
+    check_planted_and_refused("extension",
+                              {
+                                  {"empty", valid_sha, ""},
+                                  {"upper case", valid_sha, "PNG"},
+                                  {"mixed case", valid_sha, "Png"},
+                                  {"upper case JPEG", valid_sha, "JPEG"},
+                                  // The document allows it, but load_texture does not decode it:
+                                  // the engine used to take it, only to fail to decode it.
+                                  {"exr", valid_sha, "exr"},
+                                  {"gif", valid_sha, "gif"},
+                                  {"exe", valid_sha, "exe"},
+                                  {"a leading dot", valid_sha, ".png"},
+                                  {"a trailing space", valid_sha, "png "},
+                                  {"a parent directory before it", valid_sha, "../png"},
+                                  {"a parent directory after it", valid_sha, "png/../../x"},
+                                  {"a separator before it", valid_sha, "/png"},
+                                  {"a backslash and a parent directory", valid_sha, "exr\\..\\x"},
+                                  // The file system reads <sha256>.png, a valid name's own file.
+                                  {"a NUL character after it", valid_sha, std::string("png\0", 4)},
+                              });
 }
 
 TEST_CASE("asset_file: names that cannot point at a file are refused all the same",
