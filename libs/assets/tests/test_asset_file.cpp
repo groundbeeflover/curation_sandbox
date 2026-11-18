@@ -7,7 +7,7 @@
 // Every hostile name has a real image planted in the file it would name, made the way a loader
 // that skipped the check would make it (folder / (sha256 + "." + extension)), and the test first
 // shows that load_texture reads that file: so a check that let the name through would load an
-// image rather than fail for want of a file. Two names cannot have one (see the last test).
+// image rather than fail for want of a file. A few names cannot have one (see the last test).
 
 #include <cs/assets/asset_file.hpp>
 #include <cs/assets/texture.hpp>
@@ -250,7 +250,6 @@ TEST_CASE("asset_file: an extension load_texture does not decode is refused with
                                   {"exe", valid_sha, "exe"},
                                   {"a leading dot", valid_sha, ".png"},
                                   {"a trailing space", valid_sha, "png "},
-                                  {"a parent directory before it", valid_sha, "../png"},
                                   {"a parent directory after it", valid_sha, "png/../../x"},
                                   {"a separator before it", valid_sha, "/png"},
                                   {"a backslash and a parent directory", valid_sha, "exr\\..\\x"},
@@ -269,6 +268,10 @@ TEST_CASE("asset_file: names that cannot point at a file are refused all the sam
     // <sha256>.png/.. is the folder itself; exr\.. is the same on Windows.
     check_refused(folder, valid_sha, "png/..");
     check_refused(folder, valid_sha, "exr\\..");
+    // <sha256>.../png: Windows makes the directory <sha256>... as <sha256> (a last segment loses
+    // every trailing dot) but opens <sha256>..\png (a middle one loses only one), so no file can be
+    // planted there.
+    check_refused(folder, valid_sha, "../png");
 }
 
 TEST_CASE("asset_file: the message says which name is wrong", "[assets][asset_file]") {
