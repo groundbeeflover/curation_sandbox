@@ -42,9 +42,9 @@ struct AddedSpot {
 
 // A spot that lights `exhibit`, an entity with an Exhibit of a work in the document and an OnWall
 // placement on a wall, as the CCI advises:
-// - The ceiling is that of the room whose outline, in plan, holds the centre of the work's face
-//   (the first such room in order of id). Where no room does, the floor is at z = 0 and the
-//   ceiling at the top of the wall.
+// - The ceiling is that of the room the centre of the work's face is in: whose outline holds it
+//   in plan, and whose floor is at or below it and ceiling above it (the first such room in order
+//   of id). Where no room is, the floor is at z = 0 and the ceiling at the top of the wall.
 // - The track is straight and parallel to the face, cci_track_distance_m of the ceiling's height
 //   above the floor out from it, at the ceiling's height, and as long as the face: its first
 //   point is opposite the face's left end (seen facing it), so that a distance along it is a u

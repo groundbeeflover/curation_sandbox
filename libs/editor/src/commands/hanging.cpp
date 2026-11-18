@@ -18,6 +18,9 @@ AddedWork add_work(const doc::Document& document, doc::IdGenerator& ids, const d
                    double width_m, double height_m, std::string title) {
     detail::check_length("add_work", "the width", width_m);
     detail::check_length("add_work", "the height", height_m);
+    detail::check_asset("add_work", image);
+    // The entity's name is the title, and the transaction's "Add " and the title.
+    detail::check_text("add_work", "the title", title);
     const std::optional<doc::Uuid> wall_id = find_wall_labelled(document, default_wall_label);
     if (!wall_id) {
         detail::refuse("add_work", "no wall is labelled " + std::string(default_wall_label));

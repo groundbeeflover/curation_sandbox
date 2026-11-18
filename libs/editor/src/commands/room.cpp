@@ -4,7 +4,6 @@
 
 #include "commands/common.hpp"
 
-#include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
 
 #include <algorithm>
@@ -72,15 +71,19 @@ NewRoom new_room(const doc::Document& document, doc::IdGenerator& ids, double wi
     room_entity.room = room;
     transaction.add_entity(room_id, std::move(room_entity));
 
+    // The outline runs anticlockwise, so the room is on the left of each side, and face A, on the
+    // left of the wall's line, faces into it when the line is half a thickness out: to the right
+    // of the side. The sides run along +x, +y, -x and -y, so their right is -y, +x, +y and -x, by
+    // the axes rather than by normalising, which a size near the limits of a double would spoil.
+    constexpr double half = default_wall_thickness_m / 2.0;
+    constexpr std::array<glm::dvec2, 4> outward{
+        {{0.0, -half}, {half, 0.0}, {0.0, half}, {-half, 0.0}}};
     const std::vector<std::string> labels = unused_wall_labels(document, 4);
     std::array<doc::Uuid, 4> wall_ids;
     for (std::size_t i = 0; i < 4; ++i) {
         const glm::dvec2 a = detail::to_glm(room.outline_m[i]);
         const glm::dvec2 b = detail::to_glm(room.outline_m[(i + 1) % 4]);
-        const glm::dvec2 along = glm::normalize(b - a);
-        // The outline runs anticlockwise, so the room is on the left of each side, and face A,
-        // on the left of the wall's line, faces into it when the line is half a thickness out.
-        const glm::dvec2 out = glm::dvec2(along.y, -along.x) * (default_wall_thickness_m / 2.0);
+        const glm::dvec2 out = outward[i];
 
         doc::Wall wall;
         wall.start_m = {a.x + out.x, a.y + out.y};

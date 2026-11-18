@@ -84,8 +84,8 @@ inline constexpr std::size_t max_typed_text_bytes = 64;
 //   "-0.5"     -> length -0.5 m     "u=2350mm"  -> u 2.35 m       "36in"       -> length 0.9144 m
 //
 // nullopt for anything else: empty text, an unknown field or unit, a ',' for the decimal point,
-// a number that is not finite (or becomes infinite in metres), text after the number, or more
-// than max_typed_text_bytes.
+// a number that is not finite or is beyond what a double holds either way (1e309, 1e-400), text
+// after the number, or more than max_typed_text_bytes.
 std::optional<TypedValue> parse_typed_value(std::string_view text);
 
 // The value confirmed in the measurements box with Enter, after parse_typed_value.

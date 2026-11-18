@@ -454,6 +454,14 @@ TEST_CASE("typed value: a number beyond the largest double, which becomes infini
     check_refused("1e99999999999999999999");
 }
 
+// From the code review: tool.hpp now says a number too small for a double is refused too, rather
+// than read as 0, which a curator did not type.
+TEST_CASE("typed value: a number too small for a double is refused", "[editor][tool]") {
+    check_refused("1e-400");
+    check_refused("u=-1e-400");
+    check_refused("1e-330 mm");
+}
+
 TEST_CASE("typed value: text before or after the value is refused", "[editor][tool]") {
     check_refused("4.25 m extra");
     check_refused("4.25x");

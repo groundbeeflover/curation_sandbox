@@ -114,15 +114,21 @@ AddedSpot add_spot_for(const doc::Document& document, doc::IdGenerator& ids,
     const glm::dvec3 target_m =
         face.point(on_wall->distance_m, on_wall->centre_height_m, face_out_m);
 
-    // The ceiling over it.
+    // The ceiling over it: of the room it is in, in plan and in height, so that of two rooms one
+    // above the other the work's own is found.
     double floor_z_m = 0.0;
     double ceiling_z_m = wall.height_m;
     for (const auto& [id, other] : document.entities()) {
-        if (other.room && inside(other.room->outline_m, glm::dvec2(target_m))) {
+        if (other.room && other.room->floor_height_m <= target_m.z &&
+            target_m.z < other.room->ceiling_height_m &&
+            inside(other.room->outline_m, glm::dvec2(target_m))) {
             floor_z_m = other.room->floor_height_m;
             ceiling_z_m = other.room->ceiling_height_m;
             break;
         }
+    }
+    if (!(ceiling_z_m - floor_z_m > cci_reference_height_m)) {
+        refuse("the ceiling is no more than 1.6 m above the floor, too low for a track");
     }
     const double track_out_m = cci_track_distance_m(ceiling_z_m - floor_z_m);
     if (!(track_out_m > face_out_m)) {

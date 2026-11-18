@@ -41,8 +41,10 @@ struct AddedWork {
 // New ids are taken for the work, then the entity. `image` is an asset of the project already
 // (ADR 0007); it is not looked for on disk.
 //
-// Throws std::invalid_argument unless width_m and height_m are finite and greater than 0, and the
-// document has a wall labelled default_wall_label.
+// Throws std::invalid_argument unless width_m and height_m are finite and greater than 0, the
+// image names an asset as the project file does (a SHA-256 of 64 lowercase hexadecimal digits,
+// an extension of 1 to 8 characters from a-z and 0-9), the title is at most doc::max_string_bytes
+// long, and the document has a wall labelled default_wall_label.
 AddedWork add_work(const doc::Document& document, doc::IdGenerator& ids, const doc::AssetRef& image,
                    double width_m, double height_m, std::string title = {});
 

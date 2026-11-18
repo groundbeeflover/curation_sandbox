@@ -522,6 +522,31 @@ TEST_CASE("new_room: sizes that are not finite and greater than 0 throw std::inv
     CHECK(doc::to_project_json(history.document()) == before);
 }
 
+// From the code review: sizes near the ends of a double's range are finite and greater than 0, so
+// they are taken, and each wall still stands exactly half a thickness outside its side. Exact:
+// adding 0.05 m to a coordinate of 0 or of 1e-200 m, or to one of 1e160 m, is one rounding.
+TEST_CASE("new_room: a tiny or a huge size gives walls half a thickness outside the outline",
+          "[editor][commands]") {
+    const double size_m = GENERATE(1e-200, 1e160);
+    CAPTURE(size_m);
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, size_m, size_m, 3.5);
+    const double half = default_wall_thickness_m / 2.0;
+    const std::array<std::pair<doc::Vec2, doc::Vec2>, 4> expected{{
+        {{0.0, -half}, {size_m, -half}},
+        {{size_m + half, 0.0}, {size_m + half, size_m}},
+        {{size_m, size_m + half}, {0.0, size_m + half}},
+        {{-half, size_m}, {-half, 0.0}},
+    }};
+    for (std::size_t i = 0; i < 4; ++i) {
+        CAPTURE(i);
+        const doc::Wall& wall = *entity_of(history.document(), room.walls[i]).wall;
+        CHECK(wall.start_m == expected[i].first);
+        CHECK(wall.end_m == expected[i].second);
+    }
+}
+
 // ==== Wall labels =============================================================================
 
 TEST_CASE("wall_label: A to Z, then AA, AB, ..., AZ, BA, ..., ZZ, AAA, as a spreadsheet letters "
@@ -788,6 +813,35 @@ TEST_CASE("add_work: throws std::invalid_argument with no wall labelled A, or si
                         std::invalid_argument);
         CHECK(history.undo_count() == 1);
         CHECK(doc::to_project_json(history.document()) == before);
+    }
+}
+
+// From the code review: what add_work makes must be a document the project file can hold, so a
+// title or an image name the loader would refuse is refused here, before anything is committed.
+TEST_CASE("add_work: a title longer than doc::max_string_bytes, or an image that is not an asset "
+          "name, throws std::invalid_argument",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    commit_new_room(history, ids, 6.0, 4.0, 3.5);
+
+    SECTION("the longest title is taken, one byte more is refused") {
+        CHECK_NOTHROW(add_work(history.document(), ids, chart_image, 0.73, 0.92,
+                               std::string(doc::max_string_bytes, 'x')));
+        CHECK_THROWS_AS(add_work(history.document(), ids, chart_image, 0.73, 0.92,
+                                 std::string(doc::max_string_bytes + 1, 'x')),
+                        std::invalid_argument);
+    }
+    SECTION("asset names") {
+        const std::string hash = chart_image.sha256;
+        const doc::AssetRef bad = GENERATE_COPY(
+            doc::AssetRef{"", "png"}, doc::AssetRef{hash.substr(1), "png"},
+            doc::AssetRef{hash + "0", "png"}, doc::AssetRef{"G" + hash.substr(1), "png"},
+            doc::AssetRef{"A" + hash.substr(1), "png"}, doc::AssetRef{hash, ""},
+            doc::AssetRef{hash, "PNG"}, doc::AssetRef{hash, "p.ng"}, doc::AssetRef{hash, "../x"},
+            doc::AssetRef{hash, "abcdefghi"});
+        CAPTURE(bad.sha256, bad.extension);
+        CHECK_THROWS_AS(add_work(history.document(), ids, bad, 0.73, 0.92), std::invalid_argument);
     }
 }
 
@@ -1257,6 +1311,25 @@ TEST_CASE("add_spot_for: the ceiling is that of the first room, in order of id, 
         CHECK_THAT(from_vertical_rad(spot_position(history.document(), spot.spot),
                                      work_face_centre(history.document(), work.exhibit)),
                    WithinAbs(30.0 * deg, issue_aim_rad));
+    }
+    // From the code review: rooms one above the other share an outline in plan, so the room is
+    // found by the work's height too. The upper room, z 3.5 to 7 m, is first by id; the work's
+    // centre, at 1.5 m, is in the lower one.
+    SECTION("rooms one above the other: the one the work is in, by height, 3.5 m") {
+        const RoomIds upper = commit_new_room(history, ids, 6.0, 4.0, 7.0);
+        doc::Room raised = *entity_of(history.document(), upper.room).room;
+        raised.floor_height_m = 3.5;
+        commit_set(history, upper.room, raised);
+        commit_new_room(history, ids, 6.0, 4.0, 3.5);
+        const WorkIds work = commit_add_work(history, ids, 0.73, 0.92);
+        const SpotIds spot = commit_add_spot(history, ids, work.exhibit);
+
+        const doc::Track& track = *entity_of(history.document(), spot.track).track;
+        CHECK(track.height_m == 3.5);
+        const geom::FaceFrame face = face_of(history.document(), work.exhibit);
+        const dvec3 first_point(track.points_m.front().x, track.points_m.front().y, 0.0);
+        CHECK_THAT(glm::dot(first_point - face.origin, face.normal),
+                   WithinAbs(cci_distance_m(3.5), issue_m));
     }
     SECTION("no room: the floor at 0 and the ceiling at the top of the wall, 3.0 m") {
         const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
