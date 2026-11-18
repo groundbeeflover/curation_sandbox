@@ -113,9 +113,9 @@ static_assert(sizeof(MaterialData) == 48);
 using TextureLoader = std::function<assets::Texture(const world::AssetRef&)>;
 
 // Loads assets from a project's assets/ folder, named <sha256>.<extension> (ADR 0007), with
-// assets::load_texture. The names come from a project file, so they are checked before a path is
-// made of them: the hash must be 64 lowercase hexadecimal digits and the extension png, jpg or
-// jpeg; anything else throws std::runtime_error, like a file that does not load.
+// assets::load_texture. The names come from a project file, so assets::asset_file checks them
+// before a path is made of them, as it does for the engine: a name it refuses throws its
+// std::invalid_argument, a file that does not load std::runtime_error.
 TextureLoader project_texture_loader(std::filesystem::path assets_folder);
 
 // One painting's image on the GPU.

@@ -709,68 +709,60 @@ TEST_CASE("scene: project_texture_loader loads <sha256>.<extension> from the fol
     CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), "jpg"}), std::runtime_error);
 }
 
-TEST_CASE("scene: project_texture_loader refuses a malformed sha256 or extension, even when a file "
-          "of that name exists",
+TEST_CASE("scene: project_texture_loader checks names with assets::asset_file, refusing one even "
+          "when a file of that name exists, and loads a .jpeg",
           "[gpu][scene]") {
-    // A project folder of the test's own: <root>/assets/ is the loader's folder. A real PNG is
-    // planted under every refused name that a path could be made of, inside the folder and next
-    // to it, so a loader that skipped a check would load it rather than throw.
+    // Every hostile name is tested in libs/assets/tests/test_asset_file.cpp; here a few show that
+    // the loader asks asset_file (its std::invalid_argument comes through) rather than reading
+    // the file. A real PNG is planted under each, so a loader that skipped the check would load
+    // it. Each name has a project folder of its own, <root>/<name>/assets, so that no plant
+    // stands in for another on a case-insensitive file system.
     const TempFolder root("project_texture_loader_names");
-    const std::filesystem::path assets = root.path() / "assets";
-    std::filesystem::create_directories(assets);
-    // On a case-insensitive file system (Windows) the uppercase name is the good file itself,
-    // which still holds a PNG there, so a name already planted is left as it is.
+    const auto folder_for = [&root](const std::string& name) {
+        const std::filesystem::path assets = root.path() / name / "assets";
+        std::filesystem::create_directories(assets);
+        return assets;
+    };
     const auto plant = [](const std::filesystem::path& to) {
-        std::filesystem::copy_file(chart_path(), to, std::filesystem::copy_options::skip_existing);
+        std::filesystem::copy_file(chart_path(), to);
     };
 
-    std::string upper(chart_sha256);
-    std::transform(upper.begin(), upper.end(), upper.begin(),
-                   [](char c) { return (c >= 'a' && c <= 'f') ? static_cast<char>(c - 32) : c; });
-    const std::string short_hash(chart_sha256.substr(0, 63));
-    const std::string long_hash = std::string(chart_sha256) + "0";
-    // 64 characters, so only the hexadecimal check refuses it; the file it points to is next to
-    // the assets folder.
-    const std::string escaping = "../" + std::string(chart_sha256.substr(0, 61));
-
-    plant(assets / (std::string(chart_sha256) + ".png")); // the good one, for the control
-    plant(assets / (upper + ".png"));
-    plant(assets / (short_hash + ".png"));
-    plant(assets / (long_hash + ".png"));
-    plant(root.path() / (std::string(chart_sha256.substr(0, 61)) + ".png"));
-    plant(assets / (std::string(chart_sha256) + ".exe"));
-    plant(assets / (std::string(chart_sha256) + ".tif"));
-
-    const TextureLoader load = cs::gpu::project_texture_loader(assets);
-
     SECTION("the control: the well-formed name loads") {
-        CHECK_NOTHROW(load(chart_asset()));
+        const std::filesystem::path assets = folder_for("control");
+        plant(assets / (std::string(chart_sha256) + ".png"));
+        CHECK_NOTHROW(cs::gpu::project_texture_loader(assets)(chart_asset()));
     }
-    SECTION("sha256 of the wrong length") {
-        CHECK_THROWS_AS(load(AssetRef{short_hash, "png"}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{long_hash, "png"}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{"", "png"}), std::runtime_error);
+    SECTION("a .jpeg loads, as in the engine") {
+        // load_texture reads the content, whatever the name says, so the PNG serves.
+        const std::filesystem::path assets = folder_for("jpeg");
+        plant(assets / (std::string(chart_sha256) + ".jpeg"));
+        CHECK_NOTHROW(
+            cs::gpu::project_texture_loader(assets)(AssetRef{std::string(chart_sha256), "jpeg"}));
     }
     SECTION("sha256 in uppercase") {
-        CHECK_THROWS_AS(load(AssetRef{upper, "png"}), std::runtime_error);
+        std::string upper(chart_sha256);
+        std::transform(upper.begin(), upper.end(), upper.begin(), [](char c) {
+            return (c >= 'a' && c <= 'f') ? static_cast<char>(c - 32) : c;
+        });
+        const std::filesystem::path assets = folder_for("upper");
+        plant(assets / (upper + ".png"));
+        CHECK_THROWS_AS(cs::gpu::project_texture_loader(assets)(AssetRef{upper, "png"}),
+                        std::invalid_argument);
     }
-    SECTION("sha256 that leaves the folder") {
-        REQUIRE(escaping.size() == 64);
-        CHECK_THROWS_AS(load(AssetRef{escaping, "png"}), std::runtime_error);
-        // An absolute path, and a NUL inside, at the right length.
-        CHECK_THROWS_AS(load(AssetRef{"/" + std::string(63, 'a'), "png"}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{std::string(63, 'a') + '\0', "png"}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{std::string(63, 'a') + 'g', "png"}), std::runtime_error);
+    SECTION("sha256 that leaves the folder, at 64 characters") {
+        const std::string kept(chart_sha256.substr(0, 61));
+        const std::filesystem::path assets = folder_for("escaping");
+        plant(assets.parent_path() / (kept + ".png"));
+        CHECK_THROWS_AS(cs::gpu::project_texture_loader(assets)(AssetRef{"../" + kept, "png"}),
+                        std::invalid_argument);
     }
-    SECTION("an extension other than png, jpg or jpeg") {
-        CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), "exe"}), std::runtime_error);
-        // tif is an AssetRef extension (ids.hpp) that load_texture does not read.
-        CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), "tif"}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), ""}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), "png/../x"}), std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), std::string("png\0", 4)}),
-                        std::runtime_error);
-        CHECK_THROWS_AS(load(AssetRef{std::string(chart_sha256), "/png"}), std::runtime_error);
+    SECTION("an extension load_texture does not decode") {
+        // tif is an AssetRef extension (ids.hpp) that waits for TIFF decoding (M2-32).
+        const std::filesystem::path assets = folder_for("tif");
+        plant(assets / (std::string(chart_sha256) + ".tif"));
+        CHECK_THROWS_AS(
+            cs::gpu::project_texture_loader(assets)(AssetRef{std::string(chart_sha256), "tif"}),
+            std::invalid_argument);
     }
 }
 

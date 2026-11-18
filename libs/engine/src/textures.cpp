@@ -2,13 +2,13 @@
 
 #include <cs/engine/textures.hpp>
 
+#include <cs/assets/asset_file.hpp>
+
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <exception>
 #include <set>
 #include <stdexcept>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -16,15 +16,6 @@
 namespace cs::engine {
 
 namespace {
-
-// The extensions an asset may have (world/ids.hpp).
-constexpr std::array<std::string_view, 4> asset_extensions = {"png", "jpg", "tif", "exr"};
-
-bool is_sha256(std::string_view text) {
-    return text.size() == 64 && std::all_of(text.begin(), text.end(), [](char c) {
-               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-           });
-}
 
 std::pair<std::string, std::string> key(const world::AssetRef& asset) {
     return {asset.sha256, asset.extension};
@@ -142,19 +133,6 @@ const material::Brdf& MaterialBrdfs::at(std::uint32_t material, glm::dvec2 uv,
     return painting.emplace(parameters);
 }
 
-std::filesystem::path asset_path(const std::filesystem::path& assets_dir,
-                                 const world::AssetRef& asset) {
-    if (!is_sha256(asset.sha256)) {
-        throw std::invalid_argument(
-            "asset: the name is not 64 lowercase hexadecimal digits (a SHA-256)");
-    }
-    if (std::find(asset_extensions.begin(), asset_extensions.end(), asset.extension) ==
-        asset_extensions.end()) {
-        throw std::invalid_argument("asset: the extension is not png, jpg, tif or exr");
-    }
-    return assets_dir / (asset.sha256 + "." + asset.extension);
-}
-
 LoadedTextures load_textures(const world::World& world, const std::filesystem::path& assets_dir) {
     LoadedTextures loaded;
     std::set<std::pair<std::string, std::string>> seen;
@@ -168,7 +146,8 @@ LoadedTextures load_textures(const world::World& world, const std::filesystem::p
             continue;
         }
         try {
-            loaded.textures.add(asset, assets::load_texture(asset_path(assets_dir, asset)));
+            loaded.textures.add(asset, assets::load_texture(assets::asset_file(
+                                           assets_dir, asset.sha256, asset.extension)));
         } catch (const std::exception& error) {
             loaded.problems.push_back({asset, error.what()});
         }
