@@ -81,8 +81,11 @@ std::unique_ptr<cs::gpu::Device> make_device() {
     cs::gpu::DeviceOptions options;
     options.validation = validation_layer_required() ? cs::gpu::Validation::required
                                                      : cs::gpu::Validation::if_available;
+    // Returned from after the handler, as gpu_test.hpp's make_device does: a return after FAIL
+    // and SKIP alone is unreachable (MSVC's warning C4702 in debug builds).
+    std::unique_ptr<cs::gpu::Device> device;
     try {
-        return std::make_unique<cs::gpu::Device>(options);
+        device = std::make_unique<cs::gpu::Device>(options);
     } catch (const cs::gpu::NoDeviceError& e) {
         if (gpu_required()) {
             FAIL("no Vulkan device was found, and CS_REQUIRE_GPU=1 requires one: " << e.what());
@@ -90,7 +93,7 @@ std::unique_ptr<cs::gpu::Device> make_device() {
             SKIP("no Vulkan device was found: " << e.what());
         }
     }
-    return nullptr;
+    return device;
 }
 
 // ---- Validation messages fail the test ---------------------------------------------------------
