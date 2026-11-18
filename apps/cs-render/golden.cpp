@@ -95,9 +95,6 @@ struct Tolerances {
     double mean_absolute_error_nits = 0.0;
 };
 
-// The path tier is the engine's, on the CPU; the Standard tier is drawn on the GPU, one frame.
-enum class Tier { path, standard };
-
 struct GoldenTest {
     fs::path scene; // a project folder
     Tier tier = Tier::path;
@@ -253,13 +250,12 @@ GoldenTest read_test(const fs::path& folder) {
     test.scene = folder / from_utf8(scene.get<std::string>());
 
     const json& tier = member(root, where, "tier");
-    if (tier == "path") {
-        test.tier = Tier::path;
-    } else if (tier == "standard") {
-        test.tier = Tier::standard;
-    } else {
+    const std::optional<Tier> parsed =
+        tier.is_string() ? parse_tier(tier.get<std::string>()) : std::nullopt;
+    if (!parsed) {
         throw std::runtime_error(where + ": \"tier\" is \"path\" or \"standard\"");
     }
+    test.tier = *parsed;
 
     test.image.width = static_cast<int>(whole_number(root, where, "width", 1, cs::max_image_side));
     test.image.height =
@@ -412,7 +408,7 @@ int run(const Arguments& arguments) {
     }
     const GoldenTest test = read_test(folder);
     const bool standard = test.tier == Tier::standard;
-    std::cout << "golden " << utf8(name) << ": " << (standard ? "standard" : "path") << " tier, "
+    std::cout << "golden " << utf8(name) << ": " << tier_name(test.tier) << " tier, "
               << test.image.width << " x " << test.image.height;
     if (standard) {
         std::cout << ", one frame\n";
@@ -453,6 +449,8 @@ int run(const Arguments& arguments) {
     const std::string reference_name = "ref." + driver + ".exr";
     const fs::path reference_path = folder / reference_name;
     const fs::path candidate_path = out / reference_name;
+    // What an earlier failure or skip wrote no longer applies, whatever this run ends in.
+    remove_outputs(out, candidate_path);
 
     const Project project = load_project(test.scene);
     const cs::Image render = [&] {
@@ -471,15 +469,10 @@ int run(const Arguments& arguments) {
     std::cout << "  loaded and rendered in "
               << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
               << " s\n";
-    if (validation && validation->count() > 0) {
-        throw std::runtime_error("the validation layer reported " +
-                                 std::to_string(validation->count()) +
-                                 " warnings or errors (above); any one fails a GPU test");
+    if (validation) {
+        throw_if_reported(*validation);
     }
 
-    // What an earlier failure or skip wrote no longer applies once the reference is updated or
-    // compared again.
-    remove_outputs(out, candidate_path);
     if (arguments.update) {
         update_reference(reference_path, render);
         return 0;

@@ -57,6 +57,10 @@ class ValidationCounter {
     cs::gpu::ValidationHandler previous_;
 };
 
+// Throws std::runtime_error if the counter heard any warning or error: call it once the Device
+// is gone, so that what its destruction reports counts too.
+void throw_if_reported(const ValidationCounter& validation);
+
 // The first viewpoint through the Standard tier, width x height: linear Rec. 709 radiance in nits,
 // not exposed or tone mapped (StandardImages::radiance). The paintings' photographs come from the
 // project's assets/; one the GPU scene cannot show is a warning on stderr, as load_project's are.

@@ -14,6 +14,20 @@
 
 namespace cs_render {
 
+std::optional<Tier> parse_tier(std::string_view name) {
+    if (name == "path") {
+        return Tier::path;
+    }
+    if (name == "standard") {
+        return Tier::standard;
+    }
+    return std::nullopt;
+}
+
+std::string_view tier_name(Tier tier) {
+    return tier == Tier::standard ? "standard" : "path";
+}
+
 unsigned thread_count(unsigned requested) {
     return requested != 0 ? requested : std::max(1u, std::thread::hardware_concurrency());
 }

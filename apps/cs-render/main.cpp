@@ -73,15 +73,13 @@ constexpr std::string_view usage =
     "tier uses (CS_GPU_DEVICE chooses one). `cs-render golden --help` explains the golden-image\n"
     "tests.\n";
 
-enum class Tier { path, standard };
-
 // Bounds on what the command line may ask for.
 constexpr std::uint32_t max_lux_samples = 1u << 24;
 
 struct Arguments {
     fs::path project;
     fs::path out;
-    Tier tier = Tier::path;
+    cs_render::Tier tier = cs_render::Tier::path;
     cs_render::ImageSettings image;
     std::uint32_t lux_samples = 1024;
     unsigned threads = 0; // 0: the machine's
@@ -115,13 +113,11 @@ Arguments parse_arguments(int argc, char* argv[]) {
         }
         const std::string_view value = argv[++i];
         if (arg == "--tier") {
-            if (value == "path") {
-                arguments.tier = Tier::path;
-            } else if (value == "standard") {
-                arguments.tier = Tier::standard;
-            } else {
+            const std::optional<cs_render::Tier> tier = cs_render::parse_tier(value);
+            if (!tier) {
                 throw UsageError("--tier is path or standard, not \"" + std::string(value) + "\"");
             }
+            arguments.tier = *tier;
         } else if (arg == "--size") {
             const std::size_t x = value.find('x');
             if (x == std::string_view::npos) {
@@ -208,8 +204,9 @@ int run(const Arguments& arguments) {
     const cs::engine::Scene scene(world);
     const double load_s = seconds_since(start);
 
-    // The Standard tier draws one frame; the device lives only while it does.
-    const bool standard = arguments.tier == Tier::standard;
+    // The Standard tier draws one frame; the device lives only while it does. A validation
+    // message fails the command, as it fails a GPU test (the layer is on in debug builds).
+    const bool standard = arguments.tier == cs_render::Tier::standard;
     const std::uint32_t samples_per_pixel = standard ? 1 : arguments.image.samples_per_pixel;
     std::optional<cs::gpu::DeviceReport> device_report;
     const auto render_start = std::chrono::steady_clock::now();
@@ -217,10 +214,15 @@ int run(const Arguments& arguments) {
         if (!standard) {
             return cs_render::render_view(project, scene, arguments.image, pool);
         }
-        const cs::gpu::Device device(cs_render::device_options());
-        device_report = device.report();
-        return cs_render::render_standard(device, project, arguments.image.width,
-                                          arguments.image.height);
+        const cs_render::ValidationCounter validation;
+        cs::Image radiance = [&] {
+            const cs::gpu::Device device(cs_render::device_options());
+            device_report = device.report();
+            return cs_render::render_standard(device, project, arguments.image.width,
+                                              arguments.image.height);
+        }();
+        cs_render::throw_if_reported(validation);
+        return radiance;
     }();
     const double render_s = seconds_since(render_start);
 
@@ -266,7 +268,7 @@ int run(const Arguments& arguments) {
                             {"reason", problem.reason}});
     }
     json report = {
-        {"tier", standard ? "standard" : "path"},
+        {"tier", cs_render::tier_name(arguments.tier)},
         {"seed", arguments.image.seed},
         {"luxSamples", arguments.lux_samples},
         {"luxGrid",
@@ -321,9 +323,13 @@ int run(const Arguments& arguments) {
 // The device the Standard tier renders on, as cs::gpu::DeviceReport::to_string prints it, and the
 // name of its golden references.
 int print_device_report() {
-    const cs::gpu::Device device(cs_render::device_options());
-    std::cout << device.report().to_string() << "\ngolden references: ref."
-              << cs_render::driver_label(device.report()) << ".exr\n";
+    const cs_render::ValidationCounter validation;
+    {
+        const cs::gpu::Device device(cs_render::device_options());
+        std::cout << device.report().to_string() << "\ngolden references: ref."
+                  << cs_render::driver_label(device.report()) << ".exr\n";
+    }
+    cs_render::throw_if_reported(validation);
     return 0;
 }
 

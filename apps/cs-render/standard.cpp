@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 namespace cs_render {
@@ -88,6 +89,14 @@ ValidationCounter::ValidationCounter() {
 
 ValidationCounter::~ValidationCounter() {
     cs::gpu::set_validation_handler(std::move(previous_));
+}
+
+void throw_if_reported(const ValidationCounter& validation) {
+    if (validation.count() > 0) {
+        throw std::runtime_error("the validation layer reported " +
+                                 std::to_string(validation.count()) +
+                                 " warnings or errors (above); any one fails a GPU test");
+    }
 }
 
 cs::Image render_standard(const cs::gpu::Device& device, const Project& project, int width,

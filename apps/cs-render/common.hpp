@@ -15,6 +15,7 @@
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -24,6 +25,14 @@ namespace cs_render {
 // Exit codes. A usage error also prints the usage text.
 inline constexpr int exit_failure = 1;
 inline constexpr int exit_usage = 2;
+
+// The path tier is the engine's path tracer, on the CPU; the Standard tier is drawn on the GPU,
+// one frame (cs/gpu/standard_tier.hpp).
+enum class Tier { path, standard };
+
+// "path" or "standard", as the command line and test.json name them; nothing for another name.
+std::optional<Tier> parse_tier(std::string_view name);
+std::string_view tier_name(Tier tier);
 
 // Bounds on what the command line and a golden test may ask for.
 inline constexpr std::uint32_t max_spp = 1u << 20;
