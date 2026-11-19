@@ -322,8 +322,9 @@ TEST_CASE("store_image: an extension asset_file refuses is refused and nothing i
           "[assets][store_image]") {
     const TempDir dir("extension");
     const Bytes image = png();
-    // Each is a real PNG: only its name is wrong.
-    for (const char* file_name : {"photo.tif", "photo.TIFF", "photo.gif", "photo.webp", "photo",
+    // Each is a real PNG: only its name is wrong. Not tif or tiff, which M2-32 adds to the list:
+    // a PNG named .tif would then be stored, as stb_image decodes by content.
+    for (const char* file_name : {"photo.gif", "photo.GIF", "photo.webp", "photo.bmp", "photo",
                                   "photo.", ".png", "photo.png.txt", "photo.p ng"}) {
         INFO(file_name);
         const fs::path source = dir.path() / file_name;
