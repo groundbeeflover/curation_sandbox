@@ -479,43 +479,51 @@ TEST_CASE("tonemap: colour.slang's pbr_neutral and exposure_scale match libs/cor
           "[gpu][tonemap][accuracy]") {
     const std::unique_ptr<Device> gpu = make_device();
     std::vector<glm::vec3> colours(pbr_neutral_inputs.begin(), pbr_neutral_inputs.end());
-    // Negative and NaN channels count as 0, as in libs/core: each of these is (0, 0.5, 0.2) or
-    // (0.9, 0, 3) to pbr_neutral.
-    const std::array<std::pair<glm::vec3, dvec3>, 4> clamped{{
+    // More inputs, each with what libs/core's pbr_neutral is given for it. Negative, -0 and NaN
+    // channels count as 0, as in libs/core. The last has its smallest channel at 0.06, where the
+    // offset is x - 6.25 x^2 and the 6.25 changes the result by 3.6e-3 per unit, so that a slip
+    // in it shows; the 10 inputs have only (0.02, 0.03, 0.05) there, where it changes by 4e-4.
+    const std::array<std::pair<glm::vec3, dvec3>, 6> more{{
         {{-1.0f, 0.5f, 0.2f}, {0.0, 0.5, 0.2}},
         {{quiet_nan, 0.5f, 0.2f}, {0.0, 0.5, 0.2}},
+        {{-0.0f, 0.5f, 0.2f}, {0.0, 0.5, 0.2}},
         {{0.9f, -1e30f, 3.0f}, {0.9, 0.0, 3.0}},
         {{0.9f, quiet_nan, 3.0f}, {0.9, 0.0, 3.0}},
+        {{0.06f, 0.3f, 0.5f}, {0.06f, 0.3f, 0.5f}},
     }};
-    for (const auto& c : clamped) {
+    for (const auto& c : more) {
         colours.push_back(c.first);
     }
-    const std::array<float, 3> ev100s{6.0f, 8.0f, 10.0f};
+    // The acceptance criterion's EV100s, then fractional ones from libs/core's metering range
+    // (-10.3 to 36.2), where exp2 is no longer exact.
+    const std::array<float, 7> ev100s{6.0f, 8.0f, 10.0f, -10.3f, -2.5f, 7.3f, 36.2f};
     const ShaderColour shader = run_colour_check(*gpu, colours, ev100s);
 
-    // 1e-4, the acceptance criterion's tolerance: PBR Neutral's outputs are in [0, 1], and float
-    // arithmetic over its dozen operations costs a few times 1e-7 against libs/core's double.
+    // 1e-5, tighter than the acceptance criterion's 1e-4 and as libs/core's own float test: PBR
+    // Neutral's outputs are in [0, 1], and float arithmetic over its dozen operations costs a few
+    // times 1e-7 against libs/core's double (9e-8 at these inputs). 1e-4 would pass a desaturation
+    // of 0.1499 or an offset of 0.0401.
     for (std::size_t i = 0; i < pbr_neutral_inputs.size(); ++i) {
         const dvec3 input = pbr_neutral_inputs[i];
         INFO("input (" << input.r << ", " << input.g << ", " << input.b << ")");
         const dvec3 expected = cs::pbr_neutral(input);
-        CHECK_THAT(shader.tone_mapped[i].r, WithinAbs(expected.r, 1e-4));
-        CHECK_THAT(shader.tone_mapped[i].g, WithinAbs(expected.g, 1e-4));
-        CHECK_THAT(shader.tone_mapped[i].b, WithinAbs(expected.b, 1e-4));
+        CHECK_THAT(shader.tone_mapped[i].r, WithinAbs(expected.r, 1e-5));
+        CHECK_THAT(shader.tone_mapped[i].g, WithinAbs(expected.g, 1e-5));
+        CHECK_THAT(shader.tone_mapped[i].b, WithinAbs(expected.b, 1e-5));
     }
-    for (std::size_t k = 0; k < clamped.size(); ++k) {
-        const glm::vec3 input = clamped[k].first;
+    for (std::size_t k = 0; k < more.size(); ++k) {
+        const glm::vec3 input = more[k].first;
         INFO("input (" << input.r << ", " << input.g << ", " << input.b << ")");
-        const dvec3 expected = cs::pbr_neutral(clamped[k].second);
+        const dvec3 expected = cs::pbr_neutral(more[k].second);
         const glm::vec3 out = shader.tone_mapped[pbr_neutral_inputs.size() + k];
-        CHECK_THAT(out.r, WithinAbs(expected.r, 1e-4));
-        CHECK_THAT(out.g, WithinAbs(expected.g, 1e-4));
-        CHECK_THAT(out.b, WithinAbs(expected.b, 1e-4));
+        CHECK_THAT(out.r, WithinAbs(expected.r, 1e-5));
+        CHECK_THAT(out.g, WithinAbs(expected.g, 1e-5));
+        CHECK_THAT(out.b, WithinAbs(expected.b, 1e-5));
     }
 
     // Relative, as the scale is 1 / 1229 at EV100 10, where an absolute 1e-4 would pass a scale
-    // off by 12%. The shader's exp2 and division are within a few ulp (Vulkan's precision rules:
-    // exp2 within 3 + 2 |x| ulp), about 3e-6 at EV100 10.
+    // off by 12%. Vulkan's precision rules allow exp2 3 + 2 |x| ulp, 75 ulp (9e-6) at EV100 36.2,
+    // and the division a few more.
     for (std::size_t k = 0; k < ev100s.size(); ++k) {
         INFO("EV100 " << ev100s[k]);
         CHECK_THAT(shader.scales[k], WithinRel(cs::exposure_scale(ev100s[k]), 1e-4));
@@ -530,18 +538,20 @@ TEST_CASE("tonemap: patches of known luminance, whatever the lux in A, match lib
     const std::unique_ptr<Device> gpu = make_device();
     // Columns: luminances in nits, from black to far beyond saturation at EV100 6 (76.8 nits), 8
     // (307 nits) and 10 (1229 nits). Rows: colours of luminance 1, grey, warm and cool white,
-    // and Rec. 709's red, green and blue primaries. Outside the black column every pixel differs
+    // and Rec. 709's red, green and blue primaries; and a colour with a negative and a NaN
+    // channel, which count as 0, as in libs/core. Outside the black column every pixel differs
     // from its neighbours, and the image is not square, so a texel read from the wrong pixel, or
     // transposed, shows.
     const std::array<double, 10> luminances{0.0,   0.5,   5.0,   20.0,   60.0,
                                             150.0, 300.0, 600.0, 1500.0, 1e4};
-    const std::array<dvec3, 6> colours{
+    const std::array<dvec3, 7> colours{
         dvec3(1.0),
         cs::cct_to_linear_rgb(2700.0),
         cs::cct_to_linear_rgb(6500.0),
         dvec3(1.0 / 0.2126, 0.0, 0.0),
         dvec3(0.0, 1.0 / 0.7152, 0.0),
         dvec3(0.0, 0.0, 1.0 / 0.0722),
+        dvec3(-1.0, static_cast<double>(quiet_nan), 1.0),
     };
     // The lux in A, never alpha: 0 would make a pixel transparent, NaN poison it, a negative one
     // or 1e6 overflow a blend.
@@ -560,9 +570,10 @@ TEST_CASE("tonemap: patches of known luminance, whatever the lux in A, match lib
     REQUIRE(pass.width() == std::uint32_t{width});
     REQUIRE(pass.height() == std::uint32_t{height});
 
-    // 1/255, the acceptance criterion's tolerance: the shader computes in float and the hardware
-    // rounds its sRGB encoding, so a value within a hair of a step's boundary may land one step
-    // from libs/core's lround; anything more is a different curve.
+    // 1/255, the acceptance criterion's tolerance: Vulkan sets no precision for the sRGB encoding
+    // of an attachment write, and lets the conversion to 8 bits give either neighbouring step, so
+    // the hardware's curve and rounding may land one step from libs/core's lround of the exact
+    // curve (the shader's float error adds under 0.01 step); anything more is a different curve.
     for (const double ev100 : {6.0, 8.0, 10.0}) {
         INFO("EV100 " << ev100);
         const std::vector<std::uint8_t> pixels = pass.render(ev100);
@@ -623,7 +634,7 @@ TEST_CASE("tonemap: the pass reads the Standard tier's HDR image as record() lea
 }
 
 TEST_CASE("tonemap: the pass refuses no HDR view, a zero or over-large size, and an EV100 that "
-          "is not finite",
+          "is not finite or beyond 100 either way",
           "[gpu][tonemap]") {
     const std::unique_ptr<Device> gpu = make_device();
     const std::array<glm::vec4, 4> texels{};
@@ -639,14 +650,19 @@ TEST_CASE("tonemap: the pass refuses no HDR view, a zero or over-large size, and
     CHECK_THROWS_AS(ToneMapPass(*gpu, hdr.view(), 2, too_large), std::invalid_argument);
 
     const ToneMapPass pass(*gpu, hdr.view(), 2, 2);
+    // Beyond 100 either way the shader's float 2^EV100 heads for overflow, and a double beyond
+    // float's range would not even convert.
     for (const double ev100 :
          {static_cast<double>(quiet_nan), std::numeric_limits<double>::infinity(),
-          -std::numeric_limits<double>::infinity()}) {
+          -std::numeric_limits<double>::infinity(), 100.5, -100.5, 1e300}) {
         INFO("EV100 " << ev100);
         CHECK_THROWS_AS((void)pass.render(ev100), std::invalid_argument);
     }
-    // And the pass still works: black stays black.
-    const std::vector<std::uint8_t> pixels = pass.render(8.0);
-    CHECK(pixels ==
-          std::vector<std::uint8_t>{0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255});
+    // And the pass still works, to 100 either way: black stays black.
+    const std::vector<std::uint8_t> black{0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255};
+    for (const double ev100 :
+         {-ToneMapPass::max_ev100_magnitude, 8.0, ToneMapPass::max_ev100_magnitude}) {
+        INFO("EV100 " << ev100);
+        CHECK(pass.render(ev100) == black);
+    }
 }

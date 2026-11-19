@@ -5,6 +5,7 @@
 #include "cs/gpu/pipeline.hpp"
 #include "upload.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -41,15 +42,19 @@ ToneMapPass::ToneMapPass(const Device& device, VkImageView hdr_view, std::uint32
         throw std::invalid_argument("ToneMapPass: no HDR image view");
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(device.physical_device(), &properties);
-    const std::uint32_t max_side = properties.limits.maxImageDimension2D;
-    if (width == 0 || height == 0 || width > max_side || height > max_side)
+    const VkPhysicalDeviceLimits& limits = properties.limits;
+    const std::uint32_t max_width =
+        std::min(limits.maxImageDimension2D, limits.maxFramebufferWidth);
+    const std::uint32_t max_height =
+        std::min(limits.maxImageDimension2D, limits.maxFramebufferHeight);
+    if (width == 0 || height == 0 || width > max_width || height > max_height)
         throw std::invalid_argument("ToneMapPass: " + std::to_string(width) + "x" +
                                     std::to_string(height) + " is not a size from 1x1 to " +
-                                    std::to_string(max_side) + "x" + std::to_string(max_side));
+                                    std::to_string(max_width) + "x" + std::to_string(max_height));
 
     try {
         // Vulkan requires R8G8B8A8_SRGB to be a colour attachment and a transfer source on every
-        // device, and the HDR image to be smaller than this one at the same size.
+        // device, and at 4 bytes a texel this image is a quarter of the HDR image, which fit.
         VkImageCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         info.imageType = VK_IMAGE_TYPE_2D;
@@ -226,9 +231,11 @@ void ToneMapPass::create_pipeline() {
 }
 
 void ToneMapPass::record(VkCommandBuffer commands, double ev100) const {
-    if (!std::isfinite(ev100))
+    // Also refuses NaN, which fails the comparison.
+    if (!(std::abs(ev100) <= max_ev100_magnitude))
         throw std::invalid_argument("ToneMapPass: EV100 " + std::to_string(ev100) +
-                                    " is not finite");
+                                    " is not within plus or minus " +
+                                    std::to_string(static_cast<int>(max_ev100_magnitude)));
     const ToneMapPush push{static_cast<float>(ev100)};
 
     // From UNDEFINED, discarding the last frame, once its copies and blits have read it.

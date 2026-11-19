@@ -18,13 +18,21 @@ public float exposure_scale(float ev100) {
     return 1.0 / (ev100_saturation_factor * exp2(ev100));
 }
 
+// c if it is above 0, else 0, NaN included, as libs/core's max(0, c). Decided on the bits, as
+// integers: without SignedZeroInfNanPreserve, Vulkan lets a driver assume that no float is NaN,
+// so a float comparison might let one through. The floats above 0, +inf included, are the bit
+// patterns 1 to 0x7f800000; -0, negatives and NaN wrap or lie beyond.
+float positive_or_zero(float c) {
+    return asuint(c) - 1u < 0x7f800000u ? c : 0.0;
+}
+
 // Khronos PBR Neutral tone mapping (github.com/KhronosGroup/ToneMapping, version of 2024), with
-// negative and NaN channels taken as 0: c > 0 is false for both.
+// negative and NaN channels taken as 0.
 public float3 pbr_neutral(float3 rgb) {
     const float start_compression = 0.8 - 0.04;
     const float desaturation = 0.15;
 
-    rgb = float3(rgb.r > 0.0 ? rgb.r : 0.0, rgb.g > 0.0 ? rgb.g : 0.0, rgb.b > 0.0 ? rgb.b : 0.0);
+    rgb = float3(positive_or_zero(rgb.r), positive_or_zero(rgb.g), positive_or_zero(rgb.b));
 
     const float x = min(rgb.r, min(rgb.g, rgb.b));
     const float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;

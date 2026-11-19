@@ -26,12 +26,18 @@ namespace cs::gpu {
 // finished: it frees everything at once, without waiting.
 class ToneMapPass {
   public:
-    // 8-bit sRGB, encoded by the hardware when the pass writes it, decoded when it is sampled.
+    // 8-bit sRGB, encoded by the hardware when the pass writes it.
     static constexpr VkFormat display_format = VK_FORMAT_R8G8B8A8_SRGB;
+
+    // The largest EV100, either way, that record() takes: far beyond any scene (libs/core meters
+    // from -10.3 to 36.2), and well inside float's range for the shader's 2^EV100, which
+    // overflows beyond 128.
+    static constexpr double max_ev100_magnitude = 100.0;
 
     // hdr_view: a 2D view of a width x height image of StandardTier::hdr_format, made with
     // VK_IMAGE_USAGE_SAMPLED_BIT. Throws std::invalid_argument for a null view or a size that is
-    // 0 or larger than the device's maxImageDimension2D, std::runtime_error on a Vulkan failure.
+    // 0 or larger than the device can render to (maxImageDimension2D, maxFramebufferWidth and
+    // maxFramebufferHeight), std::runtime_error on a Vulkan failure.
     ToneMapPass(const Device& device, VkImageView hdr_view, std::uint32_t width,
                 std::uint32_t height);
     ~ToneMapPass();
@@ -53,7 +59,7 @@ class ToneMapPass {
     // earlier commands on the queue, and discards what the image held. After it, the display
     // image is in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, its writes visible to copies and blits of
     // later commands. Throws std::invalid_argument, before recording anything, for an EV100 that
-    // is not finite.
+    // is not finite or is beyond max_ev100_magnitude.
     void record(VkCommandBuffer commands, double ev100) const;
 
     // Records the pass as above, submits it to the device's queue, waits up to a minute and reads
