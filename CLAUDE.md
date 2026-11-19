@@ -23,7 +23,7 @@ ctest --preset debug -L engine                          # one module (labels = m
 ctest --preset release -L accuracy                      # physical accuracy tests
 CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu   # lavapipe
 # some distributions name the file lvp_icd.x86_64.json; `ls /usr/share/vulkan/icd.d/` shows which
-QT_QPA_PLATFORM=offscreen ctest --preset app -L ui      # UI tests without a display
+QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'  # UI tests without a display (-L is a regex)
 ctest --preset release -L golden                        # golden images; failures write build/<preset>/golden-out/
 ./build/release/apps/cs-render/cs-render <project> --tier path|standard --size 256x144 --spp 64 --seed 1 --out build/out/x
 ./build/release/apps/cs-render/cs-render golden tests/golden/<name> --update   # only on purpose, see Testing

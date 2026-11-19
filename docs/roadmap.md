@@ -204,6 +204,7 @@ Bold IDs are on the critical path.
 | **M1-46** | Fix the engine's crash in an MSVC debug build | engine | bug | S | agent | M1-29, M1-43 | `libs/engine/src/`, `libs/engine/tests/`, `.github/workflows/gpu.yml` |
 | M1-47 | Store an image in a project's assets | assets | feature | S | agent | M1-43 | `libs/assets/include/cs/assets/project_assets.hpp`, `libs/assets/src/project_assets.cpp`, `libs/assets/src/sha256.hpp`, `libs/assets/src/sha256.cpp`, `libs/assets/tests/test_project_assets.cpp`, `libs/assets/tests/test_sha256.cpp` |
 | **M1-48** | One GPU test harness, and every GPU test in CI's Windows job | gpu | chore | S | agent | M1-46 | `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/gpu_test.hpp`, `libs/gpu/tests/test_device.cpp`, `tests/integration/test_skeleton_gpu_scene.cpp`, `apps/cs-render/standard.cpp`, `libs/gpu/src/scene.cpp`, `libs/core/tests/test_image_compare.cpp`, `.github/workflows/gpu.yml` |
+| M1-49 | PBR Neutral shows an infinite channel as white | core | bug | S | agent | M1-44 | `libs/core/include/cs/core/colour.hpp`, `libs/core/tests/test_colour.cpp`, `libs/gpu/tests/test_tonemap.cpp` |
 
 ### Task graph
 
@@ -233,6 +234,7 @@ graph LR
     M1_12["M1-12 Lambertian paint layer and the r..."]
     M1_15["M1-15 Embree scene and the lux meter, ..."]
     M1_16["M1-16 Path tracer with next-event esti..."]
+    M1_49["M1-49 PBR Neutral shows an infinite ch..."]
   end
   subgraph E1_3["E1.3 From document to picture"]
     M1_08["M1-08 Document store, MVP components a..."]
@@ -359,6 +361,7 @@ graph LR
   M1_43 --> M1_46
   M1_43 --> M1_47
   M1_46 --> M1_48
+  M1_44 --> M1_49
   classDef crit stroke:#b60205,stroke-width:3px
   class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_46,M1_48,M1_31 crit
   linkStyle 4,14,17,20,21,25,58,66,67,88,91 stroke:#b60205,stroke-width:3px
@@ -465,7 +468,9 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-40 | Shrink large images to the Standard cap on import | assets | feature | M | agent | M2-32 | `libs/assets/include/cs/assets/downsample.hpp`, `libs/assets/src/downsample.cpp`, `libs/assets/tests/test_downsample.cpp`, `libs/assets/include/cs/assets/import.hpp`, `libs/assets/src/import.cpp`, `libs/assets/src/tiff.cpp`, `libs/assets/include/cs/assets/texture.hpp`, `libs/assets/src/texture.cpp` |
 | M2-41 | Check values on every commit | doc | feature | S | agent | M1-09, M2-38 | `libs/doc/include/cs/doc/project_io.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/history.hpp`, `libs/doc/src/history.cpp`, `libs/doc/tests/test_check_values.cpp` |
 | M2-42 | A centre line for each wall | doc | feature | S | agent | M1-25, M2-06 | `libs/doc/include/cs/doc/components.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/tests/test_wall_centre_line.cpp`, `libs/editor/include/cs/editor/commands/hanging.hpp`, `libs/editor/src/commands/hanging.cpp`, `libs/editor/tests/test_commands.cpp` |
-| M2-43 | The Standard tier accumulates jittered frames while still | gpu | feature | M | agent | M2-26, M2-27 | `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/shaders/standard.slang`, `libs/gpu/tests/test_standard_accumulation.cpp`, `apps/cs-render/golden.cpp`, `tests/golden/skeleton-standard/`, `tests/golden/runner_checks.cmake`, `tests/golden/README.md` |
+| M2-43 | The Standard tier accumulates jittered frames while still | gpu | feature | M | agent | M2-26, M2-27, M2-44 | `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/shaders/standard.slang`, `libs/gpu/tests/test_standard_accumulation.cpp`, `apps/cs-render/golden.cpp`, `tests/golden/skeleton-standard/`, `tests/golden/runner_checks.cmake`, `tests/golden/README.md` |
+| M2-44 | GraphicsPipeline with descriptor set layouts | gpu | chore | S | agent | M1-44, M2-26 | `libs/gpu/include/cs/gpu/pipeline.hpp`, `libs/gpu/src/pipeline.cpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/src/tonemap.cpp`, `libs/gpu/tests/test_pipeline.cpp` |
+| M2-45 | Present fences, and the presenter tested on Windows | gpu | chore | S | agent | M1-23, M1-48 | `libs/gpu/include/cs/gpu/presenter.hpp`, `libs/gpu/src/presenter.cpp`, `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/test_presenter.cpp` |
 
 ### Task graph
 
@@ -525,6 +530,8 @@ graph LR
     M2_37["M2-37 Lux on every work in the app"]
     M2_39["M2-39 Automatic exposure in the viewport"]
     M2_43["M2-43 The Standard tier accumulates ji..."]
+    M2_44["M2-44 GraphicsPipeline with descriptor..."]
+    M2_45["M2-45 Present fences, and the presente..."]
   end
   M2_06 --> M2_03
   M2_02 --> M2_04
@@ -589,6 +596,8 @@ graph LR
   M2_06 --> M2_42
   M2_26 --> M2_43
   M2_27 --> M2_43
+  M2_44 --> M2_43
+  M2_26 --> M2_44
   classDef crit stroke:#b60205,stroke-width:3px
   class M2_06,M2_31,M2_14,M2_15,M2_16,M2_20,M2_35 crit
   linkStyle 15,16,18,21,45,51 stroke:#b60205,stroke-width:3px

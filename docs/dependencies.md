@@ -105,6 +105,8 @@ Not checked by the script: these are installed separately, and only Qt is shippe
 | What | Version | Licence | Where it comes from | Used for |
 | --- | --- | --- | --- | --- |
 | Qt 6 (Core, Gui, Widgets, Test; the Wayland client on Linux) | **6.10.3** in CI and releases; local builds may use 6.10.3 or newer | `LGPL-3.0-only` | Qt's binaries through aqtinstall in CI (M1-31); the distribution's package or the Qt installer on developer machines | The app and the `ui` module, dynamically linked; obligations below |
+| libwayland (client) | the system's | `MIT` | The distribution's package (`libwayland-dev` on Debian and Ubuntu); Qt's Wayland client links it | The Linux app's pointer lock for walking (M1-45); not shipped, the system's is used |
+| wayland-protocols | the system's | `MIT` | The distribution's package; `cmake/CsQt.cmake` generates client code from its pointer-constraints and relative-pointer XML at build time | The Linux app's pointer lock for walking (M1-45); a build input, the generated code is ours to ship |
 | Vulkan loader | the system's | `Apache-2.0` | Installed with the GPU driver; volk loads it at run time | Every Vulkan program; not shipped |
 | Vulkan validation layers | 1.4.363 (LunarG Vulkan SDK 1.4.363.1) | `Apache-2.0` | The LunarG SDK, pinned in CI by ADR 0010; locally the SDK or the distribution's package | Debug builds and tests, where a validation message fails the test; never shipped |
 | Mesa lavapipe | 26.2.6 | `MIT` | Built from the Mesa tarball on Linux CI, mesa-dist-win on Windows (ADR 0010) | GPU tests and golden images without a GPU |
