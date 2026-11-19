@@ -5,10 +5,11 @@
 // too (B8G8R8A8_SRGB first, then R8G8B8A8_SRGB, where the device can blit to it), so that the
 // colours arrive encoded once.
 //
-// The window is a headless surface (VK_EXT_headless_surface), which lavapipe offers: it has no
-// window system, so its size is whatever the presenter is told (its currentExtent is undefined,
-// as on Wayland). The display image stands in for M1-44's pass: an R8G8B8A8_SRGB image cleared to
-// a linear grey by commands of its own, submitted to the queue before every present, as the
+// The window is a headless surface (VK_EXT_headless_surface), which lavapipe offers on Linux (not
+// on Windows, where these tests skip, as .github/workflows/gpu.yml expects): it has no window
+// system, so its size is whatever the presenter is told (its currentExtent is undefined, as on
+// Wayland). The display image stands in for M1-44's pass: an R8G8B8A8_SRGB image cleared to a
+// linear grey by commands of its own, submitted to the queue before every present, as the
 // tone-mapping pass will be.
 //
 // Every test that needs a device starts with make_device() (gpu_test.hpp): without a Vulkan
@@ -58,14 +59,26 @@ DeviceOptions presenting_options() {
     return options;
 }
 
-// A surface with no window behind it, destroyed with the object. Lavapipe always offers
-// VK_EXT_headless_surface, so there its absence fails under CS_REQUIRE_GPU=1; another driver
-// (NVIDIA's) may not, and the test skips.
+// Mesa builds its headless surface only off Windows (src/vulkan/wsi/meson.build), so lavapipe
+// offers VK_EXT_headless_surface on Linux and not on Windows. A function, not an `if` on a
+// constant, for MSVC's warning C4127.
+bool lavapipe_offers_headless_surface() {
+#ifdef _WIN32
+    return false;
+#else
+    return true;
+#endif
+}
+
+// A surface with no window behind it, destroyed with the object. Where lavapipe offers
+// VK_EXT_headless_surface (Linux), its absence fails under CS_REQUIRE_GPU=1; elsewhere, and with
+// another driver (NVIDIA's) that may not offer it, the test skips.
 class HeadlessSurface {
   public:
     explicit HeadlessSurface(const Device& device) : instance_(device.instance()) {
         if (!device.has_instance_extension("VK_EXT_headless_surface")) {
-            if (gpu_required() && device.report().driver == "llvmpipe") {
+            if (gpu_required() && lavapipe_offers_headless_surface() &&
+                device.report().driver == "llvmpipe") {
                 FAIL("lavapipe does not offer VK_EXT_headless_surface");
             } else {
                 SKIP("the driver does not offer VK_EXT_headless_surface");
