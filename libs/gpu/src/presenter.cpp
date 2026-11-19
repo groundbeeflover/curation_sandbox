@@ -157,6 +157,9 @@ void Presenter::resize(std::uint32_t width, std::uint32_t height) {
 bool Presenter::make_swapchain() {
     if (swapchain_ != VK_NULL_HANDLE && !stale_)
         return true;
+    // The old swapchain's images may still be in a frame or a present. Waiting first also reads
+    // the surface as late as possible, while a window may still be changing size.
+    check(vkDeviceWaitIdle(device_), "waiting for the device", who);
     VkSurfaceCapabilitiesKHR capabilities{};
     check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &capabilities),
           "reading the surface's capabilities", who);
@@ -180,8 +183,6 @@ bool Presenter::make_swapchain() {
         alpha = static_cast<VkCompositeAlphaFlagBitsKHR>(
             capabilities.supportedCompositeAlpha & ~(capabilities.supportedCompositeAlpha - 1));
 
-    // The old swapchain's images may still be in a frame or a present.
-    check(vkDeviceWaitIdle(device_), "waiting for the device", who);
     VkSwapchainCreateInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     info.surface = surface_;
@@ -195,12 +196,18 @@ bool Presenter::make_swapchain() {
     info.preTransform = capabilities.currentTransform;
     info.compositeAlpha = alpha;
     info.presentMode = VK_PRESENT_MODE_FIFO_KHR; // the one every surface offers
-    info.clipped = VK_TRUE;
+    info.clipped = VK_FALSE; // clipped pixels would read back undefined in a screenshot
     info.oldSwapchain = swapchain_;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    // The old swapchain is retired even when this fails, and destroyed with the presenter.
-    check(vkCreateSwapchainKHR(device_, &info, nullptr, &swapchain), "creating a swapchain", who);
+    const VkResult created = vkCreateSwapchainKHR(device_, &info, nullptr, &swapchain);
+    // The old swapchain is retired even when that failed, and a retired one may not be passed
+    // again: it goes either way, so the next frame starts from none.
     vkDestroySwapchainKHR(device_, std::exchange(swapchain_, swapchain), nullptr);
+    if (created != VK_SUCCESS) {
+        images_.clear();
+        extent_ = {};
+    }
+    check(created, "creating a swapchain", who);
     extent_ = extent;
     ++swapchains_created_;
 
@@ -254,14 +261,19 @@ std::optional<PresentedImage> Presenter::present_and_read_back(const PresentSour
 bool Presenter::present_frame(const PresentSource& source, bool read_back) {
     if (source.image == VK_NULL_HANDLE || source.extent.width == 0 || source.extent.height == 0 ||
         source.layout == VK_IMAGE_LAYOUT_UNDEFINED ||
-        source.layout == VK_IMAGE_LAYOUT_PREINITIALIZED)
-        throw std::invalid_argument("Presenter: the source has no image, no area or no layout");
+        source.layout == VK_IMAGE_LAYOUT_PREINITIALIZED ||
+        source.stages == VK_PIPELINE_STAGE_2_NONE)
+        throw std::invalid_argument("Presenter: the source has no image, no area, no layout or no "
+                                    "stages to wait for");
     // RGBA32F, the HDR image, need not be linearly filterable: it is no display image.
-    if (!has_features(physical_device_, source.format,
-                      VK_FORMAT_FEATURE_BLIT_SRC_BIT |
-                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
-        throw std::invalid_argument("Presenter: the device cannot blit from the source's format "
-                                    "with a linear filter");
+    if (source.format != blit_source_format_) {
+        if (!has_features(physical_device_, source.format,
+                          VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+                              VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+            throw std::invalid_argument("Presenter: the device cannot blit from the source's "
+                                        "format with a linear filter");
+        blit_source_format_ = source.format;
+    }
 
     // Twice: a surface that changes between making the swapchain and acquiring from it gets one
     // more swapchain, then the frame is skipped.
@@ -275,6 +287,15 @@ bool Presenter::present_frame(const PresentSource& source, bool read_back) {
         if (waited == VK_TIMEOUT)
             throw std::runtime_error("Presenter: the GPU did not finish a frame within a minute");
         check(waited, "waiting for a frame", who);
+        // Allocated before the acquire, so that a failure here leaves no image acquired and no
+        // semaphore signal pending. The extent is final: only make_swapchain() changes it.
+        const VkDeviceSize read_back_bytes = VkDeviceSize{4} * extent_.width * extent_.height;
+        if (read_back && (!read_back_ || read_back_bytes_ != read_back_bytes)) {
+            read_back_.reset();
+            read_back_ = std::make_unique<detail::HostBuffer>(allocator_, read_back_bytes,
+                                                              detail::HostBuffer::Use::download);
+            read_back_bytes_ = read_back_bytes;
+        }
         const VkResult acquired = vkAcquireNextImageKHR(device_, swapchain_, timeout_ns,
                                                         frame.acquired, VK_NULL_HANDLE, &index);
         if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -282,20 +303,12 @@ bool Presenter::present_frame(const PresentSource& source, bool read_back) {
             continue;
         }
         if (acquired == VK_TIMEOUT || acquired == VK_NOT_READY)
-            throw std::runtime_error("Presenter: no swapchain image was free within a minute");
+            return false; // a hidden window's images may be held: nothing was acquired
         if (acquired == VK_SUBOPTIMAL_KHR)
             stale_ = true; // still presentable: this frame goes on, the next makes a new one
         else
             check(acquired, "acquiring a swapchain image", who);
         break;
-    }
-
-    const VkDeviceSize read_back_bytes = VkDeviceSize{4} * extent_.width * extent_.height;
-    if (read_back && (!read_back_ || read_back_bytes_ != read_back_bytes)) {
-        read_back_.reset();
-        read_back_ = std::make_unique<detail::HostBuffer>(allocator_, read_back_bytes,
-                                                          detail::HostBuffer::Use::download);
-        read_back_bytes_ = read_back_bytes;
     }
 
     check(vkResetCommandPool(device_, frame.pool, 0), "resetting a command pool", who);

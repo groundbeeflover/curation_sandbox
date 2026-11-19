@@ -27,16 +27,20 @@ namespace detail {
 class HostBuffer;
 }
 
-// The image a frame shows, drawn by commands submitted earlier to the device's queue. The blit
-// takes its texels as linear values: an _SRGB format is decoded, any other is read as it is, so
-// the display image must be _SRGB (or float) for its colours to arrive unchanged.
+// The image a frame shows, drawn by commands submitted earlier to the device's queue: optimal
+// tiling, with TRANSFER_SRC usage. The blit takes its texels as linear values: an _SRGB format is
+// decoded, any other is read as it is, so the display image must be _SRGB (or float) for its
+// colours to arrive unchanged.
 struct PresentSource {
     VkImage image = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_R8G8B8A8_SRGB; // one the device can blit from, linearly filtered
     VkExtent2D extent{};                       // stretched to the swapchain's when they differ
-    // The layout it is in and the stages and accesses that last wrote it. The presenter waits for
-    // them, reads the image in TRANSFER_SRC_OPTIMAL, and puts it back in this layout before those
-    // stages run again, so the next frame's writes wait for this frame's read.
+    // The layout it is in, the stages that use it, and every access those stages make to it,
+    // reads included. The presenter waits for them, reads the image in TRANSFER_SRC_OPTIMAL, and
+    // puts it back in this layout, made visible to those stages before they run again. So the
+    // producer's first use of it in the next frame must be in these stages, or a change of layout
+    // of its own; with M1-44's tone-mapping pass, which leaves it in TRANSFER_SRC_OPTIMAL and
+    // discards it next frame, COLOR_ATTACHMENT_OUTPUT and COLOR_ATTACHMENT_WRITE.
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_NONE;
     VkAccessFlags2 accesses = VK_ACCESS_2_NONE;
@@ -84,11 +88,12 @@ class Presenter {
     void resize(std::uint32_t width, std::uint32_t height);
 
     // Blits the source into the next swapchain image and presents it. Returns false when no frame
-    // was shown: the window has no area, or the surface changed twice in a row; present again
-    // next frame. Throws std::invalid_argument for a source with no image, no area, an
-    // undefined layout or a format the device cannot blit from with a linear filter, and
-    // std::runtime_error on a Vulkan failure or when the GPU has not finished a frame within a
-    // minute, after which the presenter may only be destroyed.
+    // was shown: the window has no area, the surface changed twice in a row, or no swapchain
+    // image was free within a minute; present again next frame. Throws std::invalid_argument for
+    // a source with no image, no area, an undefined layout, no stages, or a format the device
+    // cannot blit from with a linear filter. Throws std::runtime_error on a Vulkan failure or
+    // when the GPU has not finished a frame within a minute; after a std::runtime_error the
+    // presenter may only be destroyed.
     bool present(const PresentSource& source);
 
     // As present(), then waits for the frame and copies the presented image back (for
@@ -132,6 +137,7 @@ class Presenter {
     std::uint32_t frame_ = 0;
     std::unique_ptr<detail::HostBuffer> read_back_; // kept for the next read-back of its size
     VkDeviceSize read_back_bytes_ = 0;
+    VkFormat blit_source_format_ = VK_FORMAT_UNDEFINED; // the last source format found blittable
 
     bool make_swapchain();
     bool present_frame(const PresentSource& source, bool read_back);

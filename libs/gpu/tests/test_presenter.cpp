@@ -88,15 +88,25 @@ class HeadlessSurface {
 
 // ---- A stand-in for M1-44's display image ------------------------------------------------------
 
-// R8G8B8A8_SRGB, cleared to a uniform linear grey by draw(): one command buffer, recorded once
-// and submitted before every present with no fence of its own, as a render pass would be. It
-// discards the image (UNDEFINED to TRANSFER_DST_OPTIMAL) after the presenter's last read of it,
-// which the presenter's barrier back to TRANSFER_DST_OPTIMAL orders before any later clear.
+// R8G8B8A8_SRGB, cleared to a uniform linear grey by draw(), with commands recorded once and
+// submitted before every present with no fence of their own, as a render pass would be. A clear of
+// an _SRGB image takes linear values and encodes them, as the tone-mapping pass's writes are
+// encoded by its format.
+//
+// The two ways a producer can treat the image between frames test the two halves of the
+// presenter's contract (PresentSource):
+// - keeps_layout: the image goes to TRANSFER_DST_OPTIMAL once, and every later draw is a bare
+//   clear with no barrier of its own. Only the presenter's barrier back, made visible to the
+//   clear's stage, orders that clear after the blit's read: the strict case.
+// - discards: every draw first changes the layout from UNDEFINED, as M1-44's pass does. Layout
+//   changes on one queue are ordered among themselves, so this also covers draws with no present
+//   between them (a skipped frame), which two bare clears would not.
 class DisplayImage {
   public:
     static constexpr VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+    enum class Producer { keeps_layout, discards };
 
-    DisplayImage(const Device& device, VkExtent2D extent, float linear)
+    DisplayImage(const Device& device, VkExtent2D extent, float linear, Producer producer)
         : device_(device.device()), queue_(device.queue()), allocator_(device.allocator()),
           extent_(extent) {
         VkImageCreateInfo image_info{};
@@ -124,41 +134,19 @@ class DisplayImage {
         command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         command_info.commandPool = pool_;
         command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_info.commandBufferCount = 1;
-        REQUIRE(vkAllocateCommandBuffers(device_, &command_info, &commands_) == VK_SUCCESS);
+        command_info.commandBufferCount = 2;
+        std::array<VkCommandBuffer, 2> buffers{};
+        REQUIRE(vkAllocateCommandBuffers(device_, &command_info, buffers.data()) == VK_SUCCESS);
+        first_ = buffers[0];
+        again_ = buffers[1];
 
-        // Submitted again while an earlier submission may still be pending.
-        VkCommandBufferBeginInfo begin{};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-        REQUIRE(vkBeginCommandBuffer(commands_, &begin) == VK_SUCCESS);
-        VkImageMemoryBarrier2 discard{};
-        discard.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        discard.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-        discard.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        discard.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-        discard.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        discard.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        discard.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        discard.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        discard.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        discard.image = image_;
-        discard.subresourceRange = range;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.imageMemoryBarrierCount = 1;
-        dependency.pImageMemoryBarriers = &discard;
-        vkCmdPipelineBarrier2(commands_, &dependency);
-        // A clear of an _SRGB image takes linear values and encodes them, as the tone-mapping
-        // pass's writes will be encoded by the format.
         VkClearColorValue colour{};
         colour.float32[0] = linear;
         colour.float32[1] = linear;
         colour.float32[2] = linear;
         colour.float32[3] = 1.0f;
-        vkCmdClearColorImage(commands_, image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1,
-                             &range);
-        REQUIRE(vkEndCommandBuffer(commands_) == VK_SUCCESS);
+        record(first_, colour, true);
+        record(again_, colour, producer == Producer::discards);
     }
 
     ~DisplayImage() {
@@ -171,15 +159,16 @@ class DisplayImage {
     DisplayImage(const DisplayImage&) = delete;
     DisplayImage& operator=(const DisplayImage&) = delete;
 
-    void draw() const {
+    void draw() {
         VkCommandBufferSubmitInfo command{};
         command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        command.commandBuffer = commands_;
+        command.commandBuffer = drawn_ ? again_ : first_;
         VkSubmitInfo2 submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submit.commandBufferInfoCount = 1;
         submit.pCommandBufferInfos = &command;
         REQUIRE(vkQueueSubmit2(queue_, 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS);
+        drawn_ = true;
     }
 
     // As draw() leaves it: written last by the clear, in TRANSFER_DST_OPTIMAL.
@@ -204,7 +193,40 @@ class DisplayImage {
     VkImage image_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     VkCommandPool pool_ = VK_NULL_HANDLE;
-    VkCommandBuffer commands_ = VK_NULL_HANDLE;
+    VkCommandBuffer first_ = VK_NULL_HANDLE; // changes the layout, then clears
+    VkCommandBuffer again_ = VK_NULL_HANDLE; // the same, or only clears (keeps_layout)
+    bool drawn_ = false;
+
+    // A clear, after a change of layout from UNDEFINED (discarding the image) when asked.
+    void record(VkCommandBuffer commands, const VkClearColorValue& colour, bool change_layout) {
+        // Submitted again while an earlier submission may still be pending.
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        REQUIRE(vkBeginCommandBuffer(commands, &begin) == VK_SUCCESS);
+        if (change_layout) {
+            VkImageMemoryBarrier2 discard{};
+            discard.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            discard.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+            discard.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            discard.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+            discard.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            discard.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            discard.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            discard.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            discard.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            discard.image = image_;
+            discard.subresourceRange = range;
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.imageMemoryBarrierCount = 1;
+            dependency.pImageMemoryBarriers = &discard;
+            vkCmdPipelineBarrier2(commands, &dependency);
+        }
+        vkCmdClearColorImage(commands, image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1,
+                             &range);
+        REQUIRE(vkEndCommandBuffer(commands) == VK_SUCCESS);
+    }
 };
 
 bool same(VkExtent2D a, VkExtent2D b) {
@@ -317,7 +339,7 @@ TEST_CASE("presenter: a source with no image, no area, an undefined layout or a 
           "[gpu]") {
     const std::unique_ptr<Device> gpu = make_device(presenting_options());
     const HeadlessSurface surface(*gpu);
-    const DisplayImage display(*gpu, {64, 48}, 0.5f);
+    DisplayImage display(*gpu, {64, 48}, 0.5f, DisplayImage::Producer::discards);
     Presenter presenter(*gpu, surface.get(), 64, 48);
 
     PresentSource no_image = display.source();
@@ -329,6 +351,10 @@ TEST_CASE("presenter: a source with no image, no area, an undefined layout or a 
     PresentSource undefined = display.source();
     undefined.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     CHECK_THROWS_AS(presenter.present(undefined), std::invalid_argument);
+    // With no stages the blit would wait for nothing, and the barrier back would order nothing.
+    PresentSource no_stages = display.source();
+    no_stages.stages = VK_PIPELINE_STAGE_2_NONE;
+    CHECK_THROWS_AS(presenter.present(no_stages), std::invalid_argument);
     // No device may filter an integer format linearly, so none can stretch it in a blit.
     PresentSource integer = display.source();
     integer.format = VK_FORMAT_R8G8B8A8_UINT;
@@ -347,7 +373,8 @@ TEST_CASE("presenter: 100 frames on a headless surface with 3 resizes between th
           "[gpu]") {
     std::unique_ptr<Device> gpu = make_device(presenting_options());
     auto surface = std::make_unique<HeadlessSurface>(*gpu);
-    auto display = std::make_unique<DisplayImage>(*gpu, VkExtent2D{320, 240}, 0.5f);
+    auto display = std::make_unique<DisplayImage>(*gpu, VkExtent2D{320, 240}, 0.5f,
+                                                  DisplayImage::Producer::keeps_layout);
     const std::uint64_t allocations_before = cs::gpu::memory_in_use(*gpu).allocations;
     auto presenter = std::make_unique<Presenter>(*gpu, surface->get(), 320, 240);
 
@@ -368,7 +395,20 @@ TEST_CASE("presenter: 100 frames on a headless surface with 3 resizes between th
         }
         display->draw();
         INFO("frame " << frame << " at " << window.width << "x" << window.height);
-        if (presenter->present(display->source())) {
+        bool shown = false;
+        if (frame == 99 && presenter->can_read_back()) {
+            // The last frame is read back, so that a read-back buffer is among what must be freed.
+            const std::optional<PresentedImage> image =
+                presenter->present_and_read_back(display->source());
+            shown = image.has_value();
+            if (image) {
+                CHECK(image->width == window.width);
+                CHECK(image->height == window.height);
+            }
+        } else {
+            shown = presenter->present(display->source());
+        }
+        if (shown) {
             ++presented;
         }
         // A headless surface has no size of its own: the swapchain takes the window's.
@@ -377,7 +417,7 @@ TEST_CASE("presenter: 100 frames on a headless surface with 3 resizes between th
     CHECK(presented == 100);
     CHECK(presenter->swapchains_created() == 4); // the first, and one for each resize
 
-    // The presenter frees every allocation it made (the read-back buffer would be one)...
+    // The presenter frees every allocation it made, the last frame's read-back buffer included...
     presenter.reset();
     CHECK(cs::gpu::memory_in_use(*gpu).allocations == allocations_before);
     // ...and every other object: the validation layer's object tracker reports any object still
@@ -397,7 +437,8 @@ TEST_CASE("presenter: a window with no area skips frames, and the swapchain retu
           "[gpu]") {
     const std::unique_ptr<Device> gpu = make_device(presenting_options());
     const HeadlessSurface surface(*gpu);
-    const DisplayImage display(*gpu, {64, 48}, 0.5f);
+    // Discarding: two draws meet with no present between them when a frame is skipped.
+    DisplayImage display(*gpu, {64, 48}, 0.5f, DisplayImage::Producer::discards);
 
     SECTION("minimised after a frame") {
         Presenter presenter(*gpu, surface.get(), 64, 48);
@@ -433,7 +474,7 @@ TEST_CASE("presenter: a uniform display image of linear 0.5 reads back from the 
           "[gpu]") {
     const std::unique_ptr<Device> gpu = make_device(presenting_options());
     const HeadlessSurface surface(*gpu);
-    const DisplayImage display(*gpu, {64, 48}, 0.5f);
+    DisplayImage display(*gpu, {64, 48}, 0.5f, DisplayImage::Producer::keeps_layout);
     Presenter presenter(*gpu, surface.get(), 64, 48);
     REQUIRE(presenter.can_read_back()); // lavapipe's swapchain images allow TRANSFER_SRC
 
