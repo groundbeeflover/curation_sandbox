@@ -3,7 +3,8 @@
 // Exposure and tone mapping, ported from libs/core/include/cs/core/colour.hpp, which is the one
 // definition and says why: linear RGB in nits, times exposure_scale(ev100), through pbr_neutral,
 // gives display-referred linear RGB in [0, 1], which an _SRGB target then encodes. In float here,
-// in double there; libs/gpu/tests/test_tonemap.cpp holds the two within 1e-4.
+// in double there; libs/gpu/tests/test_tonemap.cpp holds pbr_neutral within 1e-5 of libs/core's
+// and exposure_scale within 1e-4 of it, relative.
 
 module colour;
 
@@ -18,16 +19,20 @@ public float exposure_scale(float ev100) {
     return 1.0 / (ev100_saturation_factor * exp2(ev100));
 }
 
-// c if it is above 0, else 0, NaN included, as libs/core's max(0, c). Decided on the bits, as
-// integers: without SignedZeroInfNanPreserve, Vulkan lets a driver assume that no float is NaN,
-// so a float comparison might let one through. The floats above 0, +inf included, are the bit
-// patterns 1 to 0x7f800000; -0, negatives and NaN wrap or lie beyond.
+// c if it is above 0, else 0, NaN included, as libs/core's max(0, c); and +inf as the largest
+// float. Decided on the bits, as integers: without SignedZeroInfNanPreserve, Vulkan lets a driver
+// assume that no float is NaN or infinite, so float comparisons might let one through. The floats
+// above 0 are the bit patterns 1 to 0x7f7fffff, then +inf; -0, negatives and NaN wrap or lie
+// beyond. An infinite channel would make pbr_neutral NaN (inf * 0), which the display shows as
+// 0; the largest float gives white, its limit. Radiance exposed in float overflows to +inf where
+// libs/core's double does not (1e9 nits at EV100 -100), and both then show white.
 float positive_or_zero(float c) {
-    return asuint(c) - 1u < 0x7f800000u ? c : 0.0;
+    const uint bits = asuint(c);
+    return bits - 1u < 0x7f800000u ? asfloat(min(bits, 0x7f7fffffu)) : 0.0;
 }
 
 // Khronos PBR Neutral tone mapping (github.com/KhronosGroup/ToneMapping, version of 2024), with
-// negative and NaN channels taken as 0.
+// negative and NaN channels taken as 0, and +inf as the largest float.
 public float3 pbr_neutral(float3 rgb) {
     const float start_compression = 0.8 - 0.04;
     const float desaturation = 0.15;

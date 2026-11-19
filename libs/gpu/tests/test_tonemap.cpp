@@ -67,6 +67,8 @@ namespace {
 
 constexpr double pi = std::numbers::pi;
 constexpr float quiet_nan = std::numeric_limits<float>::quiet_NaN();
+constexpr float infinity = std::numeric_limits<float>::infinity();
+constexpr double largest = std::numeric_limits<float>::max();
 
 // The owner's comment on #159: the display image is R8G8B8A8_SRGB, encoded by its format.
 static_assert(ToneMapPass::display_format == VK_FORMAT_R8G8B8A8_SRGB);
@@ -195,12 +197,42 @@ MappedBuffer storage_buffer(const Device& gpu, VkDeviceSize size_bytes) {
 
 // An image of StandardTier::hdr_format holding these texels (RGB nits, A lux), width by height,
 // row by row from the top, and left as StandardTier::record() leaves its HDR image: in
-// SHADER_READ_ONLY_OPTIMAL, its writes visible to fragment and compute shader reads.
+// SHADER_READ_ONLY_OPTIMAL, its writes visible to fragment and compute shader reads. When a
+// REQUIRE fails partway, it frees what it made, so that the device's destruction reports no leak
+// on top of the failure.
 class HdrImage {
   public:
     HdrImage(const Device& gpu, std::uint32_t width, std::uint32_t height,
              std::span<const glm::vec4> texels)
         : device_(gpu.device()), allocator_(gpu.allocator()) {
+        try {
+            create(gpu, width, height, texels);
+        } catch (...) {
+            destroy();
+            throw;
+        }
+    }
+    ~HdrImage() { destroy(); }
+    HdrImage(const HdrImage&) = delete;
+    HdrImage& operator=(const HdrImage&) = delete;
+
+    VkImageView view() const { return view_; }
+
+  private:
+    VkDevice device_ = VK_NULL_HANDLE;
+    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    VkImage image_ = VK_NULL_HANDLE;
+    VmaAllocation allocation_ = VK_NULL_HANDLE;
+    VkImageView view_ = VK_NULL_HANDLE;
+
+    void destroy() noexcept {
+        vkDestroyImageView(device_, view_, nullptr);
+        if (image_ != VK_NULL_HANDLE)
+            vmaDestroyImage(allocator_, image_, allocation_);
+    }
+
+    void create(const Device& gpu, std::uint32_t width, std::uint32_t height,
+                std::span<const glm::vec4> texels) {
         REQUIRE(texels.size() == std::size_t{width} * height);
         VkImageCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -246,21 +278,6 @@ class HdrImage {
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         });
     }
-    ~HdrImage() {
-        vkDestroyImageView(device_, view_, nullptr);
-        vmaDestroyImage(allocator_, image_, allocation_);
-    }
-    HdrImage(const HdrImage&) = delete;
-    HdrImage& operator=(const HdrImage&) = delete;
-
-    VkImageView view() const { return view_; }
-
-  private:
-    VkDevice device_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkImage image_ = VK_NULL_HANDLE;
-    VmaAllocation allocation_ = VK_NULL_HANDLE;
-    VkImageView view_ = VK_NULL_HANDLE;
 };
 
 // ---- colour.slang, through colour_check.slang ------------------------------------------------
@@ -480,16 +497,19 @@ TEST_CASE("tonemap: colour.slang's pbr_neutral and exposure_scale match libs/cor
     const std::unique_ptr<Device> gpu = make_device();
     std::vector<glm::vec3> colours(pbr_neutral_inputs.begin(), pbr_neutral_inputs.end());
     // More inputs, each with what libs/core's pbr_neutral is given for it. Negative, -0 and NaN
-    // channels count as 0, as in libs/core. The last has its smallest channel at 0.06, where the
+    // channels count as 0, as in libs/core. One has its smallest channel at 0.06, where the
     // offset is x - 6.25 x^2 and the 6.25 changes the result by 3.6e-3 per unit, so that a slip
     // in it shows; the 10 inputs have only (0.02, 0.03, 0.05) there, where it changes by 4e-4.
-    const std::array<std::pair<glm::vec3, dvec3>, 6> more{{
+    // +inf counts as the largest float, which gives white (libs/core gives NaN for it: a
+    // follow-up).
+    const std::array<std::pair<glm::vec3, dvec3>, 7> more{{
         {{-1.0f, 0.5f, 0.2f}, {0.0, 0.5, 0.2}},
         {{quiet_nan, 0.5f, 0.2f}, {0.0, 0.5, 0.2}},
         {{-0.0f, 0.5f, 0.2f}, {0.0, 0.5, 0.2}},
         {{0.9f, -1e30f, 3.0f}, {0.9, 0.0, 3.0}},
         {{0.9f, quiet_nan, 3.0f}, {0.9, 0.0, 3.0}},
         {{0.06f, 0.3f, 0.5f}, {0.06f, 0.3f, 0.5f}},
+        {{infinity, 0.5f, 0.2f}, {largest, 0.5, 0.2}},
     }};
     for (const auto& c : more) {
         colours.push_back(c.first);
@@ -593,7 +613,7 @@ TEST_CASE("tonemap: the pass reads the Standard tier's HDR image as record() lea
     constexpr int width = 48;
     constexpr int height = 27;
     const StandardTier tier(*gpu, scene, w.lights, width, height);
-    const ToneMapPass pass(*gpu, tier.hdr_view(), tier.width(), tier.height());
+    const ToneMapPass pass(*gpu, tier);
     const world::Camera camera = looking_down();
     // The floor under the light is 0.8 / pi * 250 lux = 64 nits: at EV100 6, beyond PBR Neutral's
     // knee (0.76 of 76.8 nits) in the middle, and below it towards the edges.
@@ -631,6 +651,34 @@ TEST_CASE("tonemap: the pass reads the Standard tier's HDR image as record() lea
                    VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
     });
+}
+
+TEST_CASE("tonemap: radiance that overflows a float once exposed shows white, as libs/core shows "
+          "it, and so does an infinite channel",
+          "[gpu][tonemap][accuracy]") {
+    const std::unique_ptr<Device> gpu = make_device();
+    // At EV100 -100 the exposure scale is 1.06e30, so 1e9 nits overflow the shader's float to
+    // +inf, while libs/core's double reaches 1.06e39 and its curve gives white. An infinite channel
+    // gives white too, its limit; libs/core gives NaN for it, shown as 0 (a follow-up), so only the
+    // finite pixels are compared with it.
+    constexpr float inf = std::numeric_limits<float>::infinity();
+    const std::array<glm::vec4, 4> texels{{
+        {1e9f, 1e9f, 1e9f, 0.0f},
+        {1e9f, 1e3f, 0.0f, 0.0f},
+        {inf, 0.5f, 0.2f, 0.0f},
+        {inf, inf, inf, 0.0f},
+    }};
+    const HdrImage hdr(*gpu, 4, 1, texels);
+    const ToneMapPass pass(*gpu, hdr.view(), 4, 1);
+    const std::vector<std::uint8_t> white(16, 255);
+    for (const double ev100 : {-ToneMapPass::max_ev100_magnitude, 8.0}) {
+        INFO("EV100 " << ev100);
+        CHECK(pass.render(ev100) == white);
+        for (int x = 0; x < 2; ++x) {
+            const glm::vec4& t = texels[static_cast<std::size_t>(x)];
+            CHECK(cpu_display(dvec3(t.r, t.g, t.b), ev100) == std::array<int, 3>{255, 255, 255});
+        }
+    }
 }
 
 TEST_CASE("tonemap: the pass refuses no HDR view, a zero or over-large size, and an EV100 that "

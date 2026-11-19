@@ -10,10 +10,12 @@
 // shaders/modules/colour.slang. The illuminance is never read: the display image is opaque.
 //
 // The display image has the HDR image's size and reads one HDR texel per pixel, with no
-// filtering. M1-23's presenter blits it into an _SRGB swapchain image, which copies the encoded
-// colours rather than encoding them again.
+// filtering. M1-23's presenter blits it into an _SRGB swapchain image: a blit between _SRGB
+// formats decodes the colours and encodes them again, which at the same size leaves them as they
+// were. A UNORM swapchain would show the encoded values as if they were linear: too dark.
 
 #include <cs/gpu/device.hpp>
+#include <cs/gpu/standard_tier.hpp>
 
 #include <cstdint>
 #include <vector>
@@ -40,6 +42,10 @@ class ToneMapPass {
     // maxFramebufferHeight), std::runtime_error on a Vulkan failure.
     ToneMapPass(const Device& device, VkImageView hdr_view, std::uint32_t width,
                 std::uint32_t height);
+    // The same for the tier's HDR image, at its size, so that the sizes cannot disagree: a pass
+    // larger than its HDR image would read beyond it. The tier must outlive the pass.
+    ToneMapPass(const Device& device, const StandardTier& tier)
+        : ToneMapPass(device, tier.hdr_view(), tier.width(), tier.height()) {}
     ~ToneMapPass();
 
     ToneMapPass(const ToneMapPass&) = delete;
