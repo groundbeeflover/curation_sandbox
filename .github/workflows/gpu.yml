@@ -278,10 +278,34 @@ jobs:
       # executables, so the others, which ci.yml builds and runs in release, are simply absent.
       - name: Build
         id: build
-        run: cmake --build --preset debug --target cs_gpu_tests cs_integration_tests cs-render
+        run: cmake --build --preset debug --target cs_gpu_tests cs_engine_tests cs_integration_tests cs-render
 
       - name: Device report
         run: ./build/debug/apps/cs-render/cs-render.exe --device-report
+
+      # TEMPORARY (M1-46): the engine's tests in MSVC debug, and the crash's faulting frame.
+      - name: Tests (-L engine)
+        id: engine
+        continue-on-error: true
+        run: ctest --preset debug -L engine --timeout 600
+      - name: Stack trace of the crash (temporary)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          cdb="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+          ls -la "$cdb" || { ls "/c/Program Files (x86)/Windows Kits/10/" ; exit 1; }
+          bin="$(cygpath -w "$PWD/build/debug/vcpkg_installed/x64-windows/debug/bin")"
+          ls build/debug/vcpkg_installed/x64-windows/debug/bin | grep -i -E "embree|tbb" || true
+          syms="srv*C:\\symbols*https://msdl.microsoft.com/download/symbols;$bin;$(cygpath -w "$PWD/build/debug/apps/cs-render");$(cygpath -w "$PWD/build/debug/libs/engine");$(cygpath -w "$PWD/build/debug/tests/integration")"
+          cmds='sxe -c ".lastevent; r; ub @rip L12; u @rip L4; kn 80; q" av; sxe -c ".lastevent; kn 80; q" sov; g'
+          export MSYS2_ARG_CONV_EXCL='*'
+          echo "::group::cs-render --tier standard under cdb"
+          "$cdb" -G -lines -y "$syms" -c "$cmds" build/debug/apps/cs-render/cs-render.exe tests/scenes/skeleton --tier standard --size 64x36 --spp 16 --lux-samples 64 --out build/diag/skeleton < /dev/null || true
+          echo "::endgroup::"
+          engine_tests=$(find build/debug -name cs_engine_tests.exe | head -1)
+          echo "::group::cs_engine_tests under cdb"
+          "$cdb" -G -lines -y "$syms" -c "$cmds" "$engine_tests" "[engine]" < /dev/null || true
+          echo "::endgroup::"
 
       # Four tests are left out here, and only here, until their follow-ups (PR #166) land:
       # - the three that build the engine's Embree scene (the two Standard-vs-engine integration
