@@ -1258,16 +1258,18 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-26", "M1-24", "M1-25", "M1-15", "M1-17", "M1-43", "M1-47"]
-touches = ["libs/ui/src/features/skeleton_commands.cpp", "libs/ui/src/features/camera_input.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_walking_skeleton.cpp", ".claude/agents/ux-reviewer.md", "docs/product/screens/m1-walking-skeleton.png"]
+touches = ["libs/ui/src/features/skeleton_commands.cpp", "libs/ui/src/features/camera_input.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_walking_skeleton.cpp", "libs/editor/include/cs/editor/work_title.hpp", "libs/editor/src/work_title.cpp", "libs/editor/tests/test_work_title.cpp", ".claude/agents/ux-reviewer.md", "docs/product/screens/m1-walking-skeleton.png"]
 goal = "The walking skeleton a curator can see: build a room, hang a painting at its true size, light it, walk around it and read its lux, all in the app."
 context = [
   "docs/product/blueprint.md, section 3: journeys J1 and J2 (their first steps)",
   "libs/editor commands (M1-25) and camera controllers (M1-24); engine::lux_at (M1-15)",
+  "Images are stored under their SHA-256 (M1-47), so a work's name for curators is its title and its source's original_name (doc::Work, ADR 0008); add_work (hanging.hpp) leaves the source empty, and the transaction it returns can set it: find_work, then set_work",
   "CLAUDE.md: the ux-reviewer subagent is created with this task",
 ]
 acceptance = [
   "Room > New room: width, depth and height fields (defaults 6, 4, 3.5 m) create the room",
   "Works > Add painting: a file dialog and width and height fields hang the work on wall A at the centre line in a box frame; Lights > Add spot lights the work just added (selection arrives with M2-14)",
+  "The added work is titled from its file: editor::title_from_file_name takes the file name's stem, turns underscores into spaces, collapses and trims white space, replaces bytes that are not UTF-8 with U+FFFD and cuts at a character boundary to doc::max_string_bytes ('Monet_Haystacks  final.JPG' becomes 'Monet Haystacks final'; '.png' becomes an empty, untitled work); its source is FromImport with the file name, made valid UTF-8 and bounded the same way; `ctest --preset debug -L editor` passes with tests of each of these cases",
   "Orbit by default; Tab toggles walk (W, A, S, D and mouse look with the cursor captured; Esc releases it)",
   "A lux panel shows the work's mean direct and total lux from engine::work_lux_grid, computed on a worker thread and updated within 1 s of a change; [ui] an offscreen test runs the three commands and checks the panel's numbers equal cs-render's lux report for the saved project within 1%",
   "docs/product/screens/m1-walking-skeleton.png (at most 300 KB) shows the result",
@@ -2223,14 +2225,16 @@ goal = "Journey J3 in the app: drop an image on a wall, answer four prefilled qu
 context = [
   "docs/product/blueprint.md, journey J3",
   "docs/adr/0003-painting-materials.md, Import: four questions; docs/adr/0005-machine-learning.md: the resolution warning",
+  "editor::title_from_file_name and the FromImport source of M1-27's Add painting: an imported work has a title and its file's name, because its image is stored under a hash (M1-47)",
   "Use the ux-reviewer subagent on the screenshots",
 ]
 acceptance = [
   "Dropping an image file on a wall, or File > Import image, opens a dialog with true size (filled by parse_dimensions from pasted text), medium preset (from the medium text), finish and glazing (defaulted by preset)",
+  "The dialog also has title and artist fields, the title prefilled by editor::title_from_file_name; OK gives the work both and the source FromImport with the file's name, as M1-27's Add painting does",
   "The dialog says how close a visitor can stand before the image looks soft ('Sharp from about 0.7 m') and warns below 1 m",
   "An image larger than the Standard cap imports, and the dialog says so ('Shrunk from 14600 x 11680 px to 8192 x 6554 px'), with the sharp distance of the stored image (M2-40)",
   "OK hangs the work at the drop point on the centre line in one transaction",
-  "[ui] An offscreen test imports a test image with pasted text '28 3/4 x 36 1/4 in. (73 x 92 cm)' and finds a Work 730 mm high and 920 mm wide",
+  "[ui] An offscreen test imports a test image with pasted text '28 3/4 x 36 1/4 in. (73 x 92 cm)' and finds a Work 730 mm high and 920 mm wide, titled from the file name, with the artist it typed and the file's name as its source",
   "docs/product/screens/m2-import.png shows the dialog",
 ]
 out_of_scope = ["Material appearance of presets (M3)", "Checklists (M2-12, M2-13)"]
@@ -2283,8 +2287,10 @@ context = [
 ]
 acceptance = [
   "A dock with the works (number, title, artist, size, placed or not); an Import checklist action",
+  "A filter field above the table keeps the rows whose number, title or artist contains its text, ignoring case and accents ('cezanne' finds 'Paul Cézanne'); clicking a column's header sorts by it, numbers in checklist order ('2' before '10', '12' before '12a'); filtering and sorting keep the selection",
   "Dragging a row onto a wall face hangs the work at the drop point on the centre line; selection in the table and the viewport stay in step through editor::Selection",
   "[ui] An offscreen test imports the 40-row sample and hangs row 1 by a synthetic drag",
+  "[ui] The test types 'cezanne' and part of a title in the filter and checks the rows shown against the sample, and sorts by number",
   "docs/product/screens/m2-checklist.png shows the panel",
 ]
 out_of_scope = ["Conservation columns (M3)"]
@@ -2839,7 +2845,7 @@ context = [
 acceptance = [
   "Columns are mapped by English header names, with samples in libs/editor/tests/data/checklists/ (generic, TMS-like, Axiell-like) and an explicit mapping override",
   "Each row becomes a Work (number, title, artist, date, height and width, medium preset, accession number, lender) in one transaction for the whole import; images are matched by accession number or number in a chosen folder; rows without an image become placeholder works",
-  "A 40-row sample imports with no errors and per-row warnings for sizes it could not parse",
+  "A 40-row sample imports with no errors and per-row warnings for sizes it could not parse; it includes works by Paul Cézanne, numbers such as '12' and '12a', and a title with a comma, for M2-13's filter and sorting",
   "`ctest --preset debug -L editor` passes",
 ]
 out_of_scope = ["The checklist panel (M2-13)", "Exporting the hanging list (M4)"]
