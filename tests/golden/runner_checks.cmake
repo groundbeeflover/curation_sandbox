@@ -9,11 +9,15 @@
 #                   no warning (so the copied scene loaded whole and the failure is the brightness),
 #                   and the test folder exactly as it was.
 #   CHECK=update    Acceptance criterion 4, on a cheap copy (32 x 18, 4 samples per pixel):
-#                   1. with no reference the test skips (exit 77) and writes nothing;
+#                   1. with no reference the test skips (exit 77), writes nothing in the test
+#                      folder, and writes the candidate reference ref.cpu.exr, a half-float EXR,
+#                      in the out folder and nothing else (M1-29);
 #                   2. --update writes a half-float reference, and nothing in the out folder;
 #                   3. the next run (on 2 threads) passes, "matches", and writes nothing;
-#                   4. seed 2 fails, "differs", writes the six images and leaves the reference;
-#                   5. seed 1 again passes and removes the six images, and only them;
+#                   4. seed 2 fails, "differs", writes the six images and the candidate, and
+#                      leaves the reference;
+#                   5. seed 1 again passes and removes the six images and the candidate, and only
+#                      them;
 #                   6. --update with seed 2 rewrites the reference, after which seed 2 passes.
 #   CHECK=errors    The exit codes for mistakes: 2 for a mistake on the command line, 1 for a
 #                   test.json that is not valid or a scene that is missing; never 0 or 77, and
@@ -381,13 +385,16 @@ if(CHECK STREQUAL "update")
     write_test_json("${test_dir}" "${small_json}")
     snapshot("${test_dir}" only_test_json)
 
-    # 1. No reference: skipped, with nothing rendered or written.
+    # 1. No reference: skipped, the test folder untouched, and the render written to the out folder
+    #    as the candidate reference, the file --update would write, for CI's artefact (M1-29).
     set(what "1. no reference")
     run_golden("${what}" "${test_dir}" --out "${out_dir}")
     expect_exit("${what}" 77)
     expect_unchanged("${what}" "${test_dir}" "${only_test_json}")
-    expect_no_files("${what}" "${out_dir}")
-    message(STATUS "ok: ${what}: skipped, nothing written")
+    expect_half_exr("${what}" "${out_dir}/ref.cpu.exr" ${small_width} ${small_height})
+    file(SHA256 "${out_dir}/ref.cpu.exr" candidate_hash)
+    expect_unchanged("${what}" "${out_dir}" "ref.cpu.exr=${candidate_hash}")
+    message(STATUS "ok: ${what}: skipped, the candidate ref.cpu.exr written and nothing else")
 
     # 2. --update writes the reference, a half-float EXR of the test's size, and nothing else.
     set(what "2. --update with no reference")
@@ -396,6 +403,9 @@ if(CHECK STREQUAL "update")
     expect_no_word("${what}" "warning")
     expect_half_exr("${what}" "${test_dir}/ref.cpu.exr" ${small_width} ${small_height})
     file(SHA256 "${test_dir}/ref.cpu.exr" first_reference)
+    if(NOT first_reference STREQUAL candidate_hash)
+        fail("${what}: ref.cpu.exr differs from the candidate the skipped run wrote")
+    endif()
     # A snapshot is sorted by name: ref.cpu.exr comes before test.json.
     set(with_reference "ref.cpu.exr=${first_reference};${only_test_json}")
     expect_unchanged("${what}" "${test_dir}" "${with_reference}")
@@ -419,8 +429,10 @@ if(CHECK STREQUAL "update")
     run_golden("${what}" "${test_dir}" --out "${out_dir}")
     expect_differs("${what}")
     expect_failure_images("${what}" "${out_dir}")
+    expect_half_exr("${what}" "${out_dir}/ref.cpu.exr" ${small_width} ${small_height})
     expect_unchanged("${what}" "${test_dir}" "${seed2_before}")
-    message(STATUS "ok: ${what}: fails, writes the six images, leaves the reference")
+    message(STATUS "ok: ${what}: fails, writes the six images and the candidate, leaves the "
+        "reference")
 
     # 5. Seed 1 again passes, and removes the six images, but nothing else in the out folder.
     write_test_json("${test_dir}" "${small_json}")
@@ -432,7 +444,7 @@ if(CHECK STREQUAL "update")
     expect_pass("${what}")
     expect_unchanged("${what}" "${test_dir}" "${seed1_before}")
     expect_unchanged("${what}" "${out_dir}" "keep.txt=${keep_hash}")
-    message(STATUS "ok: ${what}: passes, removes the six images and only them")
+    message(STATUS "ok: ${what}: passes, removes the six images and the candidate, and only them")
 
     # 6. --update rewrites an existing reference; with it, seed 2 passes.
     write_test_json("${test_dir}" "${seed2_json}")
@@ -534,6 +546,9 @@ if(CHECK STREQUAL "errors")
     refuse_test_json("a negative height" "${json}")
     string(JSON json SET "${small_json}" samplesPerPixel 0)
     refuse_test_json("0 samples per pixel" "${json}")
+    # The Standard tier draws one frame; refused before any device is looked for (M1-29).
+    string(JSON json SET "${small_json}" tier [["standard"]])
+    refuse_test_json("the Standard tier at 4 frames" "${json}")
     string(JSON json SET "${small_json}" width [["32"]])
     refuse_test_json("a width that is a string" "${json}")
     refuse_test_json("text that is not JSON" [[{ "scene": "../scene", ]])

@@ -1,0 +1,302 @@
+# GPU tests and golden images on software Vulkan (Mesa lavapipe), as decided in
+# docs/adr/0010-gpu-tests-in-ci.md, on every pull request and every push to main:
+#
+# - Linux, debug (Clang with ASan and UBSan): `ctest -L gpu`, the validation layer required
+#   (ADR 0011) and LeakSanitizer on;
+# - Linux, release (GCC): `ctest -L golden`;
+# - Windows, debug (MSVC): `ctest -L gpu`, the validation layer required, building only what it
+#   runs.
+#
+# CS_REQUIRE_GPU=1 makes a missing device, or in a debug build a missing validation layer, a
+# failure rather than a skip. A golden test that fails, or skips for want of a reference for
+# lavapipe, leaves its images and its candidate reference in build/<preset>/golden-out/, which
+# each job uploads: references are taken from that artefact (tests/golden/README.md).
+#
+# The builds mirror ci.yml's jobs of the same compiler and preset, and the Linux jobs restore
+# ci.yml's vcpkg packages and compiler output without saving any: ci.yml's runs on main keep them
+# warm, so these jobs build almost nothing.
+name: GPU
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same pull request cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Bumping any of these changes the cache keys below and, for Mesa, may change golden images:
+  # a deliberate pull request that updates the lavapipe references (ADR 0010).
+  MESA_VERSION: "26.2.6"
+  MESA_SHA256: b9436b3e1a8be76fbd4823dc884f90596ab7c6ac5e1867a305e66ffccfb31a92
+  MESA_DIST_WIN_SHA256: b2e00615feaba45942343c265cc8c5f576142ca682c1ac6661922d4b72492877
+  VULKAN_SDK_VERSION: "1.4.363.1"
+  VULKAN_SDK_SHA256: b7867d8ca658563813af666f34b93db87f1b1c7d9d69d97e924c210c7ba33eb8
+  # The Ubuntu 24.04 package lavapipe's static LLVM comes from (exact version, release pocket).
+  LLVM_PACKAGE_VERSION: "1:18.1.3-1ubuntu1"
+  # The GPU tests, cs-render's GPU checks and golden tests fail instead of skipping when there is
+  # no Vulkan device, and in a debug build when the validation layer does not load.
+  CS_REQUIRE_GPU: "1"
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: debug, compiler: clang, cxx: clang++, label: gpu }
+          - { preset: release, compiler: gcc, cxx: g++, label: golden }
+    name: lavapipe (Linux, ${{ matrix.compiler }}, ${{ matrix.preset }}, -L ${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VK_DRIVER_FILES: /home/runner/mesa/share/vulkan/icd.d/lvp_icd.x86_64.json
+      VK_LAYER_PATH: /home/runner/vulkan-layers/share/vulkan/explicit_layer.d
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Mesa: only lavapipe, built from the pinned release tarball with LLVM linked statically
+      # (LLVM 18.1.3 from the Ubuntu 24.04 release pocket), so the cached build does not depend
+      # on the LLVM versions preinstalled on the runner image. About 5 minutes when the cache
+      # misses. The key hashes this file, so any change to the build below rebuilds it.
+      - name: Restore lavapipe
+        id: mesa-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/mesa
+          key: lavapipe-${{ env.MESA_VERSION }}-ubuntu-24.04-${{ hashFiles('.github/workflows/gpu.yml') }}
+      # The X11 platform is what makes lavapipe expose VK_EXT_headless_surface and VK_KHR_swapchain.
+      - name: Build lavapipe
+        if: steps.mesa-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            bison flex glslang-tools libdrm-dev libedit-dev libelf-dev libexpat1-dev libffi-dev \
+            "libpolly-18-dev=${LLVM_PACKAGE_VERSION}" "llvm-18-dev=${LLVM_PACKAGE_VERSION}" \
+            libncurses-dev libxml2-dev libzstd-dev ninja-build \
+            python3-mako python3-packaging python3-yaml zlib1g-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxrandr-dev libxshmfence-dev
+          test "$(llvm-config-18 --version)" = 18.1.3
+          pip install --break-system-packages meson==1.9.1
+          curl -sSfL --retry 3 -o mesa.tar.xz "https://archive.mesa3d.org/mesa-${MESA_VERSION}.tar.xz"
+          echo "${MESA_SHA256}  mesa.tar.xz" | sha256sum -c -
+          tar xf mesa.tar.xz
+          cd "mesa-${MESA_VERSION}"
+          meson setup build --prefix="$HOME/mesa" --libdir=lib --buildtype=release -Db_ndebug=true \
+            -Dplatforms=x11 -Dgallium-drivers=llvmpipe -Dvulkan-drivers=swrast -Dvulkan-layers= \
+            -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
+            -Dllvm=enabled -Dshared-llvm=disabled -Dvalgrind=disabled \
+            -Dlibunwind=disabled -Dlmsensors=disabled -Dxmlconfig=disabled -Dzstd=enabled \
+            -Dbuild-tests=false -Dvideo-codecs= -Dtools= -Dgallium-va=disabled -Dgallium-rusticl=false \
+            -Dteflon=false -Dperfetto=false
+          meson install -C build
+
+      # Validation layers and vulkaninfo from the pinned LunarG SDK; the loader is the system's
+      # libvulkan1, which volk opens at run time.
+      - name: Restore the validation layers
+        id: layers-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/vulkan-layers
+          key: vulkan-layers-${{ env.VULKAN_SDK_VERSION }}-linux-${{ hashFiles('.github/workflows/gpu.yml') }}
+      - name: Extract the validation layers from the Vulkan SDK
+        if: steps.layers-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL --retry 3 -o sdk.tar.xz "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.xz"
+          echo "${VULKAN_SDK_SHA256}  sdk.tar.xz" | sha256sum -c -
+          mkdir -p ~/vulkan-layers
+          tar xf sdk.tar.xz -C ~/vulkan-layers --strip-components=2 \
+            "${VULKAN_SDK_VERSION}/x86_64/lib/libVkLayer_khronos_validation.so" \
+            "${VULKAN_SDK_VERSION}/x86_64/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" \
+            "${VULKAN_SDK_VERSION}/x86_64/bin/vulkaninfo"
+          strip --strip-unneeded ~/vulkan-layers/lib/libVkLayer_khronos_validation.so
+          rm sdk.tar.xz
+
+      # Before the build: fails fast, with the missing library's or extension's name, when the
+      # restored lavapipe or layers cannot serve the tests.
+      - name: Vulkan driver and layers
+        run: |
+          if ldd ~/mesa/lib/libvulkan_lvp.so | grep 'not found'; then exit 1; fi
+          ~/vulkan-layers/bin/vulkaninfo --summary
+          ~/vulkan-layers/bin/vulkaninfo > vulkaninfo.txt 2>&1 || true
+          for name in VK_KHR_ray_query VK_EXT_headless_surface VK_KHR_swapchain VK_LAYER_KHRONOS_validation; do
+            grep -q "$name" vulkaninfo.txt || { echo "::error::lavapipe or the layers lack $name"; exit 1; }
+          done
+
+      # As ci.yml's vcpkg step: the runner's vcpkg moved to the manifest's builtin-baseline, and
+      # vcpkg's binary cache in a directory restored from ci.yml's entry (never saved here).
+      - name: vcpkg
+        id: vcpkg
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          baseline=$(sed -n 's/.*"builtin-baseline": *"\([0-9a-f]*\)".*/\1/p' vcpkg.json)
+          test -n "$baseline" || { echo "no builtin-baseline in vcpkg.json"; exit 1; }
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin "$baseline"
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --quiet --force --detach "$baseline"
+          "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          mkdir -p "$RUNNER_TEMP/vcpkg-archives"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$RUNNER_TEMP/vcpkg-archives,readwrite" >> "$GITHUB_ENV"
+          echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Restore vcpkg packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-x64-linux-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-x64-linux-
+
+      # ci.yml's entry for the same compiler and preset, whose commands this build repeats.
+      - name: Compiler cache
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ubuntu-24.04-${{ matrix.compiler }}-${{ matrix.preset }}
+          max-size: 1G
+          save: false
+
+      - name: Configure
+        run: |
+          launcher=""
+          if command -v ccache >/dev/null; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
+          cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DVCPKG_TARGET_TRIPLET=x64-linux -DVCPKG_INSTALL_OPTIONS=--clean-after-build \
+            -DCS_WARNINGS_AS_ERRORS=ON $launcher
+      - name: Build
+        id: build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      # The device the tests render on, as a bug report gives it; in the debug job, with
+      # "validation: on". LeakSanitizer is told what the debug test preset tells it.
+      - name: Device report
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/tools/sanitizers/lsan.supp
+          VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING: "1"
+        run: ./build/${{ matrix.preset }}/apps/cs-render/cs-render --device-report
+
+      # lavapipe uses every core, so tests run one at a time. Mesa's shader cache stays on: it is
+      # empty at the start of the job and saves about a second per test process after the first.
+      - name: Tests (-L ${{ matrix.label }})
+        run: ctest --preset ${{ matrix.preset }} -L ${{ matrix.label }} --timeout 120
+      - name: Upload golden-out
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: golden-out-linux-${{ matrix.preset }}
+          path: build/*/golden-out/
+          if-no-files-found: ignore
+
+  windows:
+    name: lavapipe (Windows, msvc, debug, -L gpu)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Vulkan SDK (loader, validation layers, vulkaninfo)
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          install_runtime: true
+          cache: true
+          stripdown: true
+
+      # lavapipe from mesa-dist-win, the same Mesa version as Linux. The runner is elevated, so
+      # the loader ignores VK_DRIVER_FILES and VK_LAYER_PATH: both are registered in HKLM instead.
+      # On a cache hit the SDK action does not install the loader system-wide: put it on PATH.
+      - name: Install lavapipe
+        shell: bash
+        run: |
+          echo "$VULKAN_SDK\\runtime\\x64" >> "$GITHUB_PATH"
+          curl -sSfL --retry 3 -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/mesa3d-${MESA_VERSION}-release-msvc.7z"
+          echo "${MESA_DIST_WIN_SHA256}  mesa.7z" | sha256sum -c -
+          7z x -y -o"$RUNNER_TEMP/mesa" mesa.7z x64/vulkan_lvp.dll x64/lvp_icd.x86_64.json > /dev/null
+          export MSYS2_ARG_CONV_EXCL='*'
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\Drivers' /v "$(cygpath -w "$RUNNER_TEMP/mesa/x64/lvp_icd.x86_64.json")" /t REG_DWORD /d 0 /f
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers' /v "$(cygpath -w "$VULKAN_SDK/Bin/VkLayer_khronos_validation.json")" /t REG_DWORD /d 0 /f
+
+      - name: Vulkan driver and layers
+        shell: bash
+        run: |
+          "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" --summary
+          "$VULKAN_SDK/Bin/vulkaninfoSDK.exe" > vulkaninfo.txt 2>&1 || true
+          # lavapipe on Windows has no VK_EXT_headless_surface; tests that need it skip there.
+          for name in llvmpipe VK_KHR_ray_query VK_LAYER_KHRONOS_validation; do
+            grep -q "$name" vulkaninfo.txt || { echo "::error::lavapipe or the layers lack $name"; exit 1; }
+          done
+
+      # As ci.yml's vcpkg step, and its Windows packages restored (never saved here).
+      - name: vcpkg
+        id: vcpkg
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          baseline=$(sed -n 's/.*"builtin-baseline": *"\([0-9a-f]*\)".*/\1/p' vcpkg.json)
+          test -n "$baseline" || { echo "no builtin-baseline in vcpkg.json"; exit 1; }
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --quiet origin "$baseline"
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --quiet --force --detach "$baseline"
+          cmd //c "$VCPKG_INSTALLATION_ROOT\\bootstrap-vcpkg.bat" -disableMetrics
+          mkdir -p "$RUNNER_TEMP/vcpkg-archives"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$RUNNER_TEMP/vcpkg-archives,readwrite" >> "$GITHUB_ENV"
+          echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Restore vcpkg packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-x64-windows-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-x64-windows-
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      # ci.yml has no Windows debug job, so this cache is this job's own. ccache handles MSVC only
+      # when no PDB is written, so debug information goes into the objects (/Z7) instead.
+      - name: Compiler cache
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: windows-2022-msvc-debug-gpu
+          max-size: 1G
+
+      - name: Configure
+        shell: bash
+        run: |
+          launcher=""
+          if command -v ccache >/dev/null; then launcher="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
+          cmake --preset debug -DCMAKE_CXX_COMPILER=cl -DVCPKG_TARGET_TRIPLET=x64-windows \
+            -DVCPKG_INSTALL_OPTIONS=--clean-after-build -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded \
+            -DCS_WARNINGS_AS_ERRORS=ON $launcher
+      # Only what `-L gpu` runs: the gpu module's tests, the integration tests and cs-render (its
+      # checks and the Standard tier's golden tests). CTest lists Catch2's tests by running their
+      # executables, so the others, which ci.yml builds and runs in release, are simply absent.
+      - name: Build
+        id: build
+        run: cmake --build --preset debug --target cs_gpu_tests cs_integration_tests cs-render
+
+      - name: Device report
+        run: ./build/debug/apps/cs-render/cs-render.exe --device-report
+
+      # Four tests are left out here, and only here, until their follow-ups (PR #166) land:
+      # - the three that build the engine's Embree scene (the two Standard-vs-engine integration
+      #   tests, and cs-render --tier standard, whose lux comes from the engine): an MSVC debug
+      #   build crashes there with an access violation, which no job saw before;
+      # - the one that disables the validation layer through VK_LOADER_LAYERS_DISABLE, which the
+      #   loader ignores in the runner's elevated process (ADR 0010).
+      - name: Tests (-L gpu)
+        run: >-
+          ctest --preset debug -L gpu --timeout 120
+          -E "without the validation layer, required throws|--tier standard renders the skeleton|standard vs engine: the skeleton"
+      - name: Upload golden-out
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: golden-out-windows-debug
+          path: build/*/golden-out/
+          if-no-files-found: ignore

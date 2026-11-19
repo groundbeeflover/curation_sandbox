@@ -3,6 +3,7 @@
 #include "golden.hpp"
 
 #include "common.hpp"
+#include "standard.hpp"
 
 #include <cs/core/colour.hpp>
 #include <cs/core/image.hpp>
@@ -10,6 +11,7 @@
 #include <cs/core/image_io.hpp>
 #include <cs/core/thread_pool.hpp>
 #include <cs/engine/scene.hpp>
+#include <cs/gpu/device.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -26,6 +28,8 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -45,13 +49,17 @@ constexpr std::string_view usage =
     "usage: cs-render golden <test-folder> [--update] [--out <folder>] [--threads <n>]\n"
     "\n"
     "Renders the scene <test-folder>/test.json describes and compares it with the reference for\n"
-    "the driver that renders it, <test-folder>/ref.<driver>.exr (cpu for the path tier). Exits\n"
-    "with 0 when the mean FLIP and the mean absolute error are within test.json's tolerances,\n"
-    "1 when they are not or on an error, and 77 (skipped) when there is no reference.\n"
+    "the driver that renders it, <test-folder>/ref.<driver>.exr: cpu for the path tier, and for\n"
+    "the Standard tier the Vulkan driver, lavapipe or radv for instance (`cs-render\n"
+    "--device-report` names it). Exits with 0 when the mean FLIP and the mean absolute error are\n"
+    "within test.json's tolerances, 1 when they are not or on an error (any validation message\n"
+    "included), and 77 (skipped) when there is no reference, or no Vulkan device for the\n"
+    "Standard tier unless CS_REQUIRE_GPU=1 is set.\n"
     "\n"
     "On a failure it writes render.exr, render.png, reference.png, difference.exr,\n"
     "difference.png and flip.png (the FLIP heat map) to --out, by default\n" CS_GOLDEN_OUT_DIR
-    "/<name of the test folder>/.\n"
+    "/<name of the test folder>/. On a failure or a skip for want of a reference it also writes\n"
+    "the candidate reference there, ref.<driver>.exr, as --update would write it.\n"
     "\n"
     "--update writes the render as the new reference, a half-float EXR, and nothing else; the\n"
     "pull request that commits it says why. Without --update, nothing in the test folder is\n"
@@ -62,7 +70,8 @@ constexpr std::string_view usage =
 // The driver that renders the path tier: the engine, on the CPU.
 constexpr std::string_view engine_driver = "cpu";
 
-// What a failed comparison writes, and a passed one removes when an earlier failure left it.
+// What a failed comparison writes, besides the candidate reference, and a passed one removes when
+// an earlier failure left it.
 constexpr std::array<std::string_view, 6> failure_files = {
     "render.exr", "render.png", "reference.png", "difference.exr", "difference.png", "flip.png"};
 
@@ -88,7 +97,7 @@ struct Tolerances {
 
 struct GoldenTest {
     fs::path scene; // a project folder
-    std::string tier;
+    Tier tier = Tier::path;
     ImageSettings image;
     Tolerances tolerances;
 };
@@ -241,11 +250,12 @@ GoldenTest read_test(const fs::path& folder) {
     test.scene = folder / from_utf8(scene.get<std::string>());
 
     const json& tier = member(root, where, "tier");
-    if (!tier.is_string() || tier.get<std::string>() != "path") {
-        throw std::runtime_error(where + ": \"tier\" is \"path\"; the Standard tier's golden "
-                                         "tests arrive with M1-29");
+    const std::optional<Tier> parsed =
+        tier.is_string() ? parse_tier(tier.get<std::string>()) : std::nullopt;
+    if (!parsed) {
+        throw std::runtime_error(where + ": \"tier\" is \"path\" or \"standard\"");
     }
-    test.tier = tier.get<std::string>();
+    test.tier = *parsed;
 
     test.image.width = static_cast<int>(whole_number(root, where, "width", 1, cs::max_image_side));
     test.image.height =
@@ -256,6 +266,10 @@ GoldenTest read_test(const fs::path& folder) {
     }
     test.image.samples_per_pixel =
         static_cast<std::uint32_t>(whole_number(root, where, "samplesPerPixel", 1, max_spp));
+    if (test.tier == Tier::standard && test.image.samples_per_pixel != 1) {
+        throw std::runtime_error(where + ": the Standard tier draws one frame, so its "
+                                         "\"samplesPerPixel\" is 1");
+    }
     test.image.seed =
         whole_number(root, where, "seed", 0, std::numeric_limits<std::uint64_t>::max());
 
@@ -301,16 +315,23 @@ void write_failure_images(const fs::path& out, double ev100, const cs::Image& re
     cs::write_display_png(cs::flip_heat_map(reference, render), out / "flip.png");
 }
 
-// Images an earlier failure left in out: once the test passes they only mislead.
-void remove_failure_images(const fs::path& out) {
-    for (const std::string_view name : failure_files) {
-        std::error_code error;
-        fs::remove(out / name, error);
-        if (error) {
-            std::cerr << "cs-render: warning: cannot remove " << utf8(out / name) << ": "
-                      << error.message() << '\n';
-        }
+// A file an earlier run left in out, which no longer applies.
+void remove_output(const fs::path& path) {
+    std::error_code error;
+    fs::remove(path, error);
+    if (error) {
+        std::cerr << "cs-render: warning: cannot remove " << utf8(path) << ": " << error.message()
+                  << '\n';
     }
+}
+
+// Images and a candidate reference an earlier failure or skip left in out: once the test passes
+// or its reference is updated, they only mislead.
+void remove_outputs(const fs::path& out, const fs::path& candidate) {
+    for (const std::string_view name : failure_files) {
+        remove_output(out / name);
+    }
+    remove_output(candidate);
 }
 
 void print_comparison(const cs::ImageComparison& comparison, const Tolerances* tolerances) {
@@ -329,17 +350,15 @@ std::string size_text(const cs::Image& image) {
     return std::to_string(image.width()) + " x " + std::to_string(image.height());
 }
 
-// The render as a reference stores it, rounded to half floats and clamped to the largest one, by
-// way of write_exr's own conversion and a file in `out` that is removed again. So a render
-// identical to the one --update wrote compares as exactly 0, and a pixel brighter than 65504 nits
-// cannot fail a test.
-cs::Image as_stored(const cs::Image& render, const fs::path& out) {
-    fs::create_directories(out);
-    const fs::path scratch = out / "render.half.exr";
-    cs::write_exr(render, scratch, cs::ExrChannels::half);
-    cs::Image stored = cs::read_exr(scratch);
-    fs::remove(scratch);
-    return stored;
+// Writes the render as the candidate reference, the half-float EXR --update would write, and
+// returns it as read back: rounded to half floats and clamped to the largest one by write_exr's
+// own conversion. So a render identical to the one --update wrote compares as exactly 0, and a
+// pixel brighter than 65504 nits cannot fail a test. The caller removes the file when the test
+// passes; after a skip or a failure it is what a pull request would commit (CI's artefact).
+cs::Image write_candidate(const cs::Image& render, const fs::path& candidate) {
+    fs::create_directories(candidate.parent_path());
+    cs::write_exr(render, candidate, cs::ExrChannels::half);
+    return cs::read_exr(candidate);
 }
 
 // Writes the render as the new reference, by way of a temporary file, so that a failed write
@@ -388,40 +407,84 @@ int run(const Arguments& arguments) {
         throw UsageError("--out is inside the test folder, which only --update writes to");
     }
     const GoldenTest test = read_test(folder);
-    const std::string driver(engine_driver);
-    const fs::path reference_path = folder / ("ref." + driver + ".exr");
-
-    std::cout << "golden " << utf8(name) << ": " << test.tier << " tier on " << driver << ", "
-              << test.image.width << " x " << test.image.height << " at "
-              << test.image.samples_per_pixel << " spp, seed " << test.image.seed << '\n';
-    // Checked before a skip, so that a test with a broken scene path fails rather than skips.
+    const bool standard = test.tier == Tier::standard;
+    std::cout << "golden " << utf8(name) << ": " << tier_name(test.tier) << " tier, "
+              << test.image.width << " x " << test.image.height;
+    if (standard) {
+        std::cout << ", one frame\n";
+    } else {
+        std::cout << " at " << test.image.samples_per_pixel << " spp, seed " << test.image.seed
+                  << '\n';
+    }
+    // Checked before a device is looked for or a skip, so that a test with a broken scene path
+    // fails rather than skips.
     if (!fs::is_regular_file(test.scene / "project.json")) {
         throw std::runtime_error("the scene " + utf8(test.scene) +
                                  " is not a project folder: it has no project.json");
     }
-    if (!arguments.update && !fs::exists(reference_path)) {
-        std::cout << "  skipped: no reference for " << driver << ", " << utf8(reference_path)
-                  << "\n  `cs-render golden " << utf8(folder)
-                  << " --update` makes one (tests/golden/README.md)\n";
-        return exit_skip;
+
+    // The Standard tier's device, and its validation messages, any of which fails the test as it
+    // fails a GPU test. The counter outlives the device, to hear what its destruction reports.
+    std::optional<ValidationCounter> validation;
+    std::unique_ptr<cs::gpu::Device> device;
+    std::string driver(engine_driver);
+    if (standard) {
+        validation.emplace();
+        try {
+            device = std::make_unique<cs::gpu::Device>(device_options());
+        } catch (const cs::gpu::NoDeviceError& error) {
+            if (gpu_required()) {
+                throw std::runtime_error(
+                    std::string("no Vulkan device, and CS_REQUIRE_GPU=1 requires one: ") +
+                    error.what());
+            }
+            std::cout << "  skipped: no Vulkan device: " << error.what() << '\n';
+            return exit_skip;
+        }
+        const cs::gpu::DeviceReport& report = device->report();
+        driver = driver_label(report);
+        std::cout << "  on " << report.name << ", " << report.driver << " (" << report.driver_info
+                  << "), validation " << (report.validation ? "on" : "off") << '\n';
     }
+    const std::string reference_name = "ref." + driver + ".exr";
+    const fs::path reference_path = folder / reference_name;
+    const fs::path candidate_path = out / reference_name;
+    // What an earlier failure or skip wrote no longer applies, whatever this run ends in.
+    remove_outputs(out, candidate_path);
 
     const Project project = load_project(test.scene);
-    const unsigned threads = thread_count(arguments.threads);
-    cs::ThreadPool pool(threads);
-    const cs::engine::Scene scene(project.world);
-    const cs::Image render = render_view(project, scene, test.image, pool);
-    std::cout << "  loaded and rendered on " << threads << " threads in "
+    const cs::Image render = [&] {
+        if (standard) {
+            cs::Image image =
+                render_standard(*device, project, test.image.width, test.image.height);
+            device.reset();
+            return image;
+        }
+        const unsigned threads = thread_count(arguments.threads);
+        std::cout << "  on " << threads << " threads\n";
+        cs::ThreadPool pool(threads);
+        const cs::engine::Scene scene(project.world);
+        return render_view(project, scene, test.image, pool);
+    }();
+    std::cout << "  loaded and rendered in "
               << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
               << " s\n";
+    if (validation) {
+        throw_if_reported(*validation);
+    }
 
-    // Images from an earlier failure no longer apply once the reference is updated or matched.
-    remove_failure_images(out);
     if (arguments.update) {
         update_reference(reference_path, render);
         return 0;
     }
 
+    const cs::Image stored = write_candidate(render, candidate_path);
+    if (!fs::exists(reference_path)) {
+        std::cout << "  skipped: no reference for " << driver << ", " << utf8(reference_path)
+                  << "\n  wrote the candidate " << utf8(candidate_path) << "; `cs-render golden "
+                  << utf8(folder) << " --update` makes the reference (tests/golden/README.md)\n";
+        return exit_skip;
+    }
     const cs::Image reference = cs::read_exr(reference_path);
     if (reference.width() != render.width() || reference.height() != render.height()) {
         throw std::runtime_error("the reference is " + size_text(reference) +
@@ -429,7 +492,6 @@ int run(const Arguments& arguments) {
                                  "; --update writes a new one");
     }
 
-    const cs::Image stored = as_stored(render, out);
     const cs::ImageComparison comparison = cs::compare(reference, stored);
     print_comparison(comparison, &test.tolerances);
     // Written so that NaN fails.
@@ -437,6 +499,7 @@ int run(const Arguments& arguments) {
     const bool error_within =
         comparison.mean_absolute_error <= test.tolerances.mean_absolute_error_nits;
     if (flip_within && error_within) {
+        remove_output(candidate_path);
         std::cout << "  matches\n";
         return 0;
     }
@@ -446,7 +509,7 @@ int run(const Arguments& arguments) {
     for (const std::string_view file : failure_files) {
         std::cout << ' ' << file;
     }
-    std::cout << " to " << utf8(out) << '\n';
+    std::cout << " and the candidate " << reference_name << " to " << utf8(out) << '\n';
     return exit_failure;
 }
 

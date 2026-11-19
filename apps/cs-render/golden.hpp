@@ -7,12 +7,15 @@
 //   cs-render golden <test-folder> [--update] [--out <folder>] [--threads <n>]
 //
 // renders the scene <test-folder>/test.json describes, at its tier, size, samples and seed, and
-// compares it with <test-folder>/ref.<driver>.exr, the reference for the driver that rendered it
-// (cpu for the path tier, which the engine renders). It passes when the mean FLIP and the mean
-// absolute error are both within test.json's tolerances. On a failure it writes the render, a
-// difference image and a FLIP heat map to <folder>, by default build/<preset>/golden-out/<name>/.
-// --update writes the render as the new reference instead; without it, nothing in the test folder
-// is ever written.
+// compares it with <test-folder>/ref.<driver>.exr, the reference for the driver that rendered it:
+// cpu for the path tier, which the engine renders, and for the Standard tier the Vulkan device's
+// driver (driver_label in standard.hpp: lavapipe, radv). It passes when the mean FLIP and the
+// mean absolute error are both within test.json's tolerances. On a failure it writes the render, a
+// difference image and a FLIP heat map to <folder>, by default build/<preset>/golden-out/<name>/,
+// and on a failure or a skip for want of a reference the candidate ref.<driver>.exr too. --update
+// writes the render as the new reference instead; without it, nothing in the test folder is ever
+// written. A validation message from the Standard tier's device fails the test, as it fails any
+// GPU test; without a device the test skips, unless CS_REQUIRE_GPU=1 is set.
 
 namespace cs_render {
 

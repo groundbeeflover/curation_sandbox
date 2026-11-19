@@ -2,7 +2,7 @@
 
 #pragma once
 
-// What cs-render's two commands share: reading numbers from the command line, loading a project
+// What cs-render's commands share: reading numbers from the command line, loading a project
 // folder, and rendering its first viewpoint with the path tracer.
 
 #include <cs/core/image.hpp>
@@ -15,6 +15,7 @@
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -24,6 +25,14 @@ namespace cs_render {
 // Exit codes. A usage error also prints the usage text.
 inline constexpr int exit_failure = 1;
 inline constexpr int exit_usage = 2;
+
+// The path tier is the engine's path tracer, on the CPU; the Standard tier is drawn on the GPU,
+// one frame (cs/gpu/standard_tier.hpp).
+enum class Tier { path, standard };
+
+// "path" or "standard", as the command line and test.json name them; nothing for another name.
+std::optional<Tier> parse_tier(std::string_view name);
+std::string_view tier_name(Tier tier);
 
 // Bounds on what the command line and a golden test may ask for.
 inline constexpr std::uint32_t max_spp = 1u << 20;
@@ -49,6 +58,7 @@ unsigned thread_count(unsigned requested);
 
 // A project folder, compiled and with its photographs loaded.
 struct Project {
+    std::filesystem::path folder; // as given to load_project
     cs::doc::Document document;
     cs::world::World world;
     cs::engine::LoadedTextures textures;
@@ -67,6 +77,9 @@ struct ImageSettings {
     int height = 144; // pixels
     std::uint32_t samples_per_pixel = 64;
     std::uint64_t seed = 1;
+    // Only light that reflects once on its way to the camera (engine::RenderOptions::direct_only):
+    // the light the Standard tier evaluates, for comparisons with it.
+    bool direct_only = false;
 };
 
 // The first viewpoint, path traced: linear Rec. 709 radiance in nits. The scene is the project's.
