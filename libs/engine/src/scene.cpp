@@ -25,13 +25,15 @@ bool finite(glm::dvec3 v) {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 
-// The Embree device's configuration. An MSVC debug build links vcpkg's debug Embree, which is
-// compiled without inlining: vcpkg's /Ob0 outlasts the /Ox Embree adds. Embree compiles its SIMD
-// helpers once per ISA under the same names and relies on inlining them; out of line, the linker
-// keeps one copy of each, the lowest ISA's. AVX-512 changes their layout (vboolf4 is a one-byte
-// mask there, a 16-byte vector below), so on a CPU with AVX-512 its kernels call the SSE2
-// operator| with a mask and fault on the misaligned load (M1-46). Up to AVX2 every ISA's helpers
-// share one layout, so a debug build stops there; other builds inline and use every ISA.
+// The Embree device's configuration. An MSVC debug build links vcpkg's debug Embree (as the debug
+// preset does), which is compiled without inlining: vcpkg's /Ob0 outlasts the /Ox Embree adds.
+// Embree compiles its SIMD helpers once per ISA under the same names and relies on inlining them;
+// out of line, the linker keeps one copy of each, the lowest ISA's. AVX-512 changes their layout
+// (vboolf4 is a one-byte mask there, a 16-byte vector below), so on a CPU with AVX-512 its
+// kernels call the SSE2 operator| with a mask and fault on the misaligned load (M1-46). Up to AVX2
+// every ISA's helpers share one layout, so a debug build stops there; other builds inline and use
+// every ISA. This depends on how that Embree is built (checked with vcpkg's 4.4.1); gpu.yml's
+// Windows debug job runs the engine's tests to catch a change.
 #if defined(_MSC_VER) && defined(_DEBUG)
 constexpr const char* device_config = "max_isa=avx2";
 #else

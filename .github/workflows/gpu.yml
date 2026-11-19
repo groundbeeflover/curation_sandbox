@@ -286,6 +286,7 @@ jobs:
       # The CPU picks which of Embree's kernels run, and the runners differ: the MSVC debug crash
       # of M1-46 (#168) happened only on those with AVX-512.
       - name: CPU
+        continue-on-error: true
         shell: pwsh
         run: |
           $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
