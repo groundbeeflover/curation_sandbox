@@ -145,7 +145,7 @@ is in place.
 | 9 | `empty-room` at 1080p on the 780M: 95th-percentile frame time at most 8 ms, checked by `perf-compare.py` against `bench/budgets.json` and saved as the first baseline | M1-28, M1-33 |
 | 10 | The Qt viewport and GPU-CI spikes are decided (ADR 0010, ADR 0011) | M1-03, M1-04 |
 | 11 | The app builds on Windows and Linux in CI, and its UI tests run headless on lavapipe | M1-31 |
-| 12 | Every GPU test runs in CI's Windows job (MSVC debug, lavapipe), none left out for a crash; the engine's tests run there too | M1-29, M1-46 |
+| 12 | Every GPU test runs in CI's Windows job (MSVC debug, lavapipe), none left out; the engine's tests run there too | M1-29, M1-46, M1-48 |
 
 **Owner activity:** after the milestone, a 30-minute call with two or three curators
 (blueprint, section 11).
@@ -182,11 +182,11 @@ Bold IDs are on the critical path.
 | M1-24 | Orbit and walk camera controllers | editor | feature | S | agent | M1-13 | `libs/editor/include/cs/editor/camera_controller.hpp`, `libs/editor/src/camera_controller.cpp`, `libs/editor/tests/test_camera_controller.cpp` |
 | M1-25 | Commands and tools: new room, add a painting, light it | editor | feature | M | agent | M1-09, M1-10 | `libs/editor/include/cs/editor/commands/`, `libs/editor/src/commands/`, `libs/editor/include/cs/editor/tool.hpp`, `libs/editor/src/tool.cpp`, `libs/editor/tests/test_commands.cpp`, `libs/editor/tests/test_tool.cpp` |
 | M1-26 | Application shell with the Vulkan viewport | ui | feature | M | agent | M1-04, M1-22, M1-23, M1-34, M1-44, M1-45 | `libs/ui/`, `apps/curation/`, `cmake/CsQt.cmake` |
-| M1-27 | Walking skeleton: build a room, hang a painting, light it, walk | ui | feature | M | agent | M1-26, M1-24, M1-25, M1-15, M1-17, M1-43 | `libs/ui/src/features/skeleton_commands.cpp`, `libs/ui/src/features/camera_input.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_walking_skeleton.cpp`, `.claude/agents/ux-reviewer.md`, `docs/product/screens/m1-walking-skeleton.png` |
+| M1-27 | Walking skeleton: build a room, hang a painting, light it, walk | ui | feature | M | agent | M1-26, M1-24, M1-25, M1-15, M1-17, M1-43, M1-47 | `libs/ui/src/features/skeleton_commands.cpp`, `libs/ui/src/features/camera_input.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_walking_skeleton.cpp`, `.claude/agents/ux-reviewer.md`, `docs/product/screens/m1-walking-skeleton.png` |
 | M1-28 | cs-bench, the empty-room scene and the first baseline | build | test | M | agent | M1-22, M1-33, M1-44 | `apps/cs-bench/`, `bench/scenes/empty-room/`, `bench/baselines/` |
 | **M1-29** | GPU and golden tests on lavapipe in CI | ci | test | S | agent | M1-03, M1-18, M1-22 | `.github/workflows/gpu.yml`, `apps/cs-render/`, `tests/golden/skeleton-standard/` |
 | M1-30 | CI: binary caches and the full compiler matrix | build | chore | S | agent | M1-02 | `.github/workflows/ci.yml` |
-| **M1-31** | The app in CI: builds on Windows and Linux, UI tests on lavapipe | ci | chore | S | agent | M1-26, M1-29, M1-30, M1-39, M1-46 | `.github/workflows/ci.yml`, `.github/workflows/gpu.yml` |
+| **M1-31** | The app in CI: builds on Windows and Linux, UI tests on lavapipe | ci | chore | S | agent | M1-26, M1-29, M1-30, M1-39, M1-46, M1-48 | `.github/workflows/ci.yml`, `.github/workflows/gpu.yml` |
 | **M1-32** | The skeleton test scene and its test chart | doc | test | S | agent | M1-08 | `tests/scenes/skeleton/`, `tools/test-chart/`, `libs/doc/tests/test_skeleton_scene.cpp` |
 | M1-33 | Budgets as data and the benchmark comparison script | build | test | S | agent | - | `bench/budgets.json`, `scripts/perf-compare.py`, `scripts/tests/test_perf_compare.py` |
 | M1-34 | Generated registries and the integration-test executable | build | chore | S | agent | M1-01 | `cmake/CsRegistry.cmake`, `cmake/CsIntegration.cmake`, `tests/integration/` |
@@ -202,6 +202,8 @@ Bold IDs are on the critical path.
 | M1-44 | Colour pipeline in Slang and the tone-mapping pass | core | feature | S | agent | M1-20, M1-06 | `libs/gpu/shaders/modules/colour.slang`, `libs/gpu/shaders/tonemap.slang`, `libs/gpu/shaders/colour_check.slang`, `libs/gpu/include/cs/gpu/tonemap.hpp`, `libs/gpu/src/tonemap.cpp`, `libs/gpu/tests/test_tonemap.cpp` |
 | M1-45 | Relative pointer mode for walking: Wayland lock and grab fallback | ui | feature | S | agent | M1-04, M1-01 | `cmake/CsQt.cmake`, `libs/ui/CMakeLists.txt`, `libs/ui/src/viewport/`, `libs/ui/tests/main.cpp`, `libs/ui/tests/test_pointer_lock.cpp` |
 | **M1-46** | Fix the engine's crash in an MSVC debug build | engine | bug | S | agent | M1-29, M1-43 | `libs/engine/src/`, `libs/engine/tests/`, `.github/workflows/gpu.yml` |
+| M1-47 | Store an image in a project's assets | assets | feature | S | agent | M1-43 | `libs/assets/include/cs/assets/project_assets.hpp`, `libs/assets/src/project_assets.cpp`, `libs/assets/src/sha256.hpp`, `libs/assets/src/sha256.cpp`, `libs/assets/tests/test_project_assets.cpp`, `libs/assets/tests/test_sha256.cpp` |
+| **M1-48** | One GPU test harness, and every GPU test in CI's Windows job | gpu | chore | S | agent | M1-46 | `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/gpu_test.hpp`, `libs/gpu/tests/test_device.cpp`, `tests/integration/test_skeleton_gpu_scene.cpp`, `apps/cs-render/standard.cpp`, `libs/gpu/src/scene.cpp`, `libs/core/tests/test_image_compare.cpp`, `.github/workflows/gpu.yml` |
 
 ### Task graph
 
@@ -253,6 +255,7 @@ graph LR
     M1_23["M1-23 Swapchain presenter for a window..."]
     M1_29["M1-29 GPU and golden tests on lavapipe..."]
     M1_44["M1-44 Colour pipeline in Slang and the..."]
+    M1_48["M1-48 One GPU test harness, and every ..."]
   end
   subgraph E1_5["E1.5 Walk around it"]
     M1_04["M1-04 Spike: Qt Widgets shell around a..."]
@@ -262,6 +265,7 @@ graph LR
     M1_27["M1-27 Walking skeleton: build a room, ..."]
     M1_31["M1-31 The app in CI: builds on Windows..."]
     M1_45["M1-45 Relative pointer mode for walkin..."]
+    M1_47["M1-47 Store an image in a project's as..."]
   end
   M1_01 --> M1_02
   M1_01 --> M1_05
@@ -316,6 +320,7 @@ graph LR
   M1_15 --> M1_27
   M1_17 --> M1_27
   M1_43 --> M1_27
+  M1_47 --> M1_27
   M1_22 --> M1_28
   M1_33 --> M1_28
   M1_44 --> M1_28
@@ -328,6 +333,7 @@ graph LR
   M1_30 --> M1_31
   M1_39 --> M1_31
   M1_46 --> M1_31
+  M1_48 --> M1_31
   M1_08 --> M1_32
   M1_01 --> M1_34
   M1_01 --> M1_35
@@ -351,9 +357,11 @@ graph LR
   M1_01 --> M1_45
   M1_29 --> M1_46
   M1_43 --> M1_46
+  M1_43 --> M1_47
+  M1_46 --> M1_48
   classDef crit stroke:#b60205,stroke-width:3px
-  class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_46,M1_31 crit
-  linkStyle 4,14,17,20,21,25,57,64,65,86 stroke:#b60205,stroke-width:3px
+  class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_46,M1_48,M1_31 crit
+  linkStyle 4,14,17,20,21,25,58,66,67,88,91 stroke:#b60205,stroke-width:3px
 ```
 
 The critical path is ten tasks: the module layout, the document store, the skeleton scene, the
@@ -429,19 +437,19 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-12 | A fuzzed CSV reader for checklists | editor | feature | S | agent | M1-01 | `libs/editor/include/cs/editor/csv.hpp`, `libs/editor/src/csv.cpp`, `libs/editor/tests/test_csv.cpp`, `libs/editor/fuzz/fuzz_csv.cpp` |
 | M2-13 | Checklist panel | ui | feature | S | agent | M2-33, M2-11 | `libs/ui/src/features/checklist_panel.cpp`, `libs/ui/tests/test_checklist_ui.cpp`, `docs/product/screens/m2-checklist.png` |
 | **M2-14** | Picking and walk collision through scene queries | editor | feature | S | agent | M1-15, M1-24, M2-31 | `libs/editor/include/cs/editor/picking.hpp`, `libs/editor/src/picking.cpp`, `libs/editor/src/camera_controller.cpp`, `libs/editor/tests/test_picking.cpp`, `libs/editor/include/cs/editor/selection.hpp`, `libs/editor/src/selection.cpp`, `libs/editor/tests/test_selection.cpp` |
-| **M2-15** | Move works along a wall, with centre-line snapping and typed values | editor | feature | M | agent | M2-14, M1-25 | `libs/editor/include/cs/editor/tools/hang_tool.hpp`, `libs/editor/src/tools/hang_tool.cpp`, `libs/editor/tests/test_hang_tool.cpp` |
+| **M2-15** | Move works along a wall, with centre-line snapping and typed values | editor | feature | M | agent | M2-14, M1-25, M2-42 | `libs/editor/include/cs/editor/tools/hang_tool.hpp`, `libs/editor/src/tools/hang_tool.cpp`, `libs/editor/tests/test_hang_tool.cpp` |
 | **M2-16** | Snapping to neighbours: equal gaps, alignment and margins | editor | feature | M | agent | M2-15 | `libs/editor/include/cs/editor/snapping.hpp`, `libs/editor/src/snapping.cpp`, `libs/editor/tests/test_snapping.cpp` |
 | M2-17 | Group commands and overlap warnings | editor | feature | M | agent | M2-16 | `libs/editor/include/cs/editor/commands/arrange.hpp`, `libs/editor/src/commands/arrange.cpp`, `libs/editor/include/cs/editor/warnings.hpp`, `libs/editor/src/warnings.cpp`, `libs/editor/tests/test_arrange.cpp` |
 | M2-18 | Plan and wall-elevation cameras | editor | feature | S | agent | M1-22, M1-24, M1-34 | `libs/editor/include/cs/editor/camera_views.hpp`, `libs/editor/src/camera_views.cpp`, `libs/editor/tests/test_camera_views.cpp`, `tests/integration/test_elevation_view.cpp` |
 | M2-19 | Viewport overlays: lines, dimension marks, outlines and labels | gpu | feature | M | agent | M1-22, M1-29 | `libs/gpu/include/cs/gpu/overlay.hpp`, `libs/gpu/src/overlay.cpp`, `libs/gpu/src/font_atlas.cpp`, `libs/gpu/shaders/overlay.slang`, `libs/gpu/tests/test_overlay.cpp`, `libs/gpu/tests/data/overlay/`, `data/fonts/` |
 | **M2-20** | Hanging in the viewport: drag with guides and the elevation view | ui | feature | M | agent | M2-15, M2-16, M2-18, M2-19, M1-27 | `libs/ui/src/features/hanging.cpp`, `libs/ui/src/features/view_menu.cpp`, `libs/ui/tests/test_hanging_ui.cpp`, `docs/product/screens/m2-hanging.png` |
 | M2-21 | The .curation file: zip container with atomic save | doc | feature | M | agent | M1-09, M1-02 | `libs/doc/include/cs/doc/container.hpp`, `libs/doc/src/container.cpp`, `libs/doc/tests/test_container.cpp`, `libs/doc/fuzz/` |
-| M2-22 | Schema versions and migrations | doc | feature | M | agent | M2-06, M1-34, M1-02 | `libs/doc/include/cs/doc/migrate.hpp`, `libs/doc/src/migrate.cpp`, `libs/doc/src/migrations/`, `libs/doc/CMakeLists.txt`, `libs/doc/tests/test_migrate.cpp`, `libs/doc/tests/data/migrations/`, `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/document.hpp`, `libs/doc/include/cs/doc/work.hpp` |
+| M2-22 | Schema versions and migrations | doc | feature | M | agent | M2-06, M1-34, M1-02, M2-42 | `libs/doc/include/cs/doc/migrate.hpp`, `libs/doc/src/migrate.cpp`, `libs/doc/src/migrations/`, `libs/doc/CMakeLists.txt`, `libs/doc/tests/test_migrate.cpp`, `libs/doc/tests/data/migrations/`, `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/document.hpp`, `libs/doc/include/cs/doc/work.hpp` |
 | M2-23 | Autosave journal and crash recovery | doc | feature | M | agent | M1-09, M2-21 | `libs/doc/include/cs/doc/journal.hpp`, `libs/doc/src/journal.cpp`, `libs/doc/tests/test_journal.cpp` |
 | M2-24 | Incremental render-world updates from change lists | world | feature | M | agent | M1-09, M2-08 | `libs/world/include/cs/world/update.hpp`, `libs/world/src/update.cpp`, `libs/world/tests/test_update.cpp` |
 | M2-25 | Save, open, recent files, undo, redo and recovery in the app | ui | feature | M | agent | M2-21, M2-23, M1-27, M2-41 | `libs/ui/src/features/project_menu.cpp`, `libs/ui/src/features/edit_menu.cpp`, `libs/ui/tests/test_project_ui.cpp`, `libs/ui/src/features/file_menu.cpp`, `docs/product/screens/m2-recovery.png` |
 | M2-26 | Spotlight shadow maps, cached while lights are still | gpu | feature | M | agent | M1-22, M1-29, M1-34 | `libs/gpu/include/cs/gpu/shadows.hpp`, `libs/gpu/src/shadows.cpp`, `libs/gpu/shaders/shadow.slang`, `libs/gpu/shaders/standard.slang`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/tests/test_shadows.cpp`, `tests/golden/skeleton-standard/`, `tests/integration/test_shadows_vs_engine.cpp` |
-| M2-27 | Texture residency by on-screen size, within a budget | gpu | feature | M | agent | M1-21, M2-26, M1-43 | `libs/gpu/include/cs/gpu/residency.hpp`, `libs/gpu/src/residency.cpp`, `libs/gpu/src/scene.cpp`, `libs/gpu/tests/test_residency.cpp`, `libs/gpu/shaders/standard.slang` |
+| M2-27 | Texture residency by on-screen size, within a budget | gpu | feature | M | agent | M1-21, M2-26, M1-43, M1-48 | `libs/gpu/include/cs/gpu/residency.hpp`, `libs/gpu/src/residency.cpp`, `libs/gpu/src/scene.cpp`, `libs/gpu/tests/test_residency.cpp`, `libs/gpu/shaders/standard.slang` |
 | M2-28 | Lux on every work, recomputed in the background | engine | feature | M | agent | M1-15, M2-24, M1-28, M2-29 | `libs/engine/include/cs/engine/lux_service.hpp`, `libs/engine/src/lux_service.cpp`, `libs/engine/tests/test_lux_service.cpp`, `apps/cs-bench/`, `libs/engine/src/lighting.hpp`, `libs/engine/src/lux.cpp`, `libs/engine/src/path_tracer.cpp` |
 | M2-29 | The gallery-50 benchmark scene and a memory check in CI | ci | test | M | agent | M1-28, M1-29, M2-08, M2-27, M2-31, M1-31, M1-46 | `apps/cs-bench/`, `bench/baselines/`, `.github/workflows/gpu.yml` |
 | M2-30 | Journey J1 as an automated test | editor | test | S | agent | M2-02, M2-03, M2-33, M2-15, M2-16, M2-17, M2-21 | `libs/editor/tests/test_journey_j1.cpp`, `libs/editor/tests/data/journeys/` |
@@ -456,6 +464,8 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-39 | Automatic exposure in the viewport | gpu | feature | M | agent | M1-22, M1-27 | `libs/gpu/include/cs/gpu/auto_exposure.hpp`, `libs/gpu/src/auto_exposure.cpp`, `libs/gpu/shaders/auto_exposure.slang`, `libs/gpu/tests/test_auto_exposure.cpp`, `libs/ui/src/features/auto_exposure.cpp`, `libs/ui/tests/test_auto_exposure_ui.cpp` |
 | M2-40 | Shrink large images to the Standard cap on import | assets | feature | M | agent | M2-32 | `libs/assets/include/cs/assets/downsample.hpp`, `libs/assets/src/downsample.cpp`, `libs/assets/tests/test_downsample.cpp`, `libs/assets/include/cs/assets/import.hpp`, `libs/assets/src/import.cpp`, `libs/assets/src/tiff.cpp`, `libs/assets/include/cs/assets/texture.hpp`, `libs/assets/src/texture.cpp` |
 | M2-41 | Check values on every commit | doc | feature | S | agent | M1-09, M2-38 | `libs/doc/include/cs/doc/project_io.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/history.hpp`, `libs/doc/src/history.cpp`, `libs/doc/tests/test_check_values.cpp` |
+| M2-42 | A centre line for each wall | doc | feature | S | agent | M1-25, M2-06 | `libs/doc/include/cs/doc/components.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/tests/test_wall_centre_line.cpp`, `libs/editor/include/cs/editor/commands/hanging.hpp`, `libs/editor/src/commands/hanging.cpp`, `libs/editor/tests/test_commands.cpp` |
+| M2-43 | The Standard tier accumulates jittered frames while still | gpu | feature | M | agent | M2-26, M2-27 | `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/shaders/standard.slang`, `libs/gpu/tests/test_standard_accumulation.cpp`, `apps/cs-render/golden.cpp`, `tests/golden/skeleton-standard/`, `tests/golden/runner_checks.cmake`, `tests/golden/README.md` |
 
 ### Task graph
 
@@ -495,6 +505,7 @@ graph LR
     M2_20["M2-20 Hanging in the viewport: drag wi..."]
     M2_30["M2-30 Journey J1 as an automated test"]
     M2_35["M2-35 Work inspector and the Arrange m..."]
+    M2_42["M2-42 A centre line for each wall"]
   end
   subgraph E2_5["E2.5 Projects that last"]
     M2_21["M2-21 The .curation file: zip containe..."]
@@ -513,6 +524,7 @@ graph LR
     M2_36["M2-36 Incremental GPU scene updates"]
     M2_37["M2-37 Lux on every work in the app"]
     M2_39["M2-39 Automatic exposure in the viewport"]
+    M2_43["M2-43 The Standard tier accumulates ji..."]
   end
   M2_06 --> M2_03
   M2_02 --> M2_04
@@ -531,6 +543,7 @@ graph LR
   M2_11 --> M2_13
   M2_31 --> M2_14
   M2_14 --> M2_15
+  M2_42 --> M2_15
   M2_15 --> M2_16
   M2_16 --> M2_17
   M2_15 --> M2_20
@@ -538,6 +551,7 @@ graph LR
   M2_18 --> M2_20
   M2_19 --> M2_20
   M2_06 --> M2_22
+  M2_42 --> M2_22
   M2_21 --> M2_23
   M2_08 --> M2_24
   M2_21 --> M2_25
@@ -572,9 +586,12 @@ graph LR
   M2_22 --> M2_38
   M2_32 --> M2_40
   M2_38 --> M2_41
+  M2_06 --> M2_42
+  M2_26 --> M2_43
+  M2_27 --> M2_43
   classDef crit stroke:#b60205,stroke-width:3px
   class M2_06,M2_31,M2_14,M2_15,M2_16,M2_20,M2_35 crit
-  linkStyle 15,16,17,20,43,49 stroke:#b60205,stroke-width:3px
+  linkStyle 15,16,18,21,45,51 stroke:#b60205,stroke-width:3px
 ```
 
 Within M2 the longest chain runs from the frame and finish library through walls in the render
