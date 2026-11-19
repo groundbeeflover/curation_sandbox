@@ -148,7 +148,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-x64-linux-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/**') }}
+          key: vcpkg-x64-linux-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/x64-linux.cmake') }}
           restore-keys: vcpkg-x64-linux-
 
       # ci.yml's entry for the same compiler and preset, whose commands this build repeats.
@@ -249,7 +249,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-x64-windows-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/**') }}
+          key: vcpkg-x64-windows-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/x64-windows.cmake') }}
           restore-keys: vcpkg-x64-windows-
 
       - name: MSVC environment
@@ -289,10 +289,10 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
+          # 41 is PF_AVX512F_INSTRUCTIONS_AVAILABLE: the CPU has AVX-512F and Windows enables it.
+          Add-Type -Namespace Win32 -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(uint feature);'
           $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-          $avx512 = 'System.Runtime.Intrinsics.X86.Avx512F' -as [type]
-          $has = if ($avx512) { $avx512::IsSupported } else { 'unknown' }
-          "$($cpu.Name.Trim()), $($cpu.NumberOfLogicalProcessors) threads, AVX-512: $has"
+          "$($cpu.Name.Trim()), $($cpu.NumberOfLogicalProcessors) threads, AVX-512: $([Win32.Cpu]::IsProcessorFeaturePresent(41))"
 
       # The engine in MSVC debug: the debug CRT, checked iterators and vcpkg's debug Embree, none
       # of which ci.yml's release job runs.

@@ -100,8 +100,8 @@ jobs:
           echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       # Keyed on the triplet, the runner image, vcpkg.json (which holds the baseline),
-      # vcpkg-configuration.json and the overlay triplets it names (triplets/): exactly what
-      # decides the packages' ABI hashes, so an exact hit has nothing to rebuild. When the key
+      # vcpkg-configuration.json and the job's overlay triplet in triplets/, if it has one: exactly
+      # what decides the packages' ABI hashes, so an exact hit has nothing to rebuild. When the key
       # changes, the newest older entry is restored and vcpkg rebuilds only what changed.
       # Both Linux jobs share an entry: ports are built with the triplet's default compiler,
       # whichever compiler builds the project (CMAKE_CXX_COMPILER below, not CC or CXX).
@@ -110,7 +110,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-${{ matrix.triplet }}-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/**') }}
+          key: vcpkg-${{ matrix.triplet }}-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', format('triplets/{0}.cmake', matrix.triplet)) }}
           restore-keys: vcpkg-${{ matrix.triplet }}-
 
       - name: MSVC environment (Windows)

@@ -99,8 +99,10 @@ one, `x64-windows.cmake`, is vcpkg's `x64-windows` plus `/Ob2` in Embree's debug
   AVX-512 kernels call and crash in, on a CPU with AVX-512 (M1-46, #168). Linux needs nothing:
   GCC and Clang always inline Embree's `__forceinline`.
 - **Cost:** a change to a triplet changes the ABI hash of every package built with it, so the
-  Windows jobs rebuild them all once, Embree taking one to two hours. The CI cache keys hash
-  `triplets/`, so the rebuilt packages are saved.
+  Windows jobs rebuild them all once, Embree taking one to two hours. Each CI cache key hashes
+  its job's triplet, so ci.yml saves the rebuilt packages. gpu.yml's Windows job only restores
+  them and stops at 45 minutes: rerun it once ci.yml's Windows job has saved them, in the pull
+  request and again on main after the merge.
 
 ## Vendored
 
