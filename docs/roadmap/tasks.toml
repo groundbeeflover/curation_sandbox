@@ -1325,7 +1325,7 @@ context = [
 ]
 acceptance = [
   "`cs-render --tier standard` renders through the Standard tier offscreen, and `cs-render --device-report` prints the Vulkan device report (used in bug reports)",
-  "tests/golden/skeleton-standard/ has references for lavapipe and the 780M (radv) and passes on both; against the engine's direct-only render of the same view, mean FLIP is at most 0.05",
+  "tests/golden/skeleton-standard/ has references for lavapipe and the 780M (radv) and passes on both; against the engine's direct-only render of the same view, mean FLIP is at most 0.08 (the tier has no shadows until M2-26, which brings it to 0.05; the PR states the measured value and its causes)",
   ".github/workflows/gpu.yml installs the pinned Mesa lavapipe and validation layers from ADR 0010 and runs `ctest -L gpu` and `ctest -L golden` on every pull request; failed goldens upload build/*/golden-out/ as an artefact; the run time is stated in the PR",
 ]
 out_of_scope = ["Hardware runners (optional, later)", "Benchmarks in CI (M2-29)"]
@@ -1367,7 +1367,7 @@ area = "ci"
 type = "chore"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-26", "M1-29", "M1-30", "M1-39"]
+blocked_by = ["M1-26", "M1-29", "M1-30", "M1-39", "M1-46"]
 touches = [".github/workflows/ci.yml", ".github/workflows/gpu.yml"]
 goal = "Every pull request builds the Qt application on both platforms and runs its UI tests headless, so UI regressions are caught like any other."
 context = [
@@ -1806,6 +1806,37 @@ verification = [
   "cmake --preset app && cmake --build --preset app",
   "QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
   "ctest --preset app -L ui (on a Wayland session, where the lock test runs instead of skipping)",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M1-46"
+epic = "E1.3"
+title = "Fix the engine's crash in an MSVC debug build"
+area = "engine"
+type = "bug"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-29", "M1-43"]
+touches = ["libs/engine/src/", "libs/engine/tests/", ".github/workflows/gpu.yml"]
+goal = "The engine works in every build the project makes. In an MSVC debug build, building the engine's Embree scene of the skeleton crashes with an access violation. M1-29 (#166) found it in its new Windows GPU job, the first to build Windows in debug, and left the three tests that reach the engine out of that job: both Standard-vs-engine integration tests and `cs-render --tier standard`. ci.yml runs the engine's tests on Windows only in release, so no job runs them in MSVC debug, and the app's lux panel (M1-27) will run this code in a Windows debug build."
+context = [
+  "M1-29 (#166): gpu.yml's Windows job, `lavapipe (Windows, msvc, debug, -L gpu)`, builds only cs_gpu_tests, cs_integration_tests and cs-render, and leaves four tests out with `-E`; three of them are this crash, the fourth is the validation-layer test (out of scope)",
+  "The crash, CI run 44389653932: `cs-render --tier standard` exits with 'Access violation'; tests/integration/test_standard_vs_engine.cpp fails with SIGSEGV after the world compiles, where it builds `engine::Scene` and reads `direct_lux` (lines 66 and 205 at the time). The GPU-only tests in the same job pass",
+  "An MSVC debug build is plain Debug: the debug CRT (/MDd), checked iterators (_ITERATOR_DEBUG_LEVEL=2), /RTC1 and no sanitizers (CS_SANITIZERS applies to GCC and Clang only, cmake/CsOptions.cmake). It can expose what Linux's ASan and UBSan do not: an uninitialised value, an iterator or container misuse, a mismatch with how vcpkg built Embree's debug libraries",
+  "M1-15 (#144): the Embree scene, the lux meter and the thread pool; libs/engine/src/",
+  "No Windows machine is needed: gpu.yml runs on pull requests, so a draft PR reproduces the crash, and a debug build's stack trace (or a minidump) names the faulting frame",
+]
+acceptance = [
+  "The PR names the cause, with the faulting frame from a stack trace of the MSVC debug build, and fixes it at its source in libs/engine (or in how the engine or Embree is built); never by skipping the code in tests",
+  "A test in libs/engine/tests that reached the crash in an MSVC debug build passes on every job, and also under GCC and Clang with sanitizers",
+  "gpu.yml's Windows job also builds cs_engine_tests and runs `-L engine`, so the engine runs in MSVC debug in CI from now on; the three tests leave its `-E` list, which then holds only the validation-layer test; the PR states the job's added time",
+  "`ctest --preset debug -L engine` and `-L gpu` pass on Linux and in the Windows job",
+]
+out_of_scope = ["The validation-layer test the elevated Windows runner cannot run (M1-29's follow-up)", "Windows debug warnings outside the engine, such as test_image_compare.cpp's unreachable return (M1-29's follow-up)", "A full Windows debug build in ci.yml"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L engine",
+  "gh run list --workflow gpu.yml --branch <this branch>: the Windows job is green with only the validation-layer test in its -E list",
   "python3 scripts/format.py --check",
 ]
 
@@ -2518,6 +2549,7 @@ context = [
   "Use the physics-reviewer and gpu-reviewer subagents before opening the pull request",
 ]
 acceptance = [
+  "Against the engine's direct-only render of the skeleton (`cs-render --direct-only`), the Standard tier's mean FLIP is at most 0.05, the target of M1's exit criterion 7. M1-29 measured 0.072 without shadows, 0.035 of it the frame's shadow; the PR states the new value",
   "One shadow map per spotlight in an atlas, with percentage-closer filtering; a light's map re-renders only when the light or geometry in its frustum changes (counted in a test)",
   "[gpu][accuracy] An integration test: on the skeleton, the illuminance output over a 5 x 5 grid on the work is within 5% of the engine's direct lux, excluding cells within 1 cm of the frame's shadow edge",
   "tests/golden/skeleton-standard/ references are updated with the reason in the PR; validation clean",
@@ -2596,7 +2628,7 @@ area = "ci"
 type = "test"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-28", "M1-29", "M2-08", "M2-27", "M2-31", "M1-31"]
+blocked_by = ["M1-28", "M1-29", "M2-08", "M2-27", "M2-31", "M1-31", "M1-46"]
 touches = ["apps/cs-bench/", "bench/baselines/", ".github/workflows/gpu.yml"]
 goal = "The full-gallery benchmark the budgets are written against, generated reproducibly through the document model and checked for memory on every pull request."
 context = [
