@@ -89,6 +89,19 @@ Ports named `vcpkg-*` (`vcpkg-cmake`, `vcpkg-cmake-config`, `vcpkg-cmake-get-var
 `vcpkg-tool-meson`) only build other ports; nothing of them is linked or shipped, and they are
 not listed.
 
+### How the ports are built
+
+`vcpkg-configuration.json` puts the overlay triplets in `triplets/` before vcpkg's own. The only
+one, `x64-windows.cmake`, is vcpkg's `x64-windows` plus `/Ob2` in Embree's debug flags.
+
+- **Why:** vcpkg compiles every port's debug configuration with `/Ob0`, which leaves Embree's
+  per-ISA SIMD helpers out of line. The linker then keeps their SSE2 copies, which Embree's
+  AVX-512 kernels call and crash in, on a CPU with AVX-512 (M1-46, #168). Linux needs nothing:
+  GCC and Clang always inline Embree's `__forceinline`.
+- **Cost:** a change to a triplet changes the ABI hash of every package built with it, so the
+  Windows jobs rebuild them all once, Embree taking one to two hours. The CI cache keys hash
+  `triplets/`, so the rebuilt packages are saved.
+
 ## Vendored
 
 Code copied into `third_party/`, byte-identical to upstream, with its licence beside it. The
