@@ -16,9 +16,12 @@
 // asset_file, its content by load_texture. Nothing more is decoded (colour profiles are M2-09).
 //
 // The copy is written to a temporary file next to the asset, <sha256>.<extension>.tmp, and
-// renamed to the asset's name once it is whole: a failed copy leaves no partial asset. Whatever
-// is already at either name, a file left by a failed store, a symbolic link or a file planted in
-// a project someone sent, is replaced, never written through.
+// renamed to the asset's name once it is whole: a store that fails leaves no partial asset. A
+// file or a symbolic link already at either name, left by a failed store or planted in a project
+// someone sent, is replaced, never written through. An asset already stored, a file with the
+// same bytes, is left as it is and nothing is written. Threads that store at once write one at a
+// time; two programs storing into one folder at once are not supported, nor are they for the
+// project's own save. Like that save, the copy is not forced to the disk before the rename.
 
 #include <filesystem>
 #include <string>

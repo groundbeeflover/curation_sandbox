@@ -13,6 +13,8 @@
 // tests of its own in test_sha256.cpp.
 #include "../src/sha256.hpp"
 
+#include <cs/core/random.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 
 // The tests write their images in memory with stb_image_write. STATIC keeps its functions inside
@@ -22,8 +24,10 @@
 #include <stb_image_write.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -31,6 +35,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 using cs::assets::asset_file;
@@ -55,6 +60,21 @@ const std::vector<std::uint8_t> two_pixels = {200, 100, 50, 10, 20, 30};
 Bytes png() {
     Bytes out;
     REQUIRE(stbi_write_png_to_func(append_bytes, &out, 2, 1, 3, two_pixels.data(), 2 * 3) != 0);
+    return out;
+}
+
+// A PNG of seeded noise, 128 x 128 pixels: about 50 KB that do not compress, a different image
+// for each seed.
+Bytes noise_png(std::uint64_t seed) {
+    constexpr int side = 128;
+    std::vector<std::uint8_t> pixels(std::size_t{side} * side * 3);
+    cs::Rng rng(cs::hash_seed(seed, 0, 0, 0, 0));
+    for (std::uint8_t& value : pixels) {
+        value = static_cast<std::uint8_t>(rng.next_u32() >> 24);
+    }
+    Bytes out;
+    REQUIRE(stbi_write_png_to_func(append_bytes, &out, side, side, 3, pixels.data(), side * 3) !=
+            0);
     return out;
 }
 
@@ -213,6 +233,63 @@ TEST_CASE("store_image: the same image stored twice, under any file name, gives 
     const AssetName other_name = store_image(other, assets);
     CHECK(other_name.sha256 != name.sha256);
     CHECK(entries(assets).size() == 2);
+}
+
+TEST_CASE("store_image: an image already stored is left as it is and nothing is written",
+          "[assets][store_image]") {
+    const TempDir dir("already_stored");
+    const fs::path source = dir.path() / "photo.png";
+    write_file(source, png());
+    const fs::path assets = dir.path() / "assets";
+    const fs::path stored = [&] {
+        const AssetName name = store_image(source, assets);
+        return asset_file(assets, name.sha256, name.extension);
+    }();
+    // Its time set a day back: a second store that wrote the file, or renamed a copy onto it,
+    // would make it now.
+    const fs::file_time_type day_ago = fs::last_write_time(stored) - std::chrono::hours(24);
+    fs::last_write_time(stored, day_ago);
+
+    (void)store_image(source, assets);
+    CHECK(fs::last_write_time(stored) == day_ago);
+    CHECK(entries(assets) == std::vector<std::string>{stored.filename().string()});
+}
+
+TEST_CASE("store_image: stores from two threads at once leave every asset whole",
+          "[assets][store_image]") {
+    // Both threads store the same images in the same order, so each image is stored by both at
+    // about the same time: neither may take the other's temporary file.
+    const TempDir dir("threads");
+    const fs::path assets = dir.path() / "assets";
+    constexpr int images = 8;
+    std::vector<Bytes> bytes;
+    for (int i = 0; i < images; ++i) {
+        bytes.push_back(noise_png(static_cast<std::uint64_t>(i)));
+        write_file(dir.path() / (std::to_string(i) + ".png"), bytes.back());
+    }
+
+    std::exception_ptr failures[2];
+    {
+        std::vector<std::jthread> threads;
+        for (std::exception_ptr& failure : failures) {
+            threads.emplace_back([&] {
+                try {
+                    for (int i = 0; i < images; ++i) {
+                        (void)store_image(dir.path() / (std::to_string(i) + ".png"), assets);
+                    }
+                } catch (...) {
+                    failure = std::current_exception();
+                }
+            });
+        }
+    }
+    for (const std::exception_ptr& failure : failures) {
+        CHECK_NOTHROW(failure ? std::rethrow_exception(failure) : void());
+    }
+    CHECK(entries(assets).size() == images);
+    for (const Bytes& image : bytes) {
+        CHECK(read_file(asset_file(assets, sha256_of(image), "png")) == image);
+    }
 }
 
 TEST_CASE("store_image: a folder that does not exist yet is made", "[assets][store_image]") {
