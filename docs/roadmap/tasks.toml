@@ -1244,7 +1244,7 @@ acceptance = [
 out_of_scope = ["Commands and panels (M1-27)", "The Wayland pointer protocols and the grab fallback themselves (M1-45)", "Automatic exposure (M2-39)", "CI for the app (M1-31)", "Packaging (M4)"]
 verification = [
   "cmake --preset app && cmake --build --preset app",
-  "QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 verification_visual = "Run ./build/app/apps/curation/curation tests/scenes/skeleton (or /run) and attach a screenshot of the window."
@@ -1275,7 +1275,7 @@ acceptance = [
 ]
 out_of_scope = ["Selecting and moving works (M2-20)", "Saving as .curation (M2-25)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 verification_visual = "Use /run to build a room, add the test chart as a painting, add a spot, walk to it, and attach the screenshot."
@@ -1376,7 +1376,7 @@ context = [
 ]
 acceptance = [
   "Qt is installed at the pinned version and cached; ci.yml builds the app preset on Windows and Linux",
-  "The gpu workflow runs `ctest --preset app -L ui` with QT_QPA_PLATFORM=offscreen on lavapipe and uploads the UI tests' screenshots as an artefact",
+  "The gpu workflow runs `ctest --preset app -L '^ui$'` with QT_QPA_PLATFORM=offscreen on lavapipe and uploads the UI tests' screenshots as an artefact",
   "The PR states the added CI time",
 ]
 out_of_scope = ["Packaging (M4)"]
@@ -1904,6 +1904,34 @@ verification = [
 ]
 
 [[tasks]]
+id = "M1-49"
+epic = "E1.2"
+title = "PBR Neutral shows an infinite channel as white"
+area = "core"
+type = "bug"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-44"]
+touches = ["libs/core/include/cs/core/colour.hpp", "libs/core/tests/test_colour.cpp", "libs/gpu/tests/test_tonemap.cpp"]
+goal = "libs/core's pbr_neutral turns a channel of +inf into NaN (inf times 0), so (inf, 0.5, 0.2) shows cyan and (inf, inf, inf) black, where the limit is white. M1-44 (#178) made the GPU's port take +inf as the largest float and show white, so the CPU and the GPU now differ there alone."
+context = [
+  "libs/core/include/cs/core/colour.hpp: pbr_neutral, a template, where negative and NaN channels already count as 0",
+  "M1-44 (#178): libs/gpu/shaders/modules/colour.slang's positive_or_zero, and test_tonemap.cpp's colour check, which compares its +inf input with white rather than with libs/core",
+]
+acceptance = [
+  "pbr_neutral takes a channel of +inf as the largest finite value of its type, so any input with +inf gives a finite result: (inf, inf, inf) is white within 1e-6, and (inf, 0.5, 0.2) is the limit of (x, 0.5, 0.2) as x grows",
+  "[accuracy] test_colour.cpp gains these cases, in float and double; every existing case is unchanged",
+  "test_tonemap.cpp compares its +inf input with libs/core directly, within the same 1e-5",
+  "`ctest --preset debug -L core` passes, and `-L gpu` on lavapipe",
+]
+out_of_scope = ["Changes to the GPU port", "Other tone curves"]
+verification = [
+  "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L core",
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
 id = "M2-01"
 epic = "E2.1"
 title = "Walls with thickness, joined corners and openings"
@@ -2012,7 +2040,7 @@ acceptance = [
 ]
 out_of_scope = ["Inspector, doorways and finishes (M2-34)", "Floor-plan underlay (1.0)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 verification_visual = "Use /run to draw an L-shaped room, walk through it, and attach the screenshots."
@@ -2207,7 +2235,7 @@ acceptance = [
 ]
 out_of_scope = ["Material appearance of presets (M3)", "Checklists (M2-12, M2-13)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -2261,7 +2289,7 @@ acceptance = [
 ]
 out_of_scope = ["Conservation columns (M3)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -2453,7 +2481,7 @@ acceptance = [
 ]
 out_of_scope = ["The work inspector and the Arrange menu (M2-35)", "Lighting tools (M3)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 verification_visual = "Use /run to hang three works on one wall in the elevation view, and attach the screenshot."
@@ -2595,7 +2623,7 @@ acceptance = [
 ]
 out_of_scope = ["Autosave settings (later)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -2842,7 +2870,7 @@ acceptance = [
 ]
 out_of_scope = ["Plan-view drawing (M2-04)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -2868,7 +2896,7 @@ acceptance = [
 ]
 out_of_scope = ["Lux and conservation pages (M2-37, M3)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -2921,7 +2949,7 @@ acceptance = [
 ]
 out_of_scope = ["Conservation classes and warnings (M3)"]
 verification = [
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -2981,12 +3009,12 @@ acceptance = [
   "Compensation is one named constant in stops, applied after the formula. The pull request proposes its value with reasons (none, or about +0.8 stop so a uniform scene lands on middle grey) and the owner decides; a test pins the display value of a uniform 50-nit frame for the chosen value (0.064167 with none)",
   "The exposure moves towards its target with a time constant (default 0.5 s), independent of frame rate: after 1 s, 30 fps and 120 fps give the same EV100 within 1%",
   "In the app, the viewport uses automatic exposure when no viewpoint is active, and the status bar reads \"EV100 <n> (auto)\"; choosing a viewpoint restores that viewpoint's EV100 at once. [ui] An offscreen test covers both",
-  "Validation clean on lavapipe; `ctest --preset debug -L gpu` and `QT_QPA_PLATFORM=offscreen ctest --preset app -L ui` pass",
+  "Validation clean on lavapipe; `ctest --preset debug -L gpu` and `QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'` pass",
 ]
 out_of_scope = ["Metering modes (centre-weighted, spot, histogram percentiles)", "Exposure for stills (M3)", "Lux readings, which never depend on exposure"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
-  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
@@ -3088,7 +3116,7 @@ area = "gpu"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M2-26", "M2-27"]
+blocked_by = ["M2-26", "M2-27", "M2-44"]
 touches = ["libs/gpu/include/cs/gpu/standard_tier.hpp", "libs/gpu/src/standard_tier.cpp", "libs/gpu/shaders/standard.slang", "libs/gpu/tests/test_standard_accumulation.cpp", "apps/cs-render/golden.cpp", "tests/golden/skeleton-standard/", "tests/golden/runner_checks.cmake", "tests/golden/README.md"]
 goal = "ADR 0002's 'Jittered frames accumulate while the camera is still': the Standard tier anti-aliases a still view by averaging frames drawn with sub-pixel offsets, which removes the largest remaining difference from the engine. No task did this; M1-29 (#166) measured that one sample per pixel adds 0.022 to the mean FLIP against the engine."
 context = [
@@ -3108,6 +3136,64 @@ out_of_scope = ["Anti-aliasing while the camera moves (TAA)", "Denoising and ind
 verification = [
   "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "ctest --preset release -L golden",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-44"
+epic = "E2.6"
+title = "GraphicsPipeline with descriptor set layouts"
+area = "gpu"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-44", "M2-26"]
+touches = ["libs/gpu/include/cs/gpu/pipeline.hpp", "libs/gpu/src/pipeline.cpp", "libs/gpu/src/standard_tier.cpp", "libs/gpu/src/tonemap.cpp", "libs/gpu/tests/test_pipeline.cpp"]
+goal = "The shared GraphicsPipeline takes descriptor set layouts, so that the Standard tier and the tone-mapping pass stop building their pipelines by hand. M1-22 (#165) and M1-44 (#178) each wrote about 80 lines of pipeline setup because pipeline.hpp has no descriptor sets, and both proposed this."
+context = [
+  "libs/gpu/include/cs/gpu/pipeline.hpp (M1-20): GraphicsPipeline, with push constants but no descriptor set layouts",
+  "libs/gpu/src/standard_tier.cpp (M1-22) and libs/gpu/src/tonemap.cpp (M1-44): their hand-made pipelines",
+  "Ordered after M2-26, which edits standard_tier.cpp, and before M2-43, which edits it next",
+]
+acceptance = [
+  "GraphicsPipeline takes descriptor set layouts (and keeps its push constants), and the Standard tier and ToneMapPass make their pipelines with it",
+  "Nothing a test sees changes: every `-L gpu` test and golden image passes unchanged, validation clean, on lavapipe and the 780M",
+  "test_pipeline.cpp: a pipeline with a descriptor set and push constants draws a known image",
+  "The PR states the lines removed",
+]
+out_of_scope = ["Compute pipelines", "Pipeline caches"]
+verification = [
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
+  "ctest --preset release -L golden",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-45"
+epic = "E2.6"
+title = "Present fences, and the presenter tested on Windows"
+area = "gpu"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-23", "M1-48"]
+touches = ["libs/gpu/include/cs/gpu/presenter.hpp", "libs/gpu/src/presenter.cpp", "libs/gpu/include/cs/gpu/device.hpp", "libs/gpu/src/device.cpp", "libs/gpu/tests/test_presenter.cpp"]
+goal = "The follow-ups of M1-23 (#179). The presenter destroys old swapchains and their semaphores after a device wait, which does not formally cover a present; and in CI its swapchain paths run on Linux only, because lavapipe on Windows has no headless surface."
+context = [
+  "M1-23 (#179): gpu-reviewer finding 7 and the code review's semaphore nit, answered with a comment in presenter.cpp",
+  "VK_KHR_swapchain_maintenance1 (or VK_EXT_swapchain_maintenance1): a fence per present, and releasing swapchain images",
+  "On Windows the five headless-surface tests skip; a hidden Win32 window (VK_KHR_win32_surface) has a surface the swapchain can use, whose size Windows fixes",
+  "Ordered after M1-48, which edits device.cpp",
+]
+acceptance = [
+  "Where the device offers swapchain maintenance 1, each present carries a fence, and old swapchains and their semaphores are destroyed when their presents have finished, without a device wait; elsewhere the device wait stays",
+  "On Windows, the presenter's tests run on a hidden window instead of skipping: 100 frames with resizes made by resizing the window, validation clean, nothing left at shutdown",
+  "`-L gpu` passes on lavapipe (Linux and Windows CI) and the 780M, with synchronisation validation on",
+]
+out_of_scope = ["Present modes other than FIFO", "X11 and Wayland windows in tests"]
+verification = [
+  "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
+  "gh run list --workflow gpu.yml --branch <this branch>: the Windows job runs the presenter's tests",
   "python3 scripts/format.py --check",
 ]
 

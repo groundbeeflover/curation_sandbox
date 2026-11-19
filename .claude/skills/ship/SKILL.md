@@ -30,7 +30,7 @@ a fix would leave the issue's **Touches**, stop and comment on the issue instead
 2. **Debug build with sanitizers and its tests:**
    `cmake --preset debug && cmake --build --preset debug && ctest --preset debug`.
    When `libs/ui` or `apps/curation` changed, also build the `app` preset and run its UI tests:
-   `cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L ui`.
+   `cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'`.
 3. **Release build and tests:** the same with `--preset release`, including `-L golden`.
 4. **GPU tests** when `libs/gpu` changed, with `CS_REQUIRE_GPU=1` so that a driver that does not
    load fails the tests instead of skipping them: on the real GPU with
