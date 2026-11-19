@@ -1940,22 +1940,25 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-25"]
-touches = ["libs/editor/include/cs/editor/tools/wall_tool.hpp", "libs/editor/src/tools/wall_tool.cpp", "libs/editor/tests/test_wall_tool.cpp"]
+touches = ["libs/editor/include/cs/editor/tools/wall_tool.hpp", "libs/editor/src/tools/wall_tool.cpp", "libs/editor/tests/test_wall_tool.cpp", "libs/editor/fuzz/parse_typed_value.cpp"]
 goal = "Draw walls as a curator would from a plan: point to point, typing lengths, snapping to right angles and existing endpoints, each wall one undoable step."
 context = [
   "docs/adr/0006-ui-and-interaction.md, Building: a measurements box as in SketchUp, right-angle and endpoint snapping, a 1 cm grid, walls lettered A, B, C",
   "libs/doc transactions (M1-09); the Tool interface and parse_typed_value (M1-25)",
+  "M1-25 (#169) merged parse_typed_value without a fuzz target, which CLAUDE.md asks of every parser; this task, its first user, adds it. cmake/CsModule.cmake builds every libs/<m>/fuzz/*.cpp under the fuzz preset as cs_<m>_fuzz_<file>, with a seeded smoke run labelled fuzz",
 ]
 acceptance = [
   "A toolkit-free state machine: click to start, click to end; typing 4.25 and Enter after the first click makes a 4.25 m wall along the current direction",
   "Endpoints snap to existing endpoints within 15 cm and directions to multiples of 90 degrees from the previous wall within 5 degrees; otherwise positions snap to a 1 cm grid",
   "Closing a loop creates a Room outline; walls are lettered A, B, C in creation order; each wall is one transaction",
   "A scripted test draws an L-shaped room of six walls with typed lengths; every corner is within 0.1 mm of its expected position",
+  "libs/editor/fuzz/parse_typed_value.cpp feeds arbitrary bytes to parse_typed_value and checks that every value it returns is finite; it runs for 60 s without a finding, and its smoke run passes under `ctest --preset fuzz -L fuzz`",
   "`ctest --preset debug -L editor` passes",
 ]
 out_of_scope = ["Plan-view UI (M2-04)", "Openings (M2-03)"]
 verification = [
   "cmake --preset debug && cmake --build --preset debug && ctest --preset debug -L editor",
+  "cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz -L fuzz",
   "python3 scripts/format.py --check",
 ]
 

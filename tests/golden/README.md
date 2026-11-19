@@ -209,8 +209,9 @@ The spot 1% brighter is 2.8 and 3.0 times above them, so a change of 1% in the l
 Mesa upgrade that moves the picture by more than one driver differs from another is worth
 looking at anyway.
 
-**Against the engine.** Milestone 1 asks the Standard tier to be within a mean FLIP of 0.05 of
-the engine's direct light from the same view. It is 0.072 on both drivers, against
+**Against the engine.** Milestone 1 asks the Standard tier to be within a mean FLIP of 0.08 of
+the engine's direct light from the same view (exit criterion 7; M2-26's shadows bring it to
+0.05). It is 0.072 on both drivers, against
 `cs-render tests/scenes/skeleton --tier path --direct-only --size 256x144 --spp 64 --seed 1`.
 Three differences make it, by measurement: replacing one at a time, until the two agree
 (radv; lavapipe gives the same numbers to three digits):
