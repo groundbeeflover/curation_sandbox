@@ -1,6 +1,6 @@
 # 0010. GPU tests and golden images in CI: a pinned lavapipe on Linux and Windows
 
-- Status: proposed
+- Status: accepted; M1-29 (#166) implements it
 - Date: 2026-11-11
 - Decides: how GPU tests and golden images run in GitHub Actions (spike M1-03, issue #38), so
   that M1-29 can add `.github/workflows/gpu.yml` without guesswork
