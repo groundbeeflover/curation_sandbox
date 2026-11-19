@@ -24,11 +24,40 @@ constexpr const char* who = "Presenter";
 // A minute, as for an offscreen frame: only a lost or hung device takes that long.
 constexpr std::uint64_t timeout_ns = 60'000'000'000;
 
+// Long enough for any display's next refresh under FIFO, short enough that a window whose images
+// the compositor holds while it is hidden skips its frames instead of freezing the caller.
+constexpr std::uint64_t acquire_timeout_ns = 100'000'000;
+
 // The swapchain image is only ever touched by transfers: the acquire's wait, the blit, the
 // read-back copy and the signal for the present all name this stage, so that the barriers chain.
 constexpr VkPipelineStageFlags2 transfer = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
 
 constexpr std::uint32_t undefined_extent = std::numeric_limits<std::uint32_t>::max();
+// Blit offsets are signed.
+constexpr std::uint32_t max_blit_side = std::numeric_limits<std::int32_t>::max();
+
+VkSurfaceCapabilitiesKHR surface_capabilities(VkPhysicalDevice physical_device,
+                                              VkSurfaceKHR surface) {
+    VkSurfaceCapabilitiesKHR capabilities{};
+    check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities),
+          "reading the surface's capabilities", who);
+    return capabilities;
+}
+
+// The surface's own size (X11, Windows, where a minimised window is 0 by 0), or where it leaves
+// the size to the swapchain (Wayland, headless) the window's, clamped to the surface's limits.
+VkExtent2D swapchain_extent(const VkSurfaceCapabilitiesKHR& capabilities, VkExtent2D wanted) {
+    if (capabilities.currentExtent.width != undefined_extent)
+        return capabilities.currentExtent;
+    return {std::clamp(wanted.width, capabilities.minImageExtent.width,
+                       capabilities.maxImageExtent.width),
+            std::clamp(wanted.height, capabilities.minImageExtent.height,
+                       capabilities.maxImageExtent.height)};
+}
+
+bool has_area(VkExtent2D extent) {
+    return extent.width != 0 && extent.height != 0;
+}
 
 bool has_features(VkPhysicalDevice physical_device, VkFormat format,
                   VkFormatFeatureFlags features) {
@@ -64,15 +93,22 @@ Presenter::Presenter(const Device& device, VkSurfaceKHR surface, std::uint32_t w
     if (!device.presentation())
         throw std::invalid_argument("Presenter: the device was made without "
                                     "DeviceOptions::presentation");
-    if (!device.can_present(surface))
+    VkBool32 supported = VK_FALSE;
+    if (surface_ != VK_NULL_HANDLE)
+        check(vkGetPhysicalDeviceSurfaceSupportKHR(physical_device_, device.queue_family(),
+                                                   surface_, &supported),
+              "asking whether the queue can present to the surface", who);
+    if (supported != VK_TRUE)
         throw std::invalid_argument("Presenter: the device's queue cannot present to the surface");
 
     std::uint32_t count = 0;
     check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &count, nullptr),
           "listing the surface's formats", who);
     std::vector<VkSurfaceFormatKHR> offered(count);
-    check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &count, offered.data()),
-          "listing the surface's formats", who);
+    const VkResult listed =
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &count, offered.data());
+    if (listed != VK_INCOMPLETE) // more formats since they were counted: these are enough
+        check(listed, "listing the surface's formats", who);
     offered.resize(count);
     const auto chosen = choose_surface_format(offered, [&](VkFormat format) {
         return has_features(physical_device_, format, VK_FORMAT_FEATURE_BLIT_DST_BIT);
@@ -84,9 +120,7 @@ Presenter::Presenter(const Device& device, VkSurfaceKHR surface, std::uint32_t w
             "twice or not at all");
     surface_format_ = *chosen;
 
-    VkSurfaceCapabilitiesKHR capabilities{};
-    check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &capabilities),
-          "reading the surface's capabilities", who);
+    const VkSurfaceCapabilitiesKHR capabilities = surface_capabilities(physical_device_, surface_);
     if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0)
         throw std::runtime_error("Presenter: the surface's images cannot be blitted to");
     usage_ = capabilities.supportedUsageFlags &
@@ -157,21 +191,20 @@ void Presenter::resize(std::uint32_t width, std::uint32_t height) {
 bool Presenter::make_swapchain() {
     if (swapchain_ != VK_NULL_HANDLE && !stale_)
         return true;
-    // The old swapchain's images may still be in a frame or a present. Waiting first also reads
-    // the surface as late as possible, while a window may still be changing size.
+    // Checked before the device wait, so that a window with no area skips its frames without
+    // idling the device each time.
+    VkSurfaceCapabilitiesKHR capabilities = surface_capabilities(physical_device_, surface_);
+    if (!has_area(wanted_) || !has_area(swapchain_extent(capabilities, wanted_)))
+        return false;
+    // The old swapchain's images may still be in a frame or a present. A device wait does not
+    // formally cover a present's wait on its semaphore (a present takes no fence without
+    // VK_KHR_swapchain_maintenance1), but drivers finish it by then; the old swapchain and its
+    // semaphores are destroyed after it. The surface is read again, as late as possible, while a
+    // window may still be changing size.
     check(vkDeviceWaitIdle(device_), "waiting for the device", who);
-    VkSurfaceCapabilitiesKHR capabilities{};
-    check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &capabilities),
-          "reading the surface's capabilities", who);
-    // Wayland and headless surfaces leave the size to the swapchain; others fix it (a minimised
-    // window on Windows at 0 by 0).
-    VkExtent2D extent = capabilities.currentExtent;
-    if (extent.width == undefined_extent)
-        extent = {std::clamp(wanted_.width, capabilities.minImageExtent.width,
-                             capabilities.maxImageExtent.width),
-                  std::clamp(wanted_.height, capabilities.minImageExtent.height,
-                             capabilities.maxImageExtent.height)};
-    if (wanted_.width == 0 || wanted_.height == 0 || extent.width == 0 || extent.height == 0)
+    capabilities = surface_capabilities(physical_device_, surface_);
+    const VkExtent2D extent = swapchain_extent(capabilities, wanted_);
+    if (!has_area(extent))
         return false;
 
     // One image more than the minimum, so that acquiring rarely waits for the display.
@@ -259,12 +292,13 @@ std::optional<PresentedImage> Presenter::present_and_read_back(const PresentSour
 }
 
 bool Presenter::present_frame(const PresentSource& source, bool read_back) {
-    if (source.image == VK_NULL_HANDLE || source.extent.width == 0 || source.extent.height == 0 ||
+    if (source.image == VK_NULL_HANDLE || !has_area(source.extent) ||
+        source.extent.width > max_blit_side || source.extent.height > max_blit_side ||
         source.layout == VK_IMAGE_LAYOUT_UNDEFINED ||
         source.layout == VK_IMAGE_LAYOUT_PREINITIALIZED ||
         source.stages == VK_PIPELINE_STAGE_2_NONE)
-        throw std::invalid_argument("Presenter: the source has no image, no area, no layout or no "
-                                    "stages to wait for");
+        throw std::invalid_argument("Presenter: the source has no image, no area or a side over "
+                                    "2^31 - 1, no layout, or no stages to wait for");
     // RGBA32F, the HDR image, need not be linearly filterable: it is no display image.
     if (source.format != blit_source_format_) {
         if (!has_features(physical_device_, source.format,
@@ -296,7 +330,7 @@ bool Presenter::present_frame(const PresentSource& source, bool read_back) {
                                                               detail::HostBuffer::Use::download);
             read_back_bytes_ = read_back_bytes;
         }
-        const VkResult acquired = vkAcquireNextImageKHR(device_, swapchain_, timeout_ns,
+        const VkResult acquired = vkAcquireNextImageKHR(device_, swapchain_, acquire_timeout_ns,
                                                         frame.acquired, VK_NULL_HANDLE, &index);
         if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
             stale_ = true;

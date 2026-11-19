@@ -348,6 +348,9 @@ TEST_CASE("presenter: a source with no image, no area, an undefined layout or a 
     PresentSource no_area = display.source();
     no_area.extent = {0, 48};
     CHECK_THROWS_AS(presenter.present(no_area), std::invalid_argument);
+    PresentSource huge = display.source(); // a blit's offsets are signed 32-bit
+    huge.extent = {0x8000'0000u, 48};
+    CHECK_THROWS_AS(presenter.present(huge), std::invalid_argument);
     PresentSource undefined = display.source();
     undefined.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     CHECK_THROWS_AS(presenter.present(undefined), std::invalid_argument);
