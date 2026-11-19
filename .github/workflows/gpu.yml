@@ -292,20 +292,43 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash
         run: |
-          cdb="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
-          ls -la "$cdb" || { ls "/c/Program Files (x86)/Windows Kits/10/" ; exit 1; }
-          bin="$(cygpath -w "$PWD/build/debug/vcpkg_installed/x64-windows/debug/bin")"
-          ls build/debug/vcpkg_installed/x64-windows/debug/bin | grep -i -E "embree|tbb" || true
-          syms="srv*C:\\symbols*https://msdl.microsoft.com/download/symbols;$bin;$(cygpath -w "$PWD/build/debug/apps/cs-render");$(cygpath -w "$PWD/build/debug/libs/engine");$(cygpath -w "$PWD/build/debug/tests/integration")"
-          cmds='sxe -c ".lastevent; r; ub @rip L12; u @rip L4; kn 80; q" av; sxe -c ".lastevent; kn 80; q" sov; g'
           export MSYS2_ARG_CONV_EXCL='*'
-          echo "::group::cs-render --tier standard under cdb"
-          "$cdb" -G -lines -y "$syms" -c "$cmds" build/debug/apps/cs-render/cs-render.exe tests/scenes/skeleton --tier standard --size 64x36 --spp 16 --lux-samples 64 --out build/diag/skeleton < /dev/null || true
+          dumps="$(cygpath -w "$RUNNER_TEMP/dumps")"
+          mkdir -p "$RUNNER_TEMP/dumps"
+          key='HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+          reg add "$key" /v DumpFolder /t REG_EXPAND_SZ /d "$dumps" /f
+          reg add "$key" /v DumpType /t REG_DWORD /d 1 /f
+          reg add "$key" /v DumpCount /t REG_DWORD /d 20 /f
+          echo "::group::the three left-out tests, without a debugger, 5 times each"
+          ctest --preset debug -R "--tier standard renders the skeleton|standard vs engine: the skeleton" --repeat until-fail:5 --timeout 300 || true
           echo "::endgroup::"
-          engine_tests=$(find build/debug -name cs_engine_tests.exe | head -1)
-          echo "::group::cs_engine_tests under cdb"
-          "$cdb" -G -lines -y "$syms" -c "$cmds" "$engine_tests" "[engine]" < /dev/null || true
-          echo "::endgroup::"
+          cdb="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+          bin="$(cygpath -w "$PWD/build/debug/vcpkg_installed/x64-windows/debug/bin")"
+          syms="srv*C:\\symbols*https://msdl.microsoft.com/download/symbols;$bin;$(cygpath -w "$PWD/build/debug/apps/cs-render");$(cygpath -w "$PWD/build/debug/libs/engine");$(cygpath -w "$PWD/build/debug/tests/integration")"
+          ls -la "$RUNNER_TEMP/dumps"
+          for dump in "$RUNNER_TEMP"/dumps/*.dmp; do
+            [ -e "$dump" ] || continue
+            echo "::group::$dump"
+            "$cdb" -lines -y "$syms" -z "$(cygpath -w "$dump")" -c ".ecxr; r; ub @rip L16; u @rip L4; kn 80; ~*kn 40; q" < /dev/null || true
+            echo "::endgroup::"
+          done
+          cmds='sxe -c ".lastevent; r; ub @rip L16; u @rip L4; kn 80; ~*kn 40; q" av; sxe -c ".lastevent; kn 80; q" sov; g'
+          integration=$(find build/debug -name cs_integration_tests.exe | head -1)
+          for run in 1 2 3; do
+            echo "::group::cs-render --tier standard under cdb, _NO_DEBUG_HEAP=1, run $run"
+            _NO_DEBUG_HEAP=1 "$cdb" -G -lines -y "$syms" -c "$cmds" build/debug/apps/cs-render/cs-render.exe tests/scenes/skeleton --tier standard --size 64x36 --spp 16 --lux-samples 64 --out build/diag/skeleton < /dev/null || true
+            echo "::endgroup::"
+            echo "::group::standard vs engine under cdb, _NO_DEBUG_HEAP=1, run $run"
+            _NO_DEBUG_HEAP=1 "$cdb" -G -lines -y "$syms" -c "$cmds" "$integration" "standard vs engine*" < /dev/null || true
+            echo "::endgroup::"
+          done
+      - name: Upload the dumps (temporary)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dumps-windows-debug
+          path: ${{ runner.temp }}/dumps/
+          if-no-files-found: ignore
 
       # Four tests are left out here, and only here, until their follow-ups (PR #166) land:
       # - the three that build the engine's Embree scene (the two Standard-vs-engine integration
