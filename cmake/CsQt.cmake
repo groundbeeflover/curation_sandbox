@@ -42,8 +42,13 @@ if(LINUX)
             "qt6-qtbase-private-devel on Fedora; on Arch, qt6-base has them.")
     endif()
 
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_get_variable(cs_wayland_protocols_hint wayland-protocols pkgdatadir)
+    endif()
     find_path(CS_WAYLAND_PROTOCOLS_DIR
         NAMES unstable/relative-pointer/relative-pointer-unstable-v1.xml
+        HINTS "${cs_wayland_protocols_hint}"
         PATHS /usr/share/wayland-protocols /usr/local/share/wayland-protocols
         DOC "The wayland-protocols directory, with unstable/relative-pointer/ in it")
     set(CS_WAYLAND_PROTOCOLS

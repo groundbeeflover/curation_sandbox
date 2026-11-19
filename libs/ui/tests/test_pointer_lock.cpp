@@ -126,6 +126,28 @@ TEST_CASE("PointerLock fallback: a move of known size is motion of that size; th
     CHECK(QCursor::pos(w.window.screen()) == w.global_centre());
 }
 
+TEST_CASE("PointerLock fallback: a move that arrives in place of the warp's is measured from the "
+          "centre",
+          "[ui]") {
+    require_offscreen();
+    ActiveWindow w;
+    PointerLock lock(&w.window);
+    QSignalSpy motion(&lock, &PointerLock::motion);
+    REQUIRE(lock.lock());
+    QCoreApplication::processEvents();
+
+    // On Windows the warp's own move can merge into the user's next one, so no move at the
+    // centre comes between them. QTest::mouseMove leaves the offscreen cursor at the centre, as
+    // after a real warp, and Qt skips the warp to where the cursor already is: the same order.
+    QTest::mouseMove(&w.window, ActiveWindow::centre + QPoint(40, 0));
+    QTest::mouseMove(&w.window, ActiveWindow::centre + QPoint(3, -2));
+    REQUIRE(motion.count() == 2);
+    CHECK(motion[0][0].toDouble() == 40.0);
+    CHECK(motion[0][1].toDouble() == 0.0);
+    CHECK(motion[1][0].toDouble() == 3.0);
+    CHECK(motion[1][1].toDouble() == -2.0);
+}
+
 TEST_CASE("PointerLock fallback: Esc, focus loss and unlock() each end walk mode once", "[ui]") {
     require_offscreen();
     ActiveWindow w;

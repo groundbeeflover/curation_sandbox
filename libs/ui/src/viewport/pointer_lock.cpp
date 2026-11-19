@@ -26,9 +26,10 @@ PointerLock::PointerLock(QWindow* window, QObject* parent) : QObject(parent), wi
         wayland_ = std::make_unique<WaylandPointer>();
         connect(wayland_.get(), &WaylandPointer::locked, this, &PointerLock::locked);
         connect(wayland_.get(), &WaylandPointer::motion, this, &PointerLock::motion);
-        // Queued, so that the protocol objects are not destroyed inside their own event.
-        connect(wayland_.get(), &WaylandPointer::unlocked, this, &PointerLock::unlock,
-                Qt::QueuedConnection);
+        // Direct, so that a late event cannot end a later lock. unlock() then destroys the
+        // protocol objects inside their own event, which libwayland allows: it keeps the proxy
+        // alive until the dispatch ends, and the handler touches nothing after emitting.
+        connect(wayland_.get(), &WaylandPointer::unlocked, this, &PointerLock::unlock);
     }
 }
 
@@ -48,9 +49,10 @@ bool PointerLock::lock() {
             return false;
         }
     } else {
+        // Best effort: some platforms (offscreen) have no grab, and Esc and focus loss still
+        // end walk mode there.
         window_->setMouseGrabEnabled(true);
         window_->setKeyboardGrabEnabled(true);
-        last_position_ = window_->mapFromGlobal(QPointF(QCursor::pos(window_->screen())));
         warp_to_centre();
     }
     walking_ = true;
@@ -117,19 +119,21 @@ bool PointerLock::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void PointerLock::fallback_move(QPointF position) {
-    // A warp lands on the centre give or take the rounding to device pixels. That move tells
-    // where the cursor now is, and is not motion; measuring the next move from where it really
-    // landed keeps the rounding from adding up into a drift.
-    const QPointF from_centre = position - QPointF(centre_of(*window_));
-    const double device_pixel = 1.0 / window_->devicePixelRatio();
-    if (warp_pending_ && std::abs(from_centre.x()) <= device_pixel &&
-        std::abs(from_centre.y()) <= device_pixel) {
+    // Motion is measured from where the cursor was: after a warp, the centre. The warp's own move
+    // lands there give or take the rounding to device pixels; it is not motion, but it says where
+    // the cursor really is, so that the rounding does not add up into a drift. On Windows it can
+    // instead merge into the user's next move, which is then measured from the centre.
+    if (warp_pending_) {
         warp_pending_ = false;
-        last_position_ = position;
-        return;
+        const QPointF from_centre = position - last_position_;
+        const double device_pixel = 1.0 / window_->devicePixelRatio();
+        if (std::abs(from_centre.x()) <= device_pixel &&
+            std::abs(from_centre.y()) <= device_pixel) {
+            last_position_ = position;
+            return;
+        }
     }
     const QPointF delta = position - last_position_;
-    last_position_ = position;
     if (delta.isNull()) {
         return;
     }
@@ -138,8 +142,12 @@ void PointerLock::fallback_move(QPointF position) {
 }
 
 void PointerLock::warp_to_centre() {
-    QCursor::setPos(window_->screen(), window_->mapToGlobal(centre_of(*window_)));
-    warp_pending_ = true;
+    const QPoint centre = centre_of(*window_);
+    const QPoint target = window_->mapToGlobal(centre);
+    // Qt skips a warp to where the cursor already is, and then no move comes back.
+    warp_pending_ = QCursor::pos(window_->screen()) != target;
+    QCursor::setPos(window_->screen(), target);
+    last_position_ = centre;
 }
 
 } // namespace cs::ui

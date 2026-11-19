@@ -14,6 +14,9 @@
 //
 // Walk mode ends on unlock(), Esc, the window losing focus or its surface, and the compositor
 // ending the lock. Each emits unlocked() once and shows the cursor again (ADR 0011, point 10).
+//
+// One PointerLock per window: on Wayland a second lock of the same surface is a protocol error,
+// which disconnects the application.
 #pragma once
 
 #include <QCursor>
@@ -62,7 +65,8 @@ class PointerLock : public QObject {
     std::unique_ptr<WaylandPointer> wayland_; // null off the wayland platform
     bool walking_ = false;
     QCursor previous_cursor_;
-    // The fallback: where the cursor was at the last move, and whether a warp's move is due.
+    // The fallback: where the cursor is, in logical pixels of the window (the centre after a
+    // warp, then where the warp's move landed), and whether that move is still to come.
     QPointF last_position_;
     bool warp_pending_ = false;
 };
