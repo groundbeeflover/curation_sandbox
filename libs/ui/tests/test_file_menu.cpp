@@ -144,3 +144,11 @@ TEST_CASE("MainWindow: save_project of a new project loads back as an empty proj
     CHECK(cs::doc::load_project_folder(folder) == cs::doc::Document());
     CHECK(same_folder(window.project_folder(), folder));
 }
+
+// Review of #82: a folder given with a trailing separator, as shell completion writes it, still
+// names the project in the title.
+TEST_CASE("MainWindow: the title names a folder given with a trailing separator", "[ui]") {
+    MainWindow window;
+    window.open_project(cs::ui::test::skeleton_folder() / "");
+    CHECK(window.windowTitle().contains(QStringLiteral("skeleton")));
+}

@@ -222,3 +222,15 @@ TEST_CASE("register_features: registers the File menu first and the inspector do
     CHECK(layout.front().title == QStringLiteral("File"));
     CHECK(cs::ui::test::inspector_dock(window) != nullptr);
 }
+
+// Review of #82: a menu's title with and without its mnemonic names one menu, so that two
+// features that spell it differently do not make two File menus.
+TEST_CASE("MainWindow: add_menu ignores the mnemonic when it finds a menu by title", "[ui]") {
+    MainWindow window;
+    QMenu* file = window.add_menu(QStringLiteral("&File"), cs::ui::menu_order::file);
+    CHECK(window.add_menu(QStringLiteral("File"), cs::ui::menu_order::file) == file);
+    // A literal ampersand ("&&") still tells titles apart.
+    QMenu* both = window.add_menu(QStringLiteral("A&&B"), cs::ui::menu_order::view);
+    CHECK(window.add_menu(QStringLiteral("AB"), cs::ui::menu_order::view) != both);
+    CHECK(window.add_menu(QStringLiteral("A&&B"), cs::ui::menu_order::view) == both);
+}

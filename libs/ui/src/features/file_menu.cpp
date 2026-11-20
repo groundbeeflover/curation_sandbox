@@ -55,6 +55,15 @@ void save(MainWindow& window) {
             return;
         }
         folder = to_path(chosen);
+        if (std::filesystem::exists(folder / "project.json") &&
+            QMessageBox::question(&window, MainWindow::tr("Replace the project?"),
+                                  MainWindow::tr("%1 already holds a project. Replace it with "
+                                                 "this one?")
+                                      .arg(chosen),
+                                  QMessageBox::Yes | QMessageBox::Cancel,
+                                  QMessageBox::Cancel) != QMessageBox::Yes) {
+            return;
+        }
     }
     try {
         window.save_project(folder);

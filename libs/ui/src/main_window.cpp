@@ -31,6 +31,15 @@ namespace {
 // The property that holds a menu's or an item's order, on its QAction.
 constexpr const char* order_property = "cs_order";
 
+// A menu's title without its mnemonic markers, so that "&File" and "File" name one menu.
+QString plain_title(const QString& title) {
+    QString plain = title;
+    plain.replace(QLatin1String("&&"), QLatin1String("\x01"));
+    plain.remove(QLatin1Char('&'));
+    plain.replace(QLatin1Char('\x01'), QLatin1Char('&'));
+    return plain;
+}
+
 int order_of(const QAction* action) {
     return action->property(order_property).toInt();
 }
@@ -80,7 +89,8 @@ MainWindow::~MainWindow() {
 
 QMenu* MainWindow::add_menu(const QString& title, int order) {
     for (QAction* action : menuBar()->actions()) {
-        if (action->menu() != nullptr && action->menu()->title() == title) {
+        if (action->menu() != nullptr &&
+            plain_title(action->menu()->title()) == plain_title(title)) {
             return action->menu();
         }
     }
@@ -124,9 +134,6 @@ void MainWindow::add_inspector_page(int order, const QString& title, QWidget* pa
 void MainWindow::new_project() {
     document_ = std::make_unique<doc::Document>();
     folder_.reset();
-    if (viewport_ != nullptr) {
-        viewport_->reset_exposure();
-    }
     show_project();
 }
 
@@ -146,10 +153,17 @@ void MainWindow::save_project(const std::filesystem::path& folder) {
 void MainWindow::show_project() {
     update_title();
     if (viewport_ != nullptr) {
+        // Each project starts at EV100 8; its first viewpoint, if any, sets its own.
+        viewport_->reset_exposure();
         const world::World world = world::compile(*document_);
         for (const world::Problem& problem : world.problems) {
             std::cerr << "curation: warning: entity " << problem.entity.to_string() << ": "
                       << problem.reason << '\n';
+        }
+        QString message;
+        if (!world.problems.empty()) {
+            message = tr("%n part(s) of the project cannot be shown; see the log", nullptr,
+                         static_cast<int>(world.problems.size()));
         }
         try {
             const std::filesystem::path assets =
@@ -159,13 +173,19 @@ void MainWindow::show_project() {
             }
         } catch (const std::exception& error) {
             std::cerr << "curation: the viewport cannot show the project: " << error.what() << '\n';
-            statusBar()->showMessage(tr("The viewport cannot show this project: %1")
-                                         .arg(QString::fromStdString(error.what())));
+            // Why the viewport is empty matters more than the parts left out.
+            message = tr("The viewport cannot show this project: %1")
+                          .arg(QString::fromStdString(error.what()));
+            // An empty world, so that the previous project's picture does not stay on screen.
+            try {
+                static_cast<void>(viewport_->set_world(world::World{}, {}));
+            } catch (const std::exception& empty_error) {
+                std::cerr << "curation: the viewport cannot be cleared: " << empty_error.what()
+                          << '\n';
+            }
         }
-        const std::size_t problems = world.problems.size();
-        if (problems > 0) {
-            statusBar()->showMessage(tr("%n part(s) of the project cannot be shown; see the log",
-                                        nullptr, static_cast<int>(problems)));
+        if (!message.isEmpty()) {
+            statusBar()->showMessage(message);
         }
     }
     update_status();
@@ -173,8 +193,15 @@ void MainWindow::show_project() {
 }
 
 void MainWindow::update_title() {
-    const QString name =
-        folder_ ? QString::fromStdString(folder_->filename().string()) : tr("Untitled");
+    QString name = tr("Untitled");
+    if (folder_) {
+        // "skeleton/" names the folder skeleton too; u16string keeps any name whole on Windows.
+        std::filesystem::path folder = folder_->lexically_normal();
+        if (folder.filename().empty()) {
+            folder = folder.parent_path();
+        }
+        name = QString::fromStdU16String(folder.filename().u16string());
+    }
     setWindowTitle(tr("%1 — Curation Sandbox").arg(name));
 }
 
@@ -199,7 +226,16 @@ void MainWindow::set_gpu(std::unique_ptr<GpuContext> gpu, bool headless, QString
     viewport_problem_ = std::move(problem);
     if (gpu_) {
         connect(gpu_.get(), &GpuContext::validation_message, this, &MainWindow::update_status);
-        viewport_ = new Viewport(*gpu_, headless, this);
+        try {
+            viewport_ = new Viewport(*gpu_, headless, this);
+        } catch (const std::exception& error) {
+            // A platform whose windows Qt cannot give a Vulkan surface: the viewport still draws,
+            // into an image painted by a widget, as on the offscreen platform.
+            std::cerr << "curation: the viewport cannot use a Vulkan window, so it draws "
+                         "headless: "
+                      << error.what() << '\n';
+            viewport_ = new Viewport(*gpu_, true, this);
+        }
         connect(viewport_, &Viewport::ev100_changed, this, &MainWindow::update_status);
         connect(viewport_, &Viewport::frame_drawn, this, &MainWindow::viewport_frame_drawn);
         setCentralWidget(viewport_);

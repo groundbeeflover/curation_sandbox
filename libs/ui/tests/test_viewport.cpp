@@ -24,6 +24,7 @@
 #include <QTest>
 #include <QWindow>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -170,6 +171,18 @@ TEST_CASE("Viewport: the active viewpoint's EV100, kept when walking away, 8 for
     automatic.ev100.reset();
     viewport->show_viewpoint(automatic);
     CHECK(viewport->ev100() == 6.5);
+
+    // Opening another project starts it at EV100 8 too, also when it has no viewpoint (review of
+    // #82): the last EV100 is kept only within one project.
+    const std::filesystem::path no_viewpoint = cs::ui::test::fresh_out_folder("no-viewpoint");
+    {
+        MainWindow empty;
+        empty.save_project(no_viewpoint);
+    }
+    window->open_project(no_viewpoint);
+    CHECK(viewport->ev100() == 8.0);
+    viewport->show_viewpoint(darker);
+    REQUIRE(viewport->ev100() == 6.5);
 
     // A new project: EV100 8, at the default camera (an empty project has no viewpoint).
     window->new_project();
