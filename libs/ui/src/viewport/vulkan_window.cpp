@@ -147,7 +147,8 @@ void VulkanWindow::drop_presenter() noexcept {
 
 bool VulkanWindow::draw(QImage* read_back) {
     ViewRenderer& renderer = *renderer_;
-    if (!renderer.ready() || !ensure_presenter()) {
+    // A hidden window presents nothing: under Wayland's FIFO mode each present would wait.
+    if (!isExposed() || !renderer.ready() || !ensure_presenter()) {
         return false;
     }
     if (renderer.stale()) {
@@ -165,7 +166,9 @@ bool VulkanWindow::draw(QImage* read_back) {
         try {
             renderer.record(frame.commands);
         } catch (...) {
-            vkEndCommandBuffer(frame.commands);
+            // Recording may have stopped inside a rendering instance, where ending is invalid;
+            // the pool lets a command buffer be reset on its own.
+            vkResetCommandBuffer(frame.commands, 0);
             throw;
         }
         check(vkEndCommandBuffer(frame.commands), "vkEndCommandBuffer");
@@ -178,7 +181,19 @@ bool VulkanWindow::draw(QImage* read_back) {
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submit.commandBufferInfoCount = 1;
         submit.pCommandBufferInfos = &command_info;
-        check(vkQueueSubmit2(device_->queue(), 1, &submit, frame.done), "vkQueueSubmit2");
+        const VkResult submitted = vkQueueSubmit2(device_->queue(), 1, &submit, frame.done);
+        if (submitted != VK_SUCCESS) {
+            // The fence was reset and nothing will signal it: make it again, signalled, so that
+            // the next frame does not wait a minute for it.
+            vkDestroyFence(device, frame.done, nullptr);
+            frame.done = VK_NULL_HANDLE;
+            VkFenceCreateInfo fence{};
+            fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            check(vkCreateFence(device, &fence, nullptr, &frame.done), "vkCreateFence");
+            check(submitted, "vkQueueSubmit2");
+        }
+        renderer.mark_recorded();
         frame_ = (frame_ + 1) % static_cast<std::uint32_t>(frames_.size());
     }
 
@@ -198,44 +213,40 @@ bool VulkanWindow::draw(QImage* read_back) {
     return true;
 }
 
-QImage VulkanWindow::grab_frame() {
-    QImage image;
+bool VulkanWindow::try_draw(QImage* read_back) {
     try {
-        if (draw(&image)) {
+        if (draw(read_back)) {
             emit frame_drawn();
+            return true;
         }
+    } catch (const std::invalid_argument& error) {
+        // A camera the tier refuses: the frame was not recorded, and the next camera may do.
+        std::cerr << "curation: the viewport could not draw: " << error.what() << '\n';
     } catch (const std::exception& error) {
+        // A lost surface, or another failure after which the presenter may only be destroyed:
+        // a new one is made at the next expose.
         std::cerr << "curation: the viewport could not draw: " << error.what() << '\n';
         drop_presenter();
         surface_lost_ = true;
     }
+    return false;
+}
+
+QImage VulkanWindow::grab_frame() {
+    QImage image;
+    try_draw(&image);
     return image;
 }
 
 bool VulkanWindow::event(QEvent* event) {
     switch (event->type()) {
-    case QEvent::UpdateRequest: {
-        bool shown = false;
-        try {
-            shown = draw();
-        } catch (const std::invalid_argument& error) {
-            // A camera the tier refuses: nothing was submitted, and the next camera may do.
-            std::cerr << "curation: the viewport could not draw: " << error.what() << '\n';
-        } catch (const std::exception& error) {
-            // A lost surface, or another failure after which the presenter may only be
-            // destroyed: a new one is made at the next expose.
-            std::cerr << "curation: the viewport could not draw: " << error.what() << '\n';
-            drop_presenter();
-            surface_lost_ = true;
-        }
-        if (shown) {
+    case QEvent::UpdateRequest:
+        if (try_draw(nullptr)) {
             skipped_ = 0;
-            emit frame_drawn();
-        } else if (presenter_ && ++skipped_ < max_skipped_frames) {
+        } else if (presenter_ && isExposed() && ++skipped_ < max_skipped_frames) {
             requestUpdate();
         }
         return true;
-    }
     case QEvent::PlatformSurface:
         if (static_cast<QPlatformSurfaceEvent*>(event)->surfaceEventType() ==
             QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {

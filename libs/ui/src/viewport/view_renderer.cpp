@@ -84,13 +84,12 @@ void ViewRenderer::drop_tier() {
     tier_.reset();
 }
 
-void ViewRenderer::record(VkCommandBuffer commands) {
+void ViewRenderer::record(VkCommandBuffer commands) const {
     if (!ready()) {
         throw std::logic_error("ViewRenderer::record: nothing to draw yet");
     }
     tier_->record(commands, camera_);
     pass_->record(commands, ev100_);
-    stale_ = false;
 }
 
 gpu::PresentSource ViewRenderer::present_source() const {

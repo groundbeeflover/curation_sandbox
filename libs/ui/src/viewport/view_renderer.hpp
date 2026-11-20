@@ -70,13 +70,16 @@ class ViewRenderer {
     [[nodiscard]] std::uint32_t width() const { return width_; }
     [[nodiscard]] std::uint32_t height() const { return height_; }
 
-    // Something changed since the last record(): the world, the size, the camera or the EV100.
-    // Otherwise the display image still holds the last frame, and can be presented again as it is.
+    // Something changed since the last frame was submitted: the world, the size, the camera or
+    // the EV100. Otherwise the display image still holds the last frame, and can be presented
+    // again as it is.
     [[nodiscard]] bool stale() const { return stale_; }
+    // The commands of record() were submitted: the display image holds the frame they draw.
+    void mark_recorded() { stale_ = false; }
     // Records the tier and the pass into a command buffer that is recording (when ready()). The
     // display image is then in TRANSFER_SRC_OPTIMAL, as present_source() says. Throws
     // std::invalid_argument, before recording anything, for a camera the tier refuses.
-    void record(VkCommandBuffer commands);
+    void record(VkCommandBuffer commands) const;
     // The display image, for Presenter::present() after the commands of record() were submitted.
     [[nodiscard]] gpu::PresentSource present_source() const;
 

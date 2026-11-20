@@ -91,6 +91,9 @@ class VulkanWindow : public QWindow {
     // Records and submits the renderer's frame when it is stale, then presents, copying the frame
     // back into *read_back when it is given. Returns what present() did.
     bool draw(QImage* read_back = nullptr);
+    // draw(), emitting frame_drawn() when a frame was shown. A failure is logged: a camera the
+    // tier refuses skips the frame, anything else drops the presenter until the next expose.
+    bool try_draw(QImage* read_back);
 };
 
 } // namespace cs::ui
