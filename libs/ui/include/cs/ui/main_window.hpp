@@ -9,9 +9,17 @@
 // by a number per item, inspector pages by a number per page. Nothing depends on the order in
 // which features register, and adding a feature never edits this file.
 //
+// The document changes only through commit(), undo() and redo() (CLAUDE.md, ADR 0007), which the
+// window's doc::History applies. Each change that changes something compiles the world again,
+// shows it in the viewport from the same camera at the same EV100, and emits document_changed():
+// features update from it rather than from the document's revision.
+//
 // This header includes no Vulkan: the viewport adapter (src/viewport/) is the only part of ui
 // that does (CLAUDE.md).
 #pragma once
+
+#include <cs/doc/history.hpp>
+#include <cs/doc/transaction.hpp>
 
 #include <QImage>
 #include <QMainWindow>
@@ -20,16 +28,14 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 class QAction;
 class QLabel;
 class QMenu;
+class QTemporaryDir;
 class QWidget;
-
-namespace cs::doc {
-class Document;
-}
 
 namespace cs::ui {
 
@@ -79,20 +85,53 @@ class MainWindow : public QMainWindow {
 
     // ---- The project ------------------------------------------------------------------------
 
-    [[nodiscard]] const doc::Document& document() const { return *document_; }
+    [[nodiscard]] const doc::Document& document() const { return history_->document(); }
+    // The open document with its undo and redo stacks: undo_name(), can_undo() and the counts.
+    [[nodiscard]] const doc::History& history() const { return *history_; }
     // The folder the project was opened from or saved to; nothing for a new project.
     [[nodiscard]] const std::optional<std::filesystem::path>& project_folder() const {
         return folder_;
     }
 
-    // An empty project, at the default exposure (EV100 8).
+    // An empty project, at the default exposure (EV100 8), with nothing to undo.
     void new_project();
-    // Opens a project folder (doc::load_project_folder). Throws as it does, leaving the open
-    // project as it was.
+    // Opens a project folder (doc::load_project_folder), with nothing to undo. Throws as it
+    // does, leaving the open project as it was.
     void open_project(const std::filesystem::path& folder);
-    // Saves to a project folder (doc::save_project_folder), which becomes the project's folder.
-    // Throws as it does.
+    // Saves to a project folder, which becomes the project's folder. First copies every asset
+    // the document names (works' images) from assets_folder() into <folder>/assets when that is
+    // another folder: each through a temporary file renamed once whole, skipping a file already
+    // there. Then writes the document (doc::save_project_folder). Throws before writing the
+    // document when an asset cannot be copied (std::invalid_argument for a name
+    // assets::asset_file refuses, std::filesystem::filesystem_error for a failed copy), and as
+    // save_project_folder does; the project's folder stays as it was. An asset the document names
+    // but the folder lacks, or holds as anything but a regular file, is not copied (the log says
+    // so): the project already shows it as a problem.
     void save_project(const std::filesystem::path& folder);
+
+    // Where the project's images are stored (assets::store_image) and loaded from:
+    // <project folder>/assets, or for an untitled project a temporary folder the window owns,
+    // made the first time it is asked for. New, Open and a save of an untitled project delete
+    // the temporary folder. Throws std::runtime_error when the temporary folder cannot be made.
+    [[nodiscard]] std::filesystem::path assets_folder();
+
+    // ---- Changing the document --------------------------------------------------------------
+
+    // Commits a transaction made for document() (doc::History::commit) and returns what it
+    // changed. When something changed: the world is compiled again, the viewport shows it from
+    // the same camera at the same EV100, and document_changed() is emitted. Throws as
+    // History::commit does (std::invalid_argument for a transaction made for another revision,
+    // doc::ReferenceError for a dangling reference), and then changes nothing.
+    doc::ChangeList commit(doc::Transaction transaction);
+    // Undo and redo the last transaction (doc::History), with the same refresh and signal as
+    // commit(). Throw std::logic_error when there is nothing to undo or redo.
+    doc::ChangeList undo();
+    doc::ChangeList redo();
+
+    // What could not be shown of the project, one line each: the world's problems (an entity
+    // world::compile leaves out) and the viewport's (an image shown as its base colour), or why
+    // the viewport cannot show it at all. Updated by every New, Open and change.
+    [[nodiscard]] const std::vector<std::string>& project_problems() const { return problems_; }
 
     // ---- The viewport and the GPU -----------------------------------------------------------
 
@@ -113,6 +152,8 @@ class MainWindow : public QMainWindow {
   signals:
     // After new_project(), open_project() and save_project().
     void project_changed();
+    // After a commit, undo or redo that changed something, once the viewport shows it.
+    void document_changed(const cs::doc::ChangeList& changes);
     // After a page is added, with its index in inspector_pages().
     void inspector_page_added(int index);
     // The viewport drew a frame.
@@ -123,12 +164,19 @@ class MainWindow : public QMainWindow {
     make_main_window(const std::optional<std::filesystem::path>& project);
 
     void set_gpu(std::unique_ptr<GpuContext> gpu, bool headless, QString problem);
-    void show_project();
+    // A new project or a changed one: compile the world and show it. A new one starts at EV100 8
+    // and from its first viewpoint; a changed one keeps the camera and the EV100.
+    void show_world(bool new_project);
+    doc::ChangeList document_edited(doc::ChangeList changes);
+    // assets_folder() without making one: empty for an untitled project with no image yet.
+    std::filesystem::path current_assets_folder() const;
     void update_title();
     void update_status();
 
-    std::unique_ptr<doc::Document> document_;
+    std::unique_ptr<doc::History> history_; // History neither copies nor moves
     std::optional<std::filesystem::path> folder_;
+    std::unique_ptr<QTemporaryDir> untitled_assets_; // an untitled project's assets_folder()
+    std::vector<std::string> problems_;
     std::vector<InspectorPage> pages_;
     std::unique_ptr<GpuContext> gpu_; // outlives the viewport: ~MainWindow deletes it first
     Viewport* viewport_ = nullptr;    // the central widget's, when there is one

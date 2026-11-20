@@ -17,6 +17,19 @@
 //
 // Walking (M1-27) uses its relative pointer mode, through PointerLock (M1-45): lock() activates the
 // viewport's window first, so that Esc reaches it.
+//
+// Input for features: an event filter on the Viewport widget (installEventFilter) sees its
+// input in both backends, as Qt events with positions in the viewport's logical pixels:
+// - QEvent::MouseButtonPress, MouseButtonRelease, MouseButtonDblClick and MouseMove (QMouseEvent;
+//   moves without a button too, since the viewport tracks the mouse), and Wheel (QWheelEvent);
+// - QEvent::KeyPress and KeyRelease (QKeyEvent), Tab and Backtab included: they never move the
+//   keyboard focus out of the viewport, since Tab toggles walk mode;
+// - QEvent::FocusOut (QFocusEvent), when the keyboard focus leaves the viewport.
+// The window backend's native window receives the platform's events, and the viewport sends a
+// copy of each to itself; headless, the painting child is transparent to the mouse and takes no
+// focus, so the events reach the viewport directly. A filter that returns true consumes the event.
+// A click gives the viewport the keyboard focus. While walking, PointerLock takes the pointer's
+// moves (pointer_motion) and Esc before the filter does.
 #pragma once
 
 #include "viewport/exposure.hpp"
@@ -73,6 +86,10 @@ class Viewport : public QWidget {
     // line each (paintings shown as their base colour); throws as gpu::Scene does.
     std::vector<std::string> set_world(const world::World& world,
                                        const std::filesystem::path& assets_folder);
+    // The same world, changed: as set_world, but the camera and the EV100 stay, so that an edit
+    // does not move a walking curator.
+    std::vector<std::string> update_world(const world::World& world,
+                                          const std::filesystem::path& assets_folder);
     // A viewpoint becomes active: its camera, and its EV100 if it has one (Exposure::view_from).
     void show_viewpoint(const world::Camera& viewpoint);
     // The camera moves on its own, no viewpoint active: the EV100 stays.
@@ -94,6 +111,8 @@ class Viewport : public QWidget {
     // Just after a new size settles it may still be at the old size, until the next frame. The
     // window copies it back from its swapchain, which may cost a frame.
     [[nodiscard]] QImage grab_frame();
+    // The window backend's native window, which receives the platform's input; null headless.
+    [[nodiscard]] QWindow* surface_window() const;
 
     // ---- Walking: relative pointer mode -----------------------------------------------------
 
@@ -114,6 +133,13 @@ class Viewport : public QWidget {
 
   protected:
     bool event(QEvent* event) override;
+    // Sends the native window's input on to the viewport (see the top of this file).
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    // Tab and Backtab are input for features, never a move of the keyboard focus.
+    bool focusNextPrevChild(bool next) override;
+    // ... and are accepted once the filters have seen them, so that no parent moves the focus.
+    void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
 
   private:
     // After the exposure changed from `before`: the renderer follows, ev100_changed when it moved.

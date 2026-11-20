@@ -7,8 +7,10 @@ endif()
 
 # moc, for the QObject classes of the library and its tests.
 set(CMAKE_AUTOMOC ON)
-# world, doc and assets come through editor's and gpu's re-exports (blueprint section 7).
-cs_add_module(NAME ui DEPS editor gpu assets core EXTERNAL Qt6::Widgets)
+# world, doc and assets come through editor's and gpu's re-exports (blueprint section 7). The main
+# window's header uses doc's History, Transaction and ChangeList, so ui re-exports editor, which
+# re-exports doc.
+cs_add_module(NAME ui DEPS editor gpu assets core EXPORTS editor EXTERNAL Qt6::Widgets)
 # Walking's pointer lock on Wayland (src/viewport/wayland_pointer.cpp).
 cs_qt_wayland_protocols(cs_ui)
 # moc reads the QObject classes of the public headers too, which the module's sources (src/) do

@@ -7,14 +7,17 @@
 #include "viewport/view_renderer.hpp"
 #include "viewport/vulkan_window.hpp"
 
+#include <QCoreApplication>
 #include <QEvent>
 #include <QGuiApplication>
+#include <QKeyEvent>
 #include <QVBoxLayout>
 
 #include <cmath>
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <memory>
 
 namespace cs::ui {
 
@@ -27,6 +30,10 @@ Viewport::Viewport(GpuContext& gpu, bool headless, QWidget* parent)
     : QWidget(parent), renderer_(std::make_unique<ViewRenderer>(gpu.device())) {
     setObjectName(QStringLiteral("viewport"));
     setMinimumSize(64, 64);
+    // Input for features (viewport.hpp): moves without a button reach them too, and a click or
+    // Tab gives the viewport the keyboard focus.
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
     renderer_->set_ev100(exposure_.ev100());
 
     settle_timer_.setSingleShot(true);
@@ -37,12 +44,22 @@ Viewport::Viewport(GpuContext& gpu, bool headless, QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     if (headless) {
         headless_view_ = new HeadlessView(*renderer_, this);
+        // The viewport, not its painting child, receives the input.
+        headless_view_->setAttribute(Qt::WA_TransparentForMouseEvents);
+        headless_view_->setFocusPolicy(Qt::NoFocus);
         connect(headless_view_, &HeadlessView::frame_drawn, this, &Viewport::frame_done);
         layout->addWidget(headless_view_);
     } else {
         window_ = new VulkanWindow(gpu.device(), *renderer_);
         connect(window_, &VulkanWindow::frame_drawn, this, &Viewport::frame_done);
+        // The native window receives the platform's input; the filter sends it on to the
+        // viewport.
+        window_->installEventFilter(this);
         container_ = QWidget::createWindowContainer(window_, this);
+        // When the native window takes the focus, the container takes the widget focus
+        // (QWindowContainer); as its proxy, the viewport keeps it, so features see no FocusOut.
+        container_->setFocusPolicy(Qt::NoFocus);
+        container_->setFocusProxy(this);
         layout->addWidget(container_);
     }
 }
@@ -57,12 +74,19 @@ Viewport::~Viewport() {
 
 std::vector<std::string> Viewport::set_world(const world::World& world,
                                              const std::filesystem::path& assets_folder) {
-    std::vector<std::string> problems = renderer_->set_world(world, assets_folder);
+    std::vector<std::string> problems = update_world(world, assets_folder);
     if (!world.cameras.empty()) {
         show_viewpoint(world.cameras.front());
     } else {
         set_camera(default_camera());
     }
+    return problems;
+}
+
+std::vector<std::string> Viewport::update_world(const world::World& world,
+                                                const std::filesystem::path& assets_folder) {
+    std::vector<std::string> problems = renderer_->set_world(world, assets_folder);
+    request_frame();
     return problems;
 }
 
@@ -109,6 +133,68 @@ QImage Viewport::grab_frame() {
         return headless_view_->frame();
     }
     return window_->grab_frame();
+}
+
+QWindow* Viewport::surface_window() const {
+    return window_;
+}
+
+bool Viewport::eventFilter(QObject* watched, QEvent* event) {
+    if (watched != window_) {
+        return QWidget::eventFilter(watched, event);
+    }
+    switch (event->type()) {
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
+    case QEvent::MouseMove:
+    case QEvent::Wheel:
+    case QEvent::KeyPress:
+    case QEvent::KeyRelease: {
+        if (event->type() == QEvent::MouseButtonPress) {
+            // Clicks on a native window bypass the widgets' click focus.
+            setFocus(Qt::MouseFocusReason);
+        }
+        // The window fills the viewport, so its positions are the viewport's.
+        const std::unique_ptr<QEvent> copy(event->clone());
+        copy->setAccepted(false);
+        QCoreApplication::sendEvent(this, copy.get());
+        event->setAccepted(copy->isAccepted());
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+bool Viewport::focusNextPrevChild(bool /*next*/) {
+    return false;
+}
+
+namespace {
+
+bool is_tab(const QKeyEvent* event) {
+    return (event->key() == Qt::Key_Tab || event->key() == Qt::Key_Backtab) &&
+           (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier)) == 0;
+}
+
+} // namespace
+
+void Viewport::keyPressEvent(QKeyEvent* event) {
+    // An unaccepted Tab would go on to the parent, whose QWidget::event moves the focus.
+    if (is_tab(event)) {
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
+void Viewport::keyReleaseEvent(QKeyEvent* event) {
+    if (is_tab(event)) {
+        event->accept();
+        return;
+    }
+    QWidget::keyReleaseEvent(event);
 }
 
 bool Viewport::event(QEvent* event) {

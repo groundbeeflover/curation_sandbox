@@ -2,6 +2,7 @@
 #include <cs/ui/main_window.hpp>
 
 #include "features/feature.hpp"
+#include "project_assets_copy.hpp"
 #include "viewport/exposure.hpp"
 #include "viewport/gpu_context.hpp"
 #include "viewport/viewport.hpp"
@@ -17,12 +18,15 @@
 #include <QMenuBar>
 #include <QPainter>
 #include <QStatusBar>
+#include <QTemporaryDir>
 
 #include <algorithm>
 #include <exception>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace cs::ui {
 
@@ -64,7 +68,7 @@ QAction* insertion_point(const QList<QAction*>& actions, int order, const QStrin
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent), document_(std::make_unique<doc::Document>()) {
+    : QMainWindow(parent), history_(std::make_unique<doc::History>()) {
     setObjectName(QStringLiteral("main_window"));
     resize(1280, 800);
     exposure_label_ = new QLabel(this);
@@ -132,64 +136,131 @@ void MainWindow::add_inspector_page(int order, const QString& title, QWidget* pa
 // ---- The project ------------------------------------------------------------------------------
 
 void MainWindow::new_project() {
-    document_ = std::make_unique<doc::Document>();
+    history_ = std::make_unique<doc::History>();
     folder_.reset();
-    show_project();
+    untitled_assets_.reset();
+    show_world(true);
+    emit project_changed();
 }
 
 void MainWindow::open_project(const std::filesystem::path& folder) {
-    document_ = std::make_unique<doc::Document>(doc::load_project_folder(folder));
+    auto history = std::make_unique<doc::History>(doc::load_project_folder(folder));
+    history_ = std::move(history);
     folder_ = folder;
-    show_project();
+    untitled_assets_.reset();
+    show_world(true);
+    emit project_changed();
 }
 
 void MainWindow::save_project(const std::filesystem::path& folder) {
-    doc::save_project_folder(*document_, folder);
+    const std::filesystem::path from = current_assets_folder();
+    if (!from.empty()) {
+        copy_project_assets(document(), from, folder / "assets");
+    }
+    doc::save_project_folder(document(), folder);
     folder_ = folder;
+    // The images are in the project's folder now.
+    untitled_assets_.reset();
     update_title();
     emit project_changed();
 }
 
-void MainWindow::show_project() {
-    update_title();
-    if (viewport_ != nullptr) {
-        // Each project starts at EV100 8; its first viewpoint, if any, sets its own.
-        viewport_->reset_exposure();
-        const world::World world = world::compile(*document_);
-        for (const world::Problem& problem : world.problems) {
-            std::cerr << "curation: warning: entity " << problem.entity.to_string() << ": "
-                      << problem.reason << '\n';
+std::filesystem::path MainWindow::assets_folder() {
+    if (folder_) {
+        return *folder_ / "assets";
+    }
+    if (!untitled_assets_) {
+        auto folder = std::make_unique<QTemporaryDir>();
+        if (!folder->isValid()) {
+            throw std::runtime_error("cannot make a temporary folder for the project's images: " +
+                                     folder->errorString().toStdString());
         }
-        QString message;
-        if (!world.problems.empty()) {
-            message = tr("%n part(s) of the project cannot be shown; see the log", nullptr,
-                         static_cast<int>(world.problems.size()));
+        untitled_assets_ = std::move(folder);
+    }
+    return std::filesystem::path(untitled_assets_->path().toStdU16String());
+}
+
+std::filesystem::path MainWindow::current_assets_folder() const {
+    if (folder_) {
+        return *folder_ / "assets";
+    }
+    if (untitled_assets_) {
+        return std::filesystem::path(untitled_assets_->path().toStdU16String());
+    }
+    // An untitled project that has stored no image yet.
+    return {};
+}
+
+// ---- Changing the document --------------------------------------------------------------------
+
+doc::ChangeList MainWindow::commit(doc::Transaction transaction) {
+    return document_edited(history_->commit(std::move(transaction)));
+}
+
+doc::ChangeList MainWindow::undo() {
+    return document_edited(history_->undo());
+}
+
+doc::ChangeList MainWindow::redo() {
+    return document_edited(history_->redo());
+}
+
+doc::ChangeList MainWindow::document_edited(doc::ChangeList changes) {
+    if (!changes.empty()) {
+        // A full compile until the world updates from the change list (M2-24).
+        show_world(false);
+        emit document_changed(changes);
+    }
+    return changes;
+}
+
+void MainWindow::show_world(bool new_project) {
+    update_title();
+    problems_.clear();
+    const world::World world = world::compile(document());
+    for (const world::Problem& problem : world.problems) {
+        problems_.push_back("entity " + problem.entity.to_string() + ": " + problem.reason);
+    }
+    QString message;
+    if (!world.problems.empty()) {
+        message = tr("%n part(s) of the project cannot be shown; see the log", nullptr,
+                     static_cast<int>(world.problems.size()));
+    }
+    if (viewport_ != nullptr) {
+        if (new_project) {
+            // Each project starts at EV100 8; its first viewpoint, if any, sets its own.
+            viewport_->reset_exposure();
         }
         try {
-            const std::filesystem::path assets =
-                folder_ ? *folder_ / "assets" : std::filesystem::path();
-            for (const std::string& problem : viewport_->set_world(world, assets)) {
-                std::cerr << "curation: warning: " << problem << '\n';
-            }
+            const std::filesystem::path assets = current_assets_folder();
+            const std::vector<std::string> problems = new_project
+                                                          ? viewport_->set_world(world, assets)
+                                                          : viewport_->update_world(world, assets);
+            problems_.insert(problems_.end(), problems.begin(), problems.end());
         } catch (const std::exception& error) {
-            std::cerr << "curation: the viewport cannot show the project: " << error.what() << '\n';
+            problems_.push_back(std::string("the viewport cannot show the project: ") +
+                                error.what());
             // Why the viewport is empty matters more than the parts left out.
             message = tr("The viewport cannot show this project: %1")
                           .arg(QString::fromStdString(error.what()));
-            // An empty world, so that the previous project's picture does not stay on screen.
+            // An empty world, so that the previous picture does not stay on screen.
             try {
-                static_cast<void>(viewport_->set_world(world::World{}, {}));
+                static_cast<void>(viewport_->update_world(world::World{}, {}));
             } catch (const std::exception& empty_error) {
                 std::cerr << "curation: the viewport cannot be cleared: " << empty_error.what()
                           << '\n';
             }
         }
-        if (!message.isEmpty()) {
-            statusBar()->showMessage(message);
-        }
+    }
+    for (const std::string& problem : problems_) {
+        std::cerr << "curation: warning: " << problem << '\n';
+    }
+    if (message.isEmpty()) {
+        statusBar()->clearMessage();
+    } else {
+        statusBar()->showMessage(message);
     }
     update_status();
-    emit project_changed();
 }
 
 void MainWindow::update_title() {
