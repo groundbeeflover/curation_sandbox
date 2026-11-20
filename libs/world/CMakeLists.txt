@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# World's public headers carry geom's meshes, so its users see geom (M1-35). Never doc: the
-# engine and the GPU read the world, not the document.
-cs_add_module(NAME world DEPS core doc geom light material EXPORTS geom)
+# World's public headers carry geom's meshes, light's luminaires and material's painting
+# materials, so its users see those three (M1-35, M1-26). Never doc: the engine and the GPU read
+# the world, not the document.
+cs_add_module(NAME world DEPS core doc geom light material EXPORTS geom light material)
 
 # A test that every cs/world/ header compiles for a user of world that declares only what the
 # engine declares, and that doc is not reachable through world's exports (#61). The source is

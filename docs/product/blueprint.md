@@ -194,10 +194,10 @@ everything else stays private. Re-exports are marked *(re-exported)* below.
 | `light` | IES LM-63 parsing, photometric distributions (evaluate, sample, integrate), fixture library, conservation policy and exposure | core | |
 | `material` | `PaintingMaterial`, presets, finish-to-roughness mapping, the reference BRDF (evaluate, sample, pdf) | core | |
 | `assets` | image import with colour management, linearisation, mips, KTX2 encoding, the texture cache, catalogue manifest and verification | core | stb_image, libtiff, lcms2, KTX-Software |
-| `world` | compiles the document into the render world (meshes, instances, materials, lights, cameras) and updates it from each transaction's change list | core, doc, geom *(re-exported)*, light, material | |
+| `world` | compiles the document into the render world (meshes, instances, materials, lights, cameras) and updates it from each transaction's change list | core, doc, geom *(re-exported)*, light *(re-exported)*, material *(re-exported)* | |
 | `engine` | the calculation engine: Embree scene, path tracer, lux meter, baker, still renderer, denoising | core, world, light, material, assets | Embree, OIDN |
-| `gpu` | the Vulkan renderer: device, memory, swapchain and offscreen targets, texture residency, the Standard tier, later Ray-traced and GPU path tracing; shaders in `libs/gpu/shaders/` | core, world, light, material, assets | volk, vk-bootstrap, VMA, Slang |
-| `editor` | everything a curator does, without a UI: tools, commands, selection, snapping, measuring, camera controllers, checklist import, exports as CSV and drawing display lists | core, doc, world, geom, light, material, assets, engine | |
+| `gpu` | the Vulkan renderer: device, memory, swapchain and offscreen targets, texture residency, the Standard tier, later Ray-traced and GPU path tracing; shaders in `libs/gpu/shaders/` | core *(re-exported)*, world *(re-exported)*, light, material, assets *(re-exported)* | volk, vk-bootstrap, VMA, Slang |
+| `editor` | everything a curator does, without a UI: tools, commands, selection, snapping, measuring, camera controllers, checklist import, exports as CSV and drawing display lists | core, doc *(re-exported)*, world *(re-exported)*, geom, light, material, assets, engine | |
 | `ui` | the Qt Widgets shell, panels and the viewport adapter | editor, gpu, assets, core | Qt 6 |
 
 Applications under `apps/`: `curation` (the desktop app), `cs-render` (headless: render a

@@ -21,8 +21,10 @@ target_compile_definitions(cs_gpu_vulkan INTERFACE VK_NO_PROTOTYPES)
 target_link_libraries(cs_gpu_vulkan INTERFACE Vulkan::Headers volk::volk_headers)
 
 # vk-bootstrap for the instance and device, VMA for memory.
-# core is exported: OffscreenTarget::render returns a cs::Image.
-cs_add_module(NAME gpu DEPS core world light material assets EXPORTS core
+# core, world and assets are exported, as their types are in gpu's public headers:
+# OffscreenTarget::render returns a cs::Image, a Scene is made from a world::World with an
+# assets::Texture loader, and StandardTier::record takes a world::Camera.
+cs_add_module(NAME gpu DEPS core world light material assets EXPORTS core world assets
     EXTERNAL cs_gpu_vulkan vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator)
 
 # Every shaders/*.slang, compiled to SPIR-V and embedded (cs/gpu/pipeline.hpp).
