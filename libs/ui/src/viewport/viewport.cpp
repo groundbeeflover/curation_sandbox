@@ -93,6 +93,10 @@ QSize Viewport::render_size() const {
     return {static_cast<int>(renderer_->width()), static_cast<int>(renderer_->height())};
 }
 
+std::uint32_t Viewport::swapchains_created() const {
+    return window_ != nullptr ? window_->swapchains_created() : 0;
+}
+
 QImage Viewport::grab_frame() {
     if (headless_) {
         return headless_view_->frame();

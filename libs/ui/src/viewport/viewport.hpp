@@ -28,6 +28,7 @@
 #include <QTimer>
 #include <QWidget>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -84,8 +85,12 @@ class Viewport : public QWidget {
     [[nodiscard]] QSize render_size() const;
     // Frames drawn so far: presented by the window, or rendered by the headless view.
     [[nodiscard]] int frames() const { return frames_; }
-    // The last frame drawn, at render_size(), with the widget's device pixel ratio; a null image
-    // before the first. The window copies it back from its swapchain, which may cost a frame.
+    // Swapchains the window has made: the first, then one per change of size or surface. 0 when
+    // headless.
+    [[nodiscard]] std::uint32_t swapchains_created() const;
+    // The last frame drawn, with the widget's device pixel ratio; a null image before the first.
+    // Just after a new size settles it may still be at the old size, until the next frame. The
+    // window copies it back from its swapchain, which may cost a frame.
     [[nodiscard]] QImage grab_frame();
 
     // ---- Walking: relative pointer mode -----------------------------------------------------
