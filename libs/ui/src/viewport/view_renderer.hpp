@@ -17,10 +17,11 @@
 #include <cs/gpu/tonemap.hpp>
 #include <cs/world/world.hpp>
 
+#include "viewport/exposure.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -53,8 +54,14 @@ class ViewRenderer {
     // gpu::StandardTier does.
     void set_size(std::uint32_t width, std::uint32_t height);
 
-    void set_camera(const world::Camera& camera) { camera_ = camera; }
-    void set_ev100(double ev100) { ev100_ = ev100; }
+    void set_camera(const world::Camera& camera) {
+        camera_ = camera;
+        stale_ = true;
+    }
+    void set_ev100(double ev100) {
+        ev100_ = ev100;
+        stale_ = true;
+    }
     [[nodiscard]] const world::Camera& camera() const { return camera_; }
     [[nodiscard]] double ev100() const { return ev100_; }
 
@@ -63,10 +70,13 @@ class ViewRenderer {
     [[nodiscard]] std::uint32_t width() const { return width_; }
     [[nodiscard]] std::uint32_t height() const { return height_; }
 
+    // Something changed since the last record(): the world, the size, the camera or the EV100.
+    // Otherwise the display image still holds the last frame, and can be presented again as it is.
+    [[nodiscard]] bool stale() const { return stale_; }
     // Records the tier and the pass into a command buffer that is recording (when ready()). The
     // display image is then in TRANSFER_SRC_OPTIMAL, as present_source() says. Throws
     // std::invalid_argument, before recording anything, for a camera the tier refuses.
-    void record(VkCommandBuffer commands) const;
+    void record(VkCommandBuffer commands);
     // The display image, for Presenter::present() after the commands of record() were submitted.
     [[nodiscard]] gpu::PresentSource present_source() const;
 
@@ -76,14 +86,15 @@ class ViewRenderer {
 
   private:
     const gpu::Device* device_;
-    std::unique_ptr<world::World> world_;
+    std::vector<world::Light> lights_; // the world's: each new tier uploads them
     std::unique_ptr<gpu::Scene> scene_;
     std::unique_ptr<gpu::StandardTier> tier_;
     std::unique_ptr<gpu::ToneMapPass> pass_;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
     world::Camera camera_ = default_camera();
-    double ev100_ = 8.0;
+    double ev100_ = Exposure::default_ev100;
+    bool stale_ = true;
 
     void make_tier();
     void drop_tier();

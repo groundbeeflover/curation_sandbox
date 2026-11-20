@@ -1,33 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "viewport/view_renderer.hpp"
 
-#include <numbers>
+#include <cs/editor/camera_controller.hpp>
+
 #include <stdexcept>
 #include <utility>
 
 namespace cs::ui {
+
+static_assert(Exposure::max_ev100_magnitude == gpu::ToneMapPass::max_ev100_magnitude,
+              "the viewport clamps EV100 to what the tone-mapping pass takes");
 
 world::Camera default_camera() {
     world::Camera camera;
     camera.position_m = {0.0, 0.0, 1.6};
     camera.forward = {1.0, 0.0, 0.0};
     camera.up = {0.0, 0.0, 1.0};
-    camera.vertical_fov_rad = 50.0 * std::numbers::pi / 180.0;
+    camera.vertical_fov_rad = editor::default_vertical_fov_rad;
     return camera;
 }
 
 ViewRenderer::ViewRenderer(const gpu::Device& device) : device_(&device) {}
 
 ViewRenderer::~ViewRenderer() {
+    // Waits for the device, so the scene is free to go after it.
     drop_tier();
-    // drop_tier waited for the device, so the scene is free to go.
 }
 
 std::vector<std::string> ViewRenderer::set_world(const world::World& world,
                                                  const std::filesystem::path& assets_folder) {
     drop_tier();
     scene_.reset();
-    world_.reset();
+    lights_.clear();
 
     gpu::TextureLoader loader;
     if (assets_folder.empty()) {
@@ -43,7 +47,7 @@ std::vector<std::string> ViewRenderer::set_world(const world::World& world,
         problems.push_back("image " + problem.asset.sha256 + "." + problem.asset.extension +
                            " is shown as its base colour: " + problem.reason);
     }
-    world_ = std::make_unique<world::World>(world);
+    lights_ = world.lights;
     scene_ = std::move(scene);
     make_tier();
     return problems;
@@ -63,19 +67,14 @@ void ViewRenderer::make_tier() {
     if (!scene_ || width_ == 0 || height_ == 0) {
         return;
     }
-    try {
-        tier_ =
-            std::make_unique<gpu::StandardTier>(*device_, *scene_, world_->lights, width_, height_);
-        pass_ = std::make_unique<gpu::ToneMapPass>(*device_, *tier_);
-    } catch (...) {
-        pass_.reset();
-        tier_.reset();
-        throw;
-    }
+    auto tier = std::make_unique<gpu::StandardTier>(*device_, *scene_, lights_, width_, height_);
+    pass_ = std::make_unique<gpu::ToneMapPass>(*device_, *tier);
+    tier_ = std::move(tier);
+    stale_ = true;
 }
 
 void ViewRenderer::drop_tier() {
-    if (!tier_ && !pass_) {
+    if (!tier_) {
         return;
     }
     // A tier and its pass free everything at once: the frames that recorded them, and the
@@ -85,12 +84,13 @@ void ViewRenderer::drop_tier() {
     tier_.reset();
 }
 
-void ViewRenderer::record(VkCommandBuffer commands) const {
+void ViewRenderer::record(VkCommandBuffer commands) {
     if (!ready()) {
         throw std::logic_error("ViewRenderer::record: nothing to draw yet");
     }
     tier_->record(commands, camera_);
     pass_->record(commands, ev100_);
+    stale_ = false;
 }
 
 gpu::PresentSource ViewRenderer::present_source() const {

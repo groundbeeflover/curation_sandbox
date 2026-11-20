@@ -2,6 +2,7 @@
 #include <cs/ui/main_window.hpp>
 
 #include "features/feature.hpp"
+#include "viewport/exposure.hpp"
 #include "viewport/gpu_context.hpp"
 #include "viewport/viewport.hpp"
 
@@ -11,18 +12,15 @@
 #include <cs/world/world.hpp>
 
 #include <QAction>
-#include <QGuiApplication>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPainter>
 #include <QStatusBar>
-#include <QVariant>
 
 #include <algorithm>
 #include <exception>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -133,8 +131,7 @@ void MainWindow::new_project() {
 }
 
 void MainWindow::open_project(const std::filesystem::path& folder) {
-    auto document = std::make_unique<doc::Document>(doc::load_project_folder(folder));
-    document_ = std::move(document);
+    document_ = std::make_unique<doc::Document>(doc::load_project_folder(folder));
     folder_ = folder;
     show_project();
 }
@@ -184,7 +181,7 @@ void MainWindow::update_title() {
 // ---- The status bar ---------------------------------------------------------------------------
 
 QString MainWindow::exposure_status() const {
-    const double ev100 = viewport_ != nullptr ? viewport_->ev100() : 8.0;
+    const double ev100 = viewport_ != nullptr ? viewport_->ev100() : Exposure::default_ev100;
     return QStringLiteral("EV100 %1").arg(ev100, 0, 'f', 1);
 }
 
@@ -197,12 +194,11 @@ void MainWindow::update_status() {
     validation_label_->setText(validation_status());
 }
 
-void MainWindow::set_gpu(std::unique_ptr<GpuContext> gpu, QString problem) {
+void MainWindow::set_gpu(std::unique_ptr<GpuContext> gpu, bool headless, QString problem) {
     gpu_ = std::move(gpu);
     viewport_problem_ = std::move(problem);
     if (gpu_) {
         connect(gpu_.get(), &GpuContext::validation_message, this, &MainWindow::update_status);
-        const bool headless = QGuiApplication::platformName() == QLatin1String("offscreen");
         viewport_ = new Viewport(*gpu_, headless, this);
         connect(viewport_, &Viewport::ev100_changed, this, &MainWindow::update_status);
         connect(viewport_, &Viewport::frame_drawn, this, &MainWindow::viewport_frame_drawn);
@@ -231,14 +227,18 @@ QImage MainWindow::screenshot() {
     return image;
 }
 
-std::unique_ptr<MainWindow> make_main_window() {
+std::unique_ptr<MainWindow> make_main_window(const std::optional<std::filesystem::path>& project) {
     auto window = std::make_unique<MainWindow>();
-    const bool headless = QGuiApplication::platformName() == QLatin1String("offscreen");
+    const bool headless = !platform_has_vulkan_surfaces();
     QString problem;
     std::unique_ptr<GpuContext> gpu = make_app_gpu_context(headless, problem);
-    window->set_gpu(std::move(gpu), problem);
+    window->set_gpu(std::move(gpu), headless, problem);
     register_features(*window);
-    window->new_project();
+    if (project) {
+        window->open_project(*project);
+    } else {
+        window->new_project();
+    }
     return window;
 }
 

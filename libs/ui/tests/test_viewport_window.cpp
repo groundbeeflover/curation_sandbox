@@ -21,11 +21,10 @@
 namespace {
 
 void require_window_surfaces() {
-    const QString platform = QGuiApplication::platformName();
-    if (platform == QLatin1String("offscreen") || platform == QLatin1String("minimal")) {
+    if (!cs::ui::platform_has_vulkan_surfaces()) {
         SKIP("needs a platform with window surfaces (run without QT_QPA_PLATFORM on a desktop); "
              "the platform is "
-             << platform.toStdString());
+             << QGuiApplication::platformName().toStdString());
     }
 }
 
@@ -35,13 +34,13 @@ TEST_CASE("Viewport window: presents the skeleton and survives resizes without v
           "messages",
           "[ui]") {
     require_window_surfaces();
-    std::unique_ptr<cs::ui::MainWindow> window = cs::ui::make_main_window();
+    std::unique_ptr<cs::ui::MainWindow> window =
+        cs::ui::make_main_window(std::filesystem::path(CS_SOURCE_DIR) / "tests/scenes/skeleton");
     cs::ui::Viewport* viewport = window->viewport();
     if (viewport == nullptr) {
         SKIP("no Vulkan device: " << window->viewport_problem().toStdString());
     }
     REQUIRE_FALSE(viewport->headless());
-    window->open_project(std::filesystem::path(CS_SOURCE_DIR) / "tests/scenes/skeleton");
     window->resize(900, 600);
     window->show();
     REQUIRE(QTest::qWaitForWindowExposed(window.get()));

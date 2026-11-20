@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -53,10 +54,11 @@ int main(int argc, char* argv[]) {
 
     std::unique_ptr<cs::ui::MainWindow> window;
     try {
-        window = cs::ui::make_main_window();
+        std::optional<std::filesystem::path> project;
         if (!positional.isEmpty()) {
-            window->open_project(std::filesystem::path(positional.front().toStdU16String()));
+            project = std::filesystem::path(positional.front().toStdU16String());
         }
+        window = cs::ui::make_main_window(project);
     } catch (const std::exception& error) {
         std::cerr << "curation: " << error.what() << '\n';
         return 1;
@@ -84,7 +86,8 @@ int main(int argc, char* argv[]) {
     if (parser.isSet(screenshot_option)) {
         QObject::connect(
             window.get(), &cs::ui::MainWindow::viewport_frame_drawn, window.get(),
-            [&] { QTimer::singleShot(screenshot_settle_ms, window.get(), save_screenshot); });
+            [&] { QTimer::singleShot(screenshot_settle_ms, window.get(), save_screenshot); },
+            Qt::SingleShotConnection);
         QTimer::singleShot(screenshot_timeout_ms, window.get(), save_screenshot);
     }
     return QApplication::exec();

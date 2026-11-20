@@ -24,14 +24,12 @@
 #include <cs/world/world.hpp>
 
 #include <QImage>
-#include <QPointer>
 #include <QTimer>
 #include <QWidget>
 
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,6 +42,10 @@ class HeadlessView;
 class PointerLock;
 class ViewRenderer;
 class VulkanWindow;
+
+// Whether the Qt platform makes Vulkan surfaces for windows: false on offscreen (and minimal),
+// where the viewport is headless.
+[[nodiscard]] bool platform_has_vulkan_surfaces();
 
 class Viewport : public QWidget {
     Q_OBJECT
@@ -61,7 +63,7 @@ class Viewport : public QWidget {
     Viewport(Viewport&&) = delete;
     Viewport& operator=(Viewport&&) = delete;
 
-    [[nodiscard]] bool headless() const { return headless_; }
+    [[nodiscard]] bool headless() const { return headless_view_ != nullptr; }
 
     // ---- What it shows ----------------------------------------------------------------------
 
@@ -114,9 +116,8 @@ class Viewport : public QWidget {
     bool event(QEvent* event) override;
 
   private:
-    friend class HeadlessView;
-    friend class VulkanWindow;
-
+    // After the exposure changed from `before`: the renderer follows, ev100_changed when it moved.
+    void exposure_changed(double before);
     void size_changed();
     void settle_size();
     void request_frame();
@@ -124,8 +125,6 @@ class Viewport : public QWidget {
     QWindow* pointer_window() const;
     PointerLock& pointer_lock();
 
-    GpuContext* gpu_;
-    bool headless_;
     Exposure exposure_;
     std::unique_ptr<ViewRenderer> renderer_;
     QTimer settle_timer_;

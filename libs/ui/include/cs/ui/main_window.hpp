@@ -119,9 +119,10 @@ class MainWindow : public QMainWindow {
     void viewport_frame_drawn();
 
   private:
-    friend std::unique_ptr<MainWindow> make_main_window();
+    friend std::unique_ptr<MainWindow>
+    make_main_window(const std::optional<std::filesystem::path>& project);
 
-    void set_gpu(std::unique_ptr<GpuContext> gpu, QString problem);
+    void set_gpu(std::unique_ptr<GpuContext> gpu, bool headless, QString problem);
     void show_project();
     void update_title();
     void update_status();
@@ -138,9 +139,11 @@ class MainWindow : public QMainWindow {
 
 // The application's window: a Vulkan device (headless on the offscreen platform, where the
 // viewport draws into an image instead of a window surface), the viewport, every feature of
-// libs/ui/src/features/ and an empty project. Without a Vulkan device the window still opens,
-// with viewport() null and viewport_problem() saying why; it throws only when CS_REQUIRE_GPU is
-// set (as the GPU tests do), and as cs::gpu::Device does for any other failure.
-std::unique_ptr<MainWindow> make_main_window();
+// libs/ui/src/features/, and the project folder given, or else an empty project. Without a
+// Vulkan device the window still opens, with viewport() null and viewport_problem() saying why;
+// it throws when CS_REQUIRE_GPU is set (as the GPU tests do), as cs::gpu::Device does for any
+// other failure, and as open_project() does.
+std::unique_ptr<MainWindow>
+make_main_window(const std::optional<std::filesystem::path>& project = std::nullopt);
 
 } // namespace cs::ui

@@ -10,17 +10,22 @@
 
 namespace cs::ui {
 
-class Viewport;
+class ViewRenderer;
 
 class HeadlessView : public QWidget {
     Q_OBJECT
   public:
-    explicit HeadlessView(Viewport& viewport);
+    // The renderer must outlive the view.
+    HeadlessView(const ViewRenderer& renderer, QWidget* parent);
 
     // Renders a frame at the next turn of the event loop.
     void request_frame();
     // The last frame rendered, with the widget's device pixel ratio.
     [[nodiscard]] const QImage& frame() const { return frame_; }
+
+  signals:
+    // A frame was rendered.
+    void frame_drawn();
 
   protected:
     void paintEvent(QPaintEvent* event) override;
@@ -28,7 +33,7 @@ class HeadlessView : public QWidget {
   private:
     void draw();
 
-    Viewport* viewport_;
+    const ViewRenderer* renderer_;
     QImage frame_;
     bool pending_ = false;
 };

@@ -8,6 +8,7 @@
 #include "viewport/vulkan_window.hpp"
 
 #include <QEvent>
+#include <QGuiApplication>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -17,9 +18,13 @@
 
 namespace cs::ui {
 
+bool platform_has_vulkan_surfaces() {
+    const QString platform = QGuiApplication::platformName();
+    return platform != QLatin1String("offscreen") && platform != QLatin1String("minimal");
+}
+
 Viewport::Viewport(GpuContext& gpu, bool headless, QWidget* parent)
-    : QWidget(parent), gpu_(&gpu), headless_(headless),
-      renderer_(std::make_unique<ViewRenderer>(gpu.device())) {
+    : QWidget(parent), renderer_(std::make_unique<ViewRenderer>(gpu.device())) {
     setObjectName(QStringLiteral("viewport"));
     setMinimumSize(64, 64);
     renderer_->set_ev100(exposure_.ev100());
@@ -30,11 +35,13 @@ Viewport::Viewport(GpuContext& gpu, bool headless, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    if (headless_) {
-        headless_view_ = new HeadlessView(*this);
+    if (headless) {
+        headless_view_ = new HeadlessView(*renderer_, this);
+        connect(headless_view_, &HeadlessView::frame_drawn, this, &Viewport::frame_done);
         layout->addWidget(headless_view_);
     } else {
-        window_ = new VulkanWindow(*this);
+        window_ = new VulkanWindow(gpu.device(), *renderer_);
+        connect(window_, &VulkanWindow::frame_drawn, this, &Viewport::frame_done);
         container_ = QWidget::createWindowContainer(window_, this);
         layout->addWidget(container_);
     }
@@ -63,11 +70,7 @@ void Viewport::show_viewpoint(const world::Camera& viewpoint) {
     const double before = exposure_.ev100();
     exposure_.view_from(viewpoint);
     renderer_->set_camera(viewpoint);
-    renderer_->set_ev100(exposure_.ev100());
-    if (exposure_.ev100() != before) {
-        emit ev100_changed(exposure_.ev100());
-    }
-    request_frame();
+    exposure_changed(before);
 }
 
 void Viewport::set_camera(const world::Camera& camera) {
@@ -78,6 +81,10 @@ void Viewport::set_camera(const world::Camera& camera) {
 void Viewport::reset_exposure() {
     const double before = exposure_.ev100();
     exposure_.reset();
+    exposure_changed(before);
+}
+
+void Viewport::exposure_changed(double before) {
     renderer_->set_ev100(exposure_.ev100());
     if (exposure_.ev100() != before) {
         emit ev100_changed(exposure_.ev100());
@@ -98,7 +105,7 @@ std::uint32_t Viewport::swapchains_created() const {
 }
 
 QImage Viewport::grab_frame() {
-    if (headless_) {
+    if (headless_view_ != nullptr) {
         return headless_view_->frame();
     }
     return window_->grab_frame();
@@ -135,6 +142,9 @@ void Viewport::settle_size() {
     const double ratio = devicePixelRatioF();
     const auto width = static_cast<std::uint32_t>(std::lround(this->width() * ratio));
     const auto height = static_cast<std::uint32_t>(std::lround(this->height() * ratio));
+    if (width == renderer_->width() && height == renderer_->height()) {
+        return;
+    }
     try {
         renderer_->set_size(width, height);
     } catch (const std::exception& error) {

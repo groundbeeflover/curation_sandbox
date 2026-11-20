@@ -2,7 +2,6 @@
 #include "viewport/headless_view.hpp"
 
 #include "viewport/view_renderer.hpp"
-#include "viewport/viewport.hpp"
 
 #include <QPainter>
 #include <QTimer>
@@ -14,7 +13,8 @@
 
 namespace cs::ui {
 
-HeadlessView::HeadlessView(Viewport& viewport) : QWidget(&viewport), viewport_(&viewport) {
+HeadlessView::HeadlessView(const ViewRenderer& renderer, QWidget* parent)
+    : QWidget(parent), renderer_(&renderer) {
     setAttribute(Qt::WA_OpaquePaintEvent);
 }
 
@@ -30,7 +30,7 @@ void HeadlessView::request_frame() {
 }
 
 void HeadlessView::draw() {
-    const ViewRenderer& renderer = *viewport_->renderer_;
+    const ViewRenderer& renderer = *renderer_;
     if (!renderer.ready()) {
         return;
     }
@@ -46,7 +46,7 @@ void HeadlessView::draw() {
         return;
     }
     update();
-    viewport_->frame_done();
+    emit frame_drawn();
 }
 
 void HeadlessView::paintEvent(QPaintEvent* /*event*/) {

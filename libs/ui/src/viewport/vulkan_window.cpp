@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "viewport/vulkan_window.hpp"
 
-#include "viewport/gpu_context.hpp"
 #include "viewport/view_renderer.hpp"
-#include "viewport/viewport.hpp"
 
 #include <QEvent>
 #include <QPlatformSurfaceEvent>
@@ -35,8 +33,8 @@ void check(VkResult result, const char* what) {
 
 } // namespace
 
-VulkanWindow::VulkanWindow(Viewport& viewport)
-    : viewport_(&viewport), device_(&viewport.gpu_->device()) {
+VulkanWindow::VulkanWindow(const gpu::Device& device, ViewRenderer& renderer)
+    : device_(&device), renderer_(&renderer) {
     setSurfaceType(QSurface::VulkanSurface);
     instance_.setVkInstance(device_->instance());
     if (!instance_.create()) {
@@ -67,7 +65,6 @@ VulkanWindow::VulkanWindow(Viewport& viewport)
                   "vkAllocateCommandBuffers");
             check(vkCreateFence(device_->device(), &fence, nullptr, &frame.done), "vkCreateFence");
         } catch (...) {
-            drop_presenter();
             for (Frame& made : frames_) {
                 if (made.done != VK_NULL_HANDLE) {
                     vkDestroyFence(device_->device(), made.done, nullptr);
@@ -132,6 +129,14 @@ bool VulkanWindow::ensure_presenter() {
     return true;
 }
 
+void VulkanWindow::resize_presenter() {
+    if (presenter_) {
+        const QSize size = pixel_size();
+        presenter_->resize(static_cast<std::uint32_t>(size.width()),
+                           static_cast<std::uint32_t>(size.height()));
+    }
+}
+
 void VulkanWindow::drop_presenter() noexcept {
     if (presenter_) {
         // The presenter's fences are private, and our frames may be in flight with its images.
@@ -140,64 +145,64 @@ void VulkanWindow::drop_presenter() noexcept {
     }
 }
 
-bool VulkanWindow::draw(bool read_back, QImage* image) {
-    ViewRenderer& renderer = *viewport_->renderer_;
+bool VulkanWindow::draw(QImage* read_back) {
+    ViewRenderer& renderer = *renderer_;
     if (!renderer.ready() || !ensure_presenter()) {
         return false;
     }
-    const VkDevice device = device_->device();
-    Frame& frame = frames_[frame_];
-    check(vkWaitForFences(device, 1, &frame.done, VK_TRUE, fence_timeout_ns), "vkWaitForFences");
+    if (renderer.stale()) {
+        const VkDevice device = device_->device();
+        Frame& frame = frames_[frame_];
+        check(vkWaitForFences(device, 1, &frame.done, VK_TRUE, fence_timeout_ns),
+              "vkWaitForFences");
 
-    // Recorded first, so that a camera the tier refuses leaves the fence signalled.
-    check(vkResetCommandBuffer(frame.commands, 0), "vkResetCommandBuffer");
-    VkCommandBufferBeginInfo begin{};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    check(vkBeginCommandBuffer(frame.commands, &begin), "vkBeginCommandBuffer");
-    try {
-        renderer.record(frame.commands);
-    } catch (...) {
-        vkEndCommandBuffer(frame.commands);
-        throw;
+        // Recorded first, so that a camera the tier refuses leaves the fence signalled.
+        check(vkResetCommandBuffer(frame.commands, 0), "vkResetCommandBuffer");
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        check(vkBeginCommandBuffer(frame.commands, &begin), "vkBeginCommandBuffer");
+        try {
+            renderer.record(frame.commands);
+        } catch (...) {
+            vkEndCommandBuffer(frame.commands);
+            throw;
+        }
+        check(vkEndCommandBuffer(frame.commands), "vkEndCommandBuffer");
+
+        check(vkResetFences(device, 1, &frame.done), "vkResetFences");
+        VkCommandBufferSubmitInfo command_info{};
+        command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        command_info.commandBuffer = frame.commands;
+        VkSubmitInfo2 submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submit.commandBufferInfoCount = 1;
+        submit.pCommandBufferInfos = &command_info;
+        check(vkQueueSubmit2(device_->queue(), 1, &submit, frame.done), "vkQueueSubmit2");
+        frame_ = (frame_ + 1) % static_cast<std::uint32_t>(frames_.size());
     }
-    check(vkEndCommandBuffer(frame.commands), "vkEndCommandBuffer");
-
-    check(vkResetFences(device, 1, &frame.done), "vkResetFences");
-    VkCommandBufferSubmitInfo command_info{};
-    command_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    command_info.commandBuffer = frame.commands;
-    VkSubmitInfo2 submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    submit.commandBufferInfoCount = 1;
-    submit.pCommandBufferInfos = &command_info;
-    check(vkQueueSubmit2(device_->queue(), 1, &submit, frame.done), "vkQueueSubmit2");
-    frame_ = (frame_ + 1) % static_cast<std::uint32_t>(frames_.size());
 
     const gpu::PresentSource source = renderer.present_source();
-    if (!read_back) {
-        return presenter_->present(source);
-    }
-    if (!presenter_->can_read_back()) {
+    if (read_back == nullptr || !presenter_->can_read_back()) {
         return presenter_->present(source);
     }
     const std::optional<gpu::PresentedImage> presented = presenter_->present_and_read_back(source);
     if (!presented) {
         return false;
     }
-    QImage copy(reinterpret_cast<const uchar*>(presented->rgba.data()),
-                static_cast<int>(presented->width), static_cast<int>(presented->height),
-                static_cast<qsizetype>(presented->width) * 4, QImage::Format_RGBA8888);
-    *image = copy.copy();
-    image->setDevicePixelRatio(devicePixelRatio());
+    const QImage view(reinterpret_cast<const uchar*>(presented->rgba.data()),
+                      static_cast<int>(presented->width), static_cast<int>(presented->height),
+                      static_cast<qsizetype>(presented->width) * 4, QImage::Format_RGBA8888);
+    *read_back = view.copy();
+    read_back->setDevicePixelRatio(devicePixelRatio());
     return true;
 }
 
 QImage VulkanWindow::grab_frame() {
     QImage image;
     try {
-        if (draw(true, &image)) {
-            viewport_->frame_done();
+        if (draw(&image)) {
+            emit frame_drawn();
         }
     } catch (const std::exception& error) {
         std::cerr << "curation: the viewport could not draw: " << error.what() << '\n';
@@ -212,7 +217,7 @@ bool VulkanWindow::event(QEvent* event) {
     case QEvent::UpdateRequest: {
         bool shown = false;
         try {
-            shown = draw(false, nullptr);
+            shown = draw();
         } catch (const std::invalid_argument& error) {
             // A camera the tier refuses: nothing was submitted, and the next camera may do.
             std::cerr << "curation: the viewport could not draw: " << error.what() << '\n';
@@ -225,7 +230,7 @@ bool VulkanWindow::event(QEvent* event) {
         }
         if (shown) {
             skipped_ = 0;
-            viewport_->frame_done();
+            emit frame_drawn();
         } else if (presenter_ && ++skipped_ < max_skipped_frames) {
             requestUpdate();
         }
@@ -240,11 +245,7 @@ bool VulkanWindow::event(QEvent* event) {
         break;
     case QEvent::DevicePixelRatioChange:
         // A move to a screen of another scale: the swapchain follows the size in device pixels.
-        if (presenter_) {
-            const QSize size = pixel_size();
-            presenter_->resize(static_cast<std::uint32_t>(size.width()),
-                               static_cast<std::uint32_t>(size.height()));
-        }
+        resize_presenter();
         request_frame();
         break;
     default:
@@ -261,11 +262,7 @@ void VulkanWindow::exposeEvent(QExposeEvent* /*event*/) {
 }
 
 void VulkanWindow::resizeEvent(QResizeEvent* /*event*/) {
-    if (presenter_) {
-        const QSize size = pixel_size();
-        presenter_->resize(static_cast<std::uint32_t>(size.width()),
-                           static_cast<std::uint32_t>(size.height()));
-    }
+    resize_presenter();
     request_frame();
 }
 

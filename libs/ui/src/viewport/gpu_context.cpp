@@ -3,34 +3,10 @@
 
 #include <cs/gpu/device.hpp>
 
-#include <cstdlib>
 #include <iostream>
-#include <optional>
-#include <string>
 #include <utility>
 
 namespace cs::ui {
-
-namespace {
-
-std::optional<std::string> environment_variable(const char* name) {
-#ifdef _WIN32
-    // MSVC deprecates getenv (an error under /WX).
-    char* value = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&value, &size, name) != 0 || value == nullptr) {
-        return std::nullopt;
-    }
-    std::string result(value);
-    std::free(value);
-    return result;
-#else
-    const char* value = std::getenv(name);
-    return value != nullptr ? std::optional<std::string>(value) : std::nullopt;
-#endif
-}
-
-} // namespace
 
 QString validation_status_text(bool active, std::size_t count) {
     if (!active) {
@@ -40,8 +16,8 @@ QString validation_status_text(bool active, std::size_t count) {
 }
 
 bool gpu_required() {
-    const std::optional<std::string> value = environment_variable("CS_REQUIRE_GPU");
-    return value && !value->empty() && *value != "0";
+    const QString value = qEnvironmentVariable("CS_REQUIRE_GPU");
+    return !value.isEmpty() && value != QLatin1String("0");
 }
 
 gpu::DeviceOptions app_device_options(bool headless) {

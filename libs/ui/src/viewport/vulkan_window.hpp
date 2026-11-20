@@ -7,7 +7,9 @@
 //
 // Each frame: the renderer's StandardTier::record and ToneMapPass::record into a command buffer
 // of this window, submitted, then Presenter::present() of the display image (no barriers are
-// needed between them). Two frames are in flight, as in the presenter.
+// needed between them). Two frames are in flight, as in the presenter. When nothing the renderer
+// draws has changed (a resize waiting to settle, an expose), the display image is presented again
+// without recording.
 //
 // The swapchain follows the window's size in device pixels (the logical size times
 // devicePixelRatio()), on a resize and on a move to a screen of another scale. When the platform
@@ -30,14 +32,14 @@
 
 namespace cs::ui {
 
-class Viewport;
+class ViewRenderer;
 
 class VulkanWindow : public QWindow {
     Q_OBJECT
   public:
-    // The viewport owns the renderer and the GPU, which outlive the window. Throws
-    // std::runtime_error when Qt cannot wrap the device's instance.
-    explicit VulkanWindow(Viewport& viewport);
+    // The device and the renderer must outlive the window. Throws std::runtime_error when Qt
+    // cannot wrap the device's instance.
+    VulkanWindow(const gpu::Device& device, ViewRenderer& renderer);
     // In this order (ADR 0011, point 2): wait for the device, free the frames and the presenter,
     // destroy the native window and its surface, then the QVulkanInstance.
     ~VulkanWindow() override;
@@ -55,6 +57,10 @@ class VulkanWindow : public QWindow {
     // How many swapchains have been made, for logs.
     [[nodiscard]] std::uint32_t swapchains_created() const;
 
+  signals:
+    // A frame was shown.
+    void frame_drawn();
+
   protected:
     bool event(QEvent* event) override;
     void exposeEvent(QExposeEvent* event) override;
@@ -66,22 +72,25 @@ class VulkanWindow : public QWindow {
         VkFence done = VK_NULL_HANDLE; // created signalled
     };
 
-    Viewport* viewport_;
     const gpu::Device* device_;
+    ViewRenderer* renderer_;
     QVulkanInstance instance_;
     std::unique_ptr<gpu::Presenter> presenter_;
     VkCommandPool pool_ = VK_NULL_HANDLE;
     std::array<Frame, gpu::Presenter::frames_in_flight> frames_{};
     std::uint32_t frame_ = 0;
     int skipped_ = 0; // frames in a row that present() did not show
-    bool surface_lost_ =
-        false; // a failure the presenter cannot recover from, until the next expose
+    // A failure the presenter cannot recover from: no new one until the next expose.
+    bool surface_lost_ = false;
 
     QSize pixel_size() const;
     bool ensure_presenter();
     void drop_presenter() noexcept;
-    // Records and submits the renderer's frame, then presents. Returns what present() did.
-    bool draw(bool read_back, QImage* image);
+    // The swapchain follows the window's size in device pixels.
+    void resize_presenter();
+    // Records and submits the renderer's frame when it is stale, then presents, copying the frame
+    // back into *read_back when it is given. Returns what present() did.
+    bool draw(QImage* read_back = nullptr);
 };
 
 } // namespace cs::ui
