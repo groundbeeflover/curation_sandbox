@@ -4,8 +4,8 @@
 # - Linux, debug (Clang with ASan and UBSan): `ctest -L gpu`, the validation layer required
 #   (ADR 0011) and LeakSanitizer on;
 # - Linux, release (GCC): `ctest -L golden`;
-# - Windows, debug (MSVC): `ctest -L gpu`, the validation layer required, building only what it
-#   runs.
+# - Windows, debug (MSVC): `ctest -L engine` and `ctest -L gpu`, the validation layer required,
+#   building only what they run.
 #
 # CS_REQUIRE_GPU=1 makes a missing device, or in a debug build a missing validation layer, a
 # failure rather than a skip. A golden test that fails, or skips for want of a reference for
@@ -148,7 +148,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-x64-linux-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-x64-linux-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/x64-linux.cmake') }}
           restore-keys: vcpkg-x64-linux-
 
       # ci.yml's entry for the same compiler and preset, whose commands this build repeats.
@@ -193,7 +193,7 @@ jobs:
           if-no-files-found: ignore
 
   windows:
-    name: lavapipe (Windows, msvc, debug, -L gpu)
+    name: lavapipe (Windows, msvc, debug, -L engine, -L gpu)
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -249,7 +249,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-x64-windows-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-x64-windows-${{ steps.vcpkg.outputs.image }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/x64-windows.cmake') }}
           restore-keys: vcpkg-x64-windows-
 
       - name: MSVC environment
@@ -273,26 +273,39 @@ jobs:
           cmake --preset debug -DCMAKE_CXX_COMPILER=cl -DVCPKG_TARGET_TRIPLET=x64-windows \
             -DVCPKG_INSTALL_OPTIONS=--clean-after-build -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded \
             -DCS_WARNINGS_AS_ERRORS=ON $launcher
-      # Only what `-L gpu` runs: the gpu module's tests, the integration tests and cs-render (its
-      # checks and the Standard tier's golden tests). CTest lists Catch2's tests by running their
-      # executables, so the others, which ci.yml builds and runs in release, are simply absent.
+      # Only what `-L engine` and `-L gpu` run: the engine's and the gpu module's tests, the
+      # integration tests and cs-render (its checks and the Standard tier's golden tests). CTest
+      # lists Catch2's tests by running their executables, so the others, which ci.yml builds and
+      # runs in release, are simply absent.
       - name: Build
         id: build
-        run: cmake --build --preset debug --target cs_gpu_tests cs_integration_tests cs-render
+        run: cmake --build --preset debug --target cs_gpu_tests cs_engine_tests cs_integration_tests cs-render
 
       - name: Device report
         run: ./build/debug/apps/cs-render/cs-render.exe --device-report
+      # The CPU picks which of Embree's kernels run, and the runners differ: the MSVC debug crash
+      # of M1-46 (#168) happened only on those with AVX-512.
+      - name: CPU
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # 41 is PF_AVX512F_INSTRUCTIONS_AVAILABLE: the CPU has AVX-512F and Windows enables it.
+          Add-Type -Namespace Win32 -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(uint feature);'
+          $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+          "$($cpu.Name.Trim()), $($cpu.NumberOfLogicalProcessors) threads, AVX-512: $([Win32.Cpu]::IsProcessorFeaturePresent(41))"
 
-      # Four tests are left out here, and only here, until their follow-ups (PR #166) land:
-      # - the three that build the engine's Embree scene (the two Standard-vs-engine integration
-      #   tests, and cs-render --tier standard, whose lux comes from the engine): an MSVC debug
-      #   build crashes there with an access violation, which no job saw before;
-      # - the one that disables the validation layer through VK_LOADER_LAYERS_DISABLE, which the
-      #   loader ignores in the runner's elevated process (ADR 0010).
+      # The engine in MSVC debug: the debug CRT, checked iterators and vcpkg's debug Embree, none
+      # of which ci.yml's release job runs.
+      - name: Tests (-L engine)
+        run: ctest --preset debug -L engine --timeout 300
+      # One test is left out here, and only here, until its follow-up (PR #166) lands: the one
+      # that disables the validation layer through VK_LOADER_LAYERS_DISABLE, which the loader
+      # ignores in the runner's elevated process (ADR 0010).
       - name: Tests (-L gpu)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: >-
           ctest --preset debug -L gpu --timeout 120
-          -E "without the validation layer, required throws|--tier standard renders the skeleton|standard vs engine: the skeleton"
+          -E "without the validation layer, required throws"
       - name: Upload golden-out
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
