@@ -103,10 +103,11 @@ class MainWindow : public QMainWindow {
     // another folder: each through a temporary file renamed once whole, skipping a file already
     // there. Then writes the document (doc::save_project_folder). Throws before writing the
     // document when an asset cannot be copied (std::invalid_argument for a name
-    // assets::asset_file refuses, std::filesystem::filesystem_error for a failed copy), and as
+    // assets::asset_file refuses, std::runtime_error for a failed copy), and as
     // save_project_folder does; the project's folder stays as it was. An asset the document names
-    // but the folder lacks, or holds as anything but a regular file, is not copied (the log says
-    // so): the project already shows it as a problem.
+    // but the folder lacks, holds as anything but a regular file, or holds as anything but the
+    // image its name says (assets::store_image checks it), is not copied (the log says so): the
+    // project already shows it as a problem.
     void save_project(const std::filesystem::path& folder);
 
     // Where the project's images are stored (assets::store_image) and loaded from:
@@ -121,7 +122,9 @@ class MainWindow : public QMainWindow {
     // changed. When something changed: the world is compiled again, the viewport shows it from
     // the same camera at the same EV100, and document_changed() is emitted. Throws as
     // History::commit does (std::invalid_argument for a transaction made for another revision,
-    // doc::ReferenceError for a dangling reference), and then changes nothing.
+    // doc::ReferenceError for a dangling reference), and then changes nothing. A transaction
+    // refers to the document it was made for, which New and Open replace: commit it before
+    // either, never after.
     doc::ChangeList commit(doc::Transaction transaction);
     // Undo and redo the last transaction (doc::History), with the same refresh and signal as
     // commit(). Throw std::logic_error when there is nothing to undo or redo.
@@ -177,6 +180,7 @@ class MainWindow : public QMainWindow {
     std::optional<std::filesystem::path> folder_;
     std::unique_ptr<QTemporaryDir> untitled_assets_; // an untitled project's assets_folder()
     std::vector<std::string> problems_;
+    QString problem_message_; // the status bar message show_world() last showed
     std::vector<InspectorPage> pages_;
     std::unique_ptr<GpuContext> gpu_; // outlives the viewport: ~MainWindow deletes it first
     Viewport* viewport_ = nullptr;    // the central widget's, when there is one

@@ -153,10 +153,7 @@ void MainWindow::open_project(const std::filesystem::path& folder) {
 }
 
 void MainWindow::save_project(const std::filesystem::path& folder) {
-    const std::filesystem::path from = current_assets_folder();
-    if (!from.empty()) {
-        copy_project_assets(document(), from, folder / "assets");
-    }
+    copy_project_assets(document(), current_assets_folder(), folder / "assets");
     doc::save_project_folder(document(), folder);
     folder_ = folder;
     // The images are in the project's folder now.
@@ -166,10 +163,7 @@ void MainWindow::save_project(const std::filesystem::path& folder) {
 }
 
 std::filesystem::path MainWindow::assets_folder() {
-    if (folder_) {
-        return *folder_ / "assets";
-    }
-    if (!untitled_assets_) {
+    if (!folder_ && !untitled_assets_) {
         auto folder = std::make_unique<QTemporaryDir>();
         if (!folder->isValid()) {
             throw std::runtime_error("cannot make a temporary folder for the project's images: " +
@@ -177,7 +171,7 @@ std::filesystem::path MainWindow::assets_folder() {
         }
         untitled_assets_ = std::move(folder);
     }
-    return std::filesystem::path(untitled_assets_->path().toStdU16String());
+    return current_assets_folder();
 }
 
 std::filesystem::path MainWindow::current_assets_folder() const {
@@ -207,8 +201,14 @@ doc::ChangeList MainWindow::redo() {
 
 doc::ChangeList MainWindow::document_edited(doc::ChangeList changes) {
     if (!changes.empty()) {
-        // A full compile until the world updates from the change list (M2-24).
-        show_world(false);
+        // The change is in the history now: whatever showing it does, features hear of it.
+        try {
+            // A full compile until the world updates from the change list (M2-24).
+            show_world(false);
+        } catch (const std::exception& error) {
+            problems_ = {std::string("the project cannot be shown: ") + error.what()};
+            std::cerr << "curation: warning: " << problems_.front() << '\n';
+        }
         emit document_changed(changes);
     }
     return changes;
@@ -255,11 +255,13 @@ void MainWindow::show_world(bool new_project) {
     for (const std::string& problem : problems_) {
         std::cerr << "curation: warning: " << problem << '\n';
     }
-    if (message.isEmpty()) {
-        statusBar()->clearMessage();
-    } else {
+    // Only the window's own message is cleared, never one a feature has shown since.
+    if (!message.isEmpty()) {
         statusBar()->showMessage(message);
+    } else if (!problem_message_.isEmpty() && statusBar()->currentMessage() == problem_message_) {
+        statusBar()->clearMessage();
     }
+    problem_message_ = message;
     update_status();
 }
 

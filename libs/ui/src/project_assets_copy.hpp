@@ -14,17 +14,20 @@ class Document;
 namespace cs::ui {
 
 // Copies every asset `document` names (works' images) from the folder `from` into `to`, which is
-// made if it does not exist. Nothing is copied when the two are the same folder.
+// made if it does not exist. Nothing is copied when the two are the same folder; when `from` is
+// empty (an untitled project that stored no image), nothing is copied and the log names each
+// image.
 // - Each name is checked by assets::asset_file, since the document may come from a project
 //   someone sent: a name it refuses throws std::invalid_argument.
 // - A file already at the destination as a regular file is kept: assets are named by their
 //   content.
-// - A source that is missing, is not a regular file (a symbolic link someone planted), or is
-//   larger than assets::max_texture_file_bytes is not copied, and the log says so; the project
-//   already shows that image as a problem.
-// - Each copy goes to <name>.tmp beside the asset, replacing whatever is there without writing
-//   through a link, and is renamed once whole, so a failed save leaves no partial asset.
-// Throws std::filesystem::filesystem_error when a folder cannot be made or a copy fails.
+// - Each copy is made by assets::store_image, which checks it as every tier reads it and writes it
+//   through a temporary file renamed once whole. A source that is missing, is not a regular file
+//   (a symbolic link someone planted), is not an image store_image accepts, or whose content is
+//   not its name's, is not copied, and the log says so; the project already shows that image as
+//   a problem.
+// Throws std::runtime_error (std::filesystem::filesystem_error among them) when a folder cannot
+// be made or a copy cannot be written.
 void copy_project_assets(const doc::Document& document, const std::filesystem::path& from,
                          const std::filesystem::path& to);
 
