@@ -7,6 +7,7 @@
 #include "viewport/gpu_context.hpp"
 #include "viewport/viewport.hpp"
 
+#include <cs/core/random.hpp>
 #include <cs/doc/document.hpp>
 #include <cs/doc/project_io.hpp>
 #include <cs/world/compile.hpp>
@@ -21,6 +22,8 @@
 #include <QTemporaryDir>
 
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <stdexcept>
@@ -42,6 +45,18 @@ QString plain_title(const QString& title) {
     plain.remove(QLatin1Char('&'));
     plain.replace(QLatin1Char('\x01'), QLatin1Char('&'));
     return plain;
+}
+
+// The seed of a window's id generator: a fixed value and the window's number in this process, as
+// CLAUDE.md asks of all randomness (no std::random_device, time or address). It is enough because
+// an id's first 48 bits are the millisecond it was made in, from the clock, and one generator
+// never repeats an id: within a millisecond it counts up from a random start. The number keeps
+// two windows of one process apart. Only two processes making ids in the same millisecond could
+// start from the same value; ids need be unique only within a project, and two processes hold
+// two projects.
+std::uint64_t next_id_seed() {
+    static std::atomic<std::uint32_t> windows_made{0};
+    return hash_seed(0x6375726174696f6e /* "curation" */, windows_made.fetch_add(1), 0, 0, 0);
 }
 
 int order_of(const QAction* action) {
@@ -68,7 +83,7 @@ QAction* insertion_point(const QList<QAction*>& actions, int order, const QStrin
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent), history_(std::make_unique<doc::History>()) {
+    : QMainWindow(parent), history_(std::make_unique<doc::History>()), ids_(next_id_seed()) {
     setObjectName(QStringLiteral("main_window"));
     resize(1280, 800);
     exposure_label_ = new QLabel(this);

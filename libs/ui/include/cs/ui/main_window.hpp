@@ -20,6 +20,7 @@
 
 #include <cs/doc/history.hpp>
 #include <cs/doc/transaction.hpp>
+#include <cs/doc/uuid.hpp>
 
 #include <QImage>
 #include <QMainWindow>
@@ -118,6 +119,13 @@ class MainWindow : public QMainWindow {
 
     // ---- Changing the document --------------------------------------------------------------
 
+    // The window's one id generator, for every feature that adds an entity, a work or a fixture
+    // type (editor's commands take it). Features share it rather than each making its own: ids
+    // from one generator are all different and grow, even within one millisecond, whereas two
+    // generators with one seed would make the same id in the same millisecond. It lasts as long
+    // as the window; New and Open keep it, so ids still only grow.
+    [[nodiscard]] doc::IdGenerator& ids() { return ids_; }
+
     // Commits a transaction made for document() (doc::History::commit) and returns what it
     // changed. When something changed: the world is compiled again, the viewport shows it from
     // the same camera at the same EV100, and document_changed() is emitted. Throws as
@@ -177,6 +185,7 @@ class MainWindow : public QMainWindow {
     void update_status();
 
     std::unique_ptr<doc::History> history_; // History neither copies nor moves
+    doc::IdGenerator ids_;
     std::optional<std::filesystem::path> folder_;
     std::unique_ptr<QTemporaryDir> untitled_assets_; // an untitled project's assets_folder()
     std::vector<std::string> problems_;
