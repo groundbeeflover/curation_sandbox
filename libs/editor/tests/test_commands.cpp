@@ -27,6 +27,9 @@
 #include <cs/doc/transaction.hpp>
 #include <cs/doc/uuid.hpp>
 #include <cs/doc/work.hpp>
+#include <cs/engine/lux.hpp>
+#include <cs/engine/scene.hpp>
+#include <cs/engine/work_lux.hpp>
 #include <cs/geom/box_frame.hpp>
 #include <cs/geom/wall_face.hpp>
 #include <cs/world/compile.hpp>
@@ -1747,8 +1750,24 @@ TEST_CASE("hung_width_m: the width of the frame world::compile builds round the 
     commit_new_room(history, ids, 6.0, 4.0, 3.5);
     const auto [width_m, height_m] =
         GENERATE(std::pair{0.73, 0.92}, std::pair{0.5, 0.4}, std::pair{1.2, 0.8});
-    CAPTURE(width_m, height_m);
+    // The framing's own member width, and a work with a depth of its own (a panel, a canvas on
+    // stretchers), which compile builds into the frame's depth.
+    const auto [member_m, depth_m] =
+        GENERATE(std::pair{std::optional<double>{}, std::optional<double>{}},
+                 std::pair{std::optional<double>{0.03}, std::optional<double>{}},
+                 std::pair{std::optional<double>{}, std::optional<double>{0.05}});
+    CAPTURE(width_m, height_m, member_m.value_or(-1.0), depth_m.value_or(-1.0));
     const WorkIds added = commit_add_work_in_row(history, ids, width_m, height_m, "Framed");
+    {
+        doc::Transaction change(history.document(), "Change the frame");
+        doc::Framing framing = *entity_of(history.document(), added.exhibit).framing;
+        framing.width_m = member_m;
+        change.set(added.exhibit, std::move(framing));
+        doc::Work work = *history.document().find_work(added.work);
+        work.form.depth_m = depth_m;
+        change.set_work(added.work, std::move(work));
+        history.commit(std::move(change));
+    }
     const doc::Document& document = history.document();
     const world::World compiled = world::compile(document);
     const world::Exhibit& exhibit = exhibit_of(compiled, added.exhibit);
@@ -2270,6 +2289,65 @@ TEST_CASE("add_work_in_row: a spot aimed at a point, or on a track at an angle t
     CHECK(lit.spot_at() == before);
 }
 
+// A track drawn from the face's right end to its left: a distance along it runs against u, so the
+// spot slides the other way along it, and to the same place.
+TEST_CASE("add_work_in_row: a spot on a track drawn against the face slides with the work too",
+          "[editor][commands]") {
+    LitRow lit;
+    const world::World first = world::compile(lit.history.document());
+    const dvec3 light_before_m = light_of(first, lit.spot.spot).luminaire.position_m();
+    const dvec3 offset_before_m = light_before_m - exhibit_of(first, lit.one.exhibit).face_centre_m;
+
+    // The same track with its points swapped, and the spot at the same place on it.
+    doc::Track track = *entity_of(lit.history.document(), lit.spot.track).track;
+    REQUIRE(track.points_m.size() == 2);
+    std::swap(track.points_m[0], track.points_m[1]);
+    const double length_m = glm::length(dvec2(track.points_m[1].x - track.points_m[0].x,
+                                              track.points_m[1].y - track.points_m[0].y));
+    doc::OnTrack reversed = lit.spot_at();
+    reversed.distance_m = length_m - reversed.distance_m;
+    doc::Transaction change(lit.history.document(), "Reverse the track");
+    change.set(lit.spot.track, std::move(track));
+    change.set(lit.spot.spot, doc::Placement{reversed});
+    lit.commit(std::move(change));
+    const world::World swapped = world::compile(lit.history.document());
+    check_near(light_of(swapped, lit.spot.spot).luminaire.position_m(), light_before_m, exact_m);
+
+    lit.add_two();
+    CHECK_THAT(lit.spot_at().distance_m, WithinAbs(reversed.distance_m - one_moves_m, exact_m));
+    const world::World moved = world::compile(lit.history.document());
+    check_near(light_of(moved, lit.spot.spot).luminaire.position_m() -
+                   exhibit_of(moved, lit.one.exhibit).face_centre_m,
+               offset_before_m, exact_m);
+}
+
+// The light and the work move along the wall together, and nothing lies between them, so the
+// direct light on the work is the engine's same reading but for rounding. The total is not
+// compared: the room stays where it is, so the light it reflects onto the work changes.
+// Tolerance: a translation of the same geometry by 0.505 m changes only rounding, about 1e-15
+// relative; 1e-9 allows any order of operations and still catches a spot that moved by 0.1 mm.
+TEST_CASE("add_work_in_row: the direct lux on a work it moves, lit by its spot, stays the same",
+          "[editor][accuracy]") {
+    LitRow lit;
+    const auto direct_on_one = [&lit] {
+        const world::World compiled = world::compile(lit.history.document());
+        const cs::engine::Scene scene(compiled);
+        cs::engine::LuxOptions options;
+        options.samples = 1; // direct light does not depend on the indirect paths
+        return cs::engine::work_lux_grid(scene, exhibit_of(compiled, lit.one.exhibit), options)
+            .direct_lux.mean;
+    };
+    const double before_lx = direct_on_one();
+    // Lit as the CCI advises: hundreds of lux from the generic 800 lm spot.
+    REQUIRE(before_lx > 10.0);
+
+    lit.add_two();
+    CHECK_THAT(direct_on_one(), WithinRel(before_lx, 1e-9));
+}
+
+// Where the clamp acts, the spot is nearer the work than add_spot_for put it, so its angle from
+// vertical is less than 30 degrees and the work reads more lux (said in the header and the pull
+// request): add_spot_for, placing it afresh, would put it on the work's other side.
 TEST_CASE("add_work_in_row: a spot that would slide past its track's end stops at it",
           "[editor][commands]") {
     LitRow lit;

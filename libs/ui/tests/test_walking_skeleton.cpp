@@ -1062,9 +1062,13 @@ TEST_CASE("Walking skeleton: Add spot lights the work just added with a luminair
 // with engine::load_textures from the window's assets folder, the same seed and sample count.
 //
 // Tolerances: 1%, the issue's. The panel and cs-render read the same world (the saved project
-// reads back equal), the same photograph, seed 1 and 1024 samples, so the numbers agree far more
-// closely; the 1% allows for nothing but that. The 1 s is measured from the commit's return to
-// the panel saying it is up to date, by the wall clock, polled every few milliseconds.
+// reads back equal), the same photograph, seed 1 and 1024 samples, and the engine's reading is the
+// same bit for bit whatever the number of threads (engine test "work_lux_grid: the same seed gives
+// the same grid, bit for bit, with 1 or 8 threads"): so the test also asks for equal numbers. The
+// 1% alone would miss them: another seed moves the total by 0.1%, 256 samples by 0.1%, the
+// photograph left out by 1.4%, and the direct lux by nothing (the physics review of this pull
+// request). The 1 s is measured from the commit's return to the panel saying it is up to date, by
+// the wall clock, polled every few milliseconds.
 TEST_CASE("Walking skeleton: the lux panel shows the work's mean direct and total lux, computed "
           "off the UI thread within 1 s of a change, equal to cs-render's report within 1%",
           "[ui][accuracy]") {
@@ -1131,6 +1135,9 @@ TEST_CASE("Walking skeleton: the lux panel shows the work's mean direct and tota
                           << report.total_lux.mean << " lx");
     CHECK_THAT(row.direct_lx, WithinRel(report.direct_lux.mean, 0.01));
     CHECK_THAT(row.total_lx, WithinRel(report.total_lux.mean, 0.01));
+    // The same reading, bit for bit (above).
+    CHECK(row.direct_lx == report.direct_lux.mean);
+    CHECK(row.total_lx == report.total_lux.mean);
     // Plausibly lit: an 800 lm spot about 2.3 m from the work gives hundreds of lux; 10 lx would
     // be a light that missed it.
     CHECK(report.direct_lux.mean > 10.0);
@@ -1169,7 +1176,8 @@ TEST_CASE("Walking skeleton: the lux panel follows undo, New and Open", "[ui][ac
     REQUIRE(wait_for_lux(panel));
     CHECK(panel.table->topLevelItemCount() == 0);
 
-    // Open the saved project: its work, lit as cs-render reads it (the issue's 1%).
+    // Open the saved project: its work, lit as cs-render reads it (the issue's 1%, and bit for bit
+    // as the test above explains).
     window->open_project(saved);
     REQUIRE(wait_for_lux(panel));
     const std::vector<LuxRow> rows = lux_rows(panel);
@@ -1177,6 +1185,23 @@ TEST_CASE("Walking skeleton: the lux panel follows undo, New and Open", "[ui][ac
     CHECK(rows[0].title == "Photo");
     CHECK_THAT(rows[0].direct_lx, WithinRel(report.direct_lux.mean, 0.01));
     CHECK_THAT(rows[0].total_lx, WithinRel(report.total_lux.mean, 0.01));
+    CHECK(rows[0].direct_lx == report.direct_lux.mean);
+    CHECK(rows[0].total_lx == report.total_lux.mean);
+
+    // A window that has loaded no photograph yet loads it from the opened project's assets: this
+    // window may still hold the one it loaded before New. One window at a time, since one GPU
+    // device is alive at a time (gpu::Device).
+    window.reset();
+    std::unique_ptr<MainWindow> fresh = app_window();
+    const LuxPanel fresh_panel = lux_panel(*fresh);
+    fresh->open_project(saved);
+    REQUIRE(wait_for_lux(fresh_panel));
+    const std::vector<LuxRow> opened = lux_rows(fresh_panel);
+    REQUIRE(opened.size() == 1);
+    INFO("lux status: " << fresh_panel.status->text().toStdString());
+    CHECK_FALSE(fresh_panel.status->text().contains(QStringLiteral("plain grey")));
+    CHECK(opened[0].direct_lx == report.direct_lux.mean);
+    CHECK(opened[0].total_lx == report.total_lux.mean);
 }
 
 // ==== The camera ==============================================================================

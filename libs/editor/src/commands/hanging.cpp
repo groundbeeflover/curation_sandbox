@@ -189,14 +189,19 @@ AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
     const double clearance_m = (face.length_m - length_m) / 2.0;
     if (clearance_m < row_end_clearance_m - row_fit_tolerance_m) {
         // Said to the curator as it is (Works > Add painting), so it does not start with the
-        // command's name as other refusals do.
+        // command's name as other refusals do. The face is the wall as the room sees it.
+        const std::string wall = "wall " + std::string(default_wall_label);
+        const std::string row_text = row.size() == 1
+                                         ? "this work is " + metres(length_m) + " wide in its frame"
+                                         : "these " + std::to_string(row.size()) + " works, " +
+                                               metres(row_gap_m) + " apart, make a row " +
+                                               metres(length_m) + " long";
         throw std::invalid_argument(
-            "Wall " + std::string(default_wall_label) + " is full: a row of " +
-            std::to_string(row.size()) + " works with " + metres(row_gap_m) + " gaps is " +
-            metres(length_m) + " long, and with " + metres(row_end_clearance_m) +
-            " clear at each end it needs a face of " +
-            metres(length_m + 2.0 * row_end_clearance_m) + "; face A is " + metres(face.length_m) +
-            " long");
+            "Wall " + std::string(default_wall_label) + " is full: " + row_text + ", which needs " +
+            metres(row_end_clearance_m) + " clear at each end, " +
+            metres(length_m + 2.0 * row_end_clearance_m) + " in all, but " + wall + " is " +
+            metres(face.length_m) + " long. Hang a smaller work, or start a new project with a " +
+            "longer " + wall + ".");
     }
 
     std::map<doc::Uuid, double> moved_m; // how far each exhibit moved along the face

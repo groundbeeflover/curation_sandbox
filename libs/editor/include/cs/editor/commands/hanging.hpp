@@ -79,7 +79,7 @@ double hung_width_m(const doc::Work& work, const std::optional<doc::Framing>& fr
 //
 // Throws std::invalid_argument, changing nothing, as add_work does, and when either end of the row
 // would be closer than row_end_clearance_m to the face's ends: "Wall A is full: ...", saying how
-// long the row and the face are, for the curator.
+// long the row and the wall are and what to do, for the curator.
 AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
                           const doc::AssetRef& image, double width_m, double height_m,
                           std::string title = {});

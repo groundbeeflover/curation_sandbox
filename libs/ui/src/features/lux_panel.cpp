@@ -7,10 +7,10 @@
 // Each change of the document (document_changed, project_changed) compiles the world on the UI
 // thread and reads the meter on a worker thread, so that the window stays responsive. One reading
 // runs at a time; a change while it runs is read once it ends, and until then the status says
-// "Calculating…". A change that leaves the world and the titles as they were (a save) reads
-// nothing. The paintings' photographs are loaded from the project's assets folder and kept while
-// they are all a reading needs: without them every painting would reflect its 0.8 grey base colour
-// and the total would differ from cs-render's.
+// "Calculating…". A change that leaves the world, the titles and the assets folder as they were (a
+// save in place) reads nothing. The paintings' photographs are loaded from the project's assets
+// folder and kept while they are all a reading needs from that folder: without them every painting
+// would reflect its 0.8 grey base colour and the total would differ from cs-render's.
 //
 // M2-37 replaces the computation with the engine's lux service (M2-28).
 
@@ -27,8 +27,8 @@
 #include <cs/world/compile.hpp>
 #include <cs/world/world.hpp>
 
+#include <QAction>
 #include <QDockWidget>
-#include <QElapsedTimer>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
@@ -65,6 +65,9 @@ constexpr std::uint64_t lux_seed = 1;
 
 constexpr double no_reading = std::numeric_limits<double>::quiet_NaN();
 
+// View > Lux, among the panels after View > Walk.
+constexpr int lux_item_order = 50;
+
 // What a reading needs, made on the UI thread from the document: the worker never sees it.
 struct LuxJob {
     world::World world;
@@ -74,11 +77,12 @@ struct LuxJob {
     // cannot be placed.
     bool has_luminaire = false;
 
-    // Equal worlds and titles read the same, wherever the photographs are stored: their names are
-    // their content (ADR 0007). So a save, which moves an untitled project's images, reads nothing.
+    // Equal worlds and titles, with photographs from the same folder, read the same: a save in
+    // place reads nothing. A project whose photographs are elsewhere now (Open, or the first save
+    // of an untitled project) is read again from there, as cs-render would read it.
     [[nodiscard]] bool same_reading(const LuxJob& other) const {
         return world == other.world && titles == other.titles &&
-               has_luminaire == other.has_luminaire;
+               assets_folder == other.assets_folder && has_luminaire == other.has_luminaire;
     }
 };
 
@@ -99,7 +103,6 @@ struct WorkReading {
 struct LuxResult {
     std::vector<WorkReading> works;
     std::vector<std::string> problems;
-    double seconds = 0.0;
     Unlit unlit = Unlit::no;
 };
 
@@ -108,14 +111,16 @@ const world::AssetRef* photograph_of(const world::Material& material) {
     return painting != nullptr && painting->image ? &*painting->image : nullptr;
 }
 
-// The photographs last loaded, kept for later readings while they hold every photograph a reading
-// needs: an undo, a redo or a save then loads none again. Only the worker thread touches it.
+// The photographs last loaded, kept for later readings from the same folder while they hold every
+// photograph a reading needs: an undo, a redo or a save in place then loads none again. Only the
+// worker thread touches it.
 class TextureCache {
   public:
     const engine::LoadedTextures& load(const world::World& world,
                                        const std::filesystem::path& folder) {
-        if (!textures_ || !holds_all(world)) {
+        if (!textures_ || folder != folder_ || !holds_all(world)) {
             textures_.emplace(engine::load_textures(world, folder));
+            folder_ = folder;
         } else {
             // Problems of photographs this world does not name: it names none that failed.
             textures_->problems.clear();
@@ -132,18 +137,35 @@ class TextureCache {
     }
 
     std::optional<engine::LoadedTextures> textures_;
+    std::filesystem::path folder_; // where textures_ came from
 };
 
+// The works whose face shows the photograph, by title, for the curator: "“Photo”, “Second”".
+std::string works_showing(const LuxJob& job, const world::AssetRef& photograph) {
+    std::string named;
+    for (std::size_t i = 0; i < job.world.exhibits.size(); ++i) {
+        const world::Instance& face =
+            job.world.instances.at(job.world.exhibits[i].painting_instance);
+        const world::AssetRef* shown = photograph_of(job.world.materials.at(face.material));
+        if (shown == nullptr || *shown != photograph) {
+            continue;
+        }
+        named += named.empty() ? "" : ", ";
+        named +=
+            job.titles[i].empty() ? std::string("an untitled work") : "“" + job.titles[i] + "”";
+    }
+    return named.empty() ? std::string("a work") : named;
+}
+
 LuxResult read_lux(const LuxJob& job, TextureCache& cache, ThreadPool& pool) {
-    QElapsedTimer clock;
-    clock.start();
     LuxResult result;
     try {
         const engine::LoadedTextures& loaded = cache.load(job.world, job.assets_folder);
         for (const engine::TextureProblem& problem : loaded.problems) {
-            result.problems.push_back("The photograph " + problem.asset.sha256 + "." +
-                                      problem.asset.extension +
-                                      " is read as plain grey: " + problem.reason);
+            result.problems.push_back("The photograph of " + works_showing(job, problem.asset) +
+                                      " cannot be read, so its lux is calculated as if it were "
+                                      "plain grey (" +
+                                      problem.reason + ")");
         }
         const engine::Scene scene(job.world);
         engine::LuxOptions options;
@@ -168,12 +190,15 @@ LuxResult read_lux(const LuxJob& job, TextureCache& cache, ThreadPool& pool) {
         result.works.clear();
         result.problems.push_back(std::string("The lux cannot be calculated: ") + error.what());
     }
-    result.seconds = static_cast<double>(clock.nsecsElapsed()) * 1e-9;
     return result;
 }
 
-// The reading of a world with no work, or with no light, where every work reads 0 lx (there is no
-// daylight yet): no path need be traced.
+// The reading of a world with no work, or with no light, where every work reads 0 lx: no path need
+// be traced. The engine gives the same (its test "work_lux_grid: with no lights, every point and
+// summary reads 0"), since no material emits and a path that leaves the room finds nothing. When
+// daylight or an emitting material arrives, this must ask the engine instead.
+static_assert(std::variant_size_v<world::Material> == 2,
+              "a new kind of material may emit light: check untraced()");
 LuxResult untraced(const LuxJob& job) {
     LuxResult result;
     if (job.world.lights.empty()) {
@@ -242,13 +267,19 @@ class LuxPanel : public QWidget {
     void request() {
         if (running_) {
             // finished() reads the document as it is then.
-            status_->setText(MainWindow::tr("Calculating…"));
+            calculating();
             return;
         }
         start();
     }
 
   private:
+    // The numbers shown are of the document as it was: greyed until the new reading.
+    void calculating() {
+        table_->setEnabled(false);
+        status_->setText(MainWindow::tr("Calculating…"));
+    }
+
     std::shared_ptr<const LuxJob> make_job() {
         auto job = std::make_shared<LuxJob>();
         const doc::Document& document = window_.document();
@@ -286,7 +317,7 @@ class LuxPanel : public QWidget {
             return;
         }
         running_ = true;
-        status_->setText(MainWindow::tr("Calculating…"));
+        calculating();
         jobs_.start([this, job] {
             if (!pool_) {
                 pool_.emplace(std::max(1u, std::thread::hardware_concurrency()));
@@ -311,6 +342,7 @@ class LuxPanel : public QWidget {
     }
 
     void display(const LuxResult& result) {
+        table_->setEnabled(true);
         table_->clear();
         for (const WorkReading& reading : result.works) {
             auto* item = new QTreeWidgetItem(table_);
@@ -331,15 +363,14 @@ class LuxPanel : public QWidget {
         }
         QStringList lines;
         if (result.works.empty() && result.problems.empty()) {
-            lines << MainWindow::tr("No works hung yet");
+            lines << MainWindow::tr("No works hung yet: Works > Add painting…");
         } else if (result.unlit == Unlit::no_luminaire) {
             lines << MainWindow::tr("No light in the room yet: Lights > Add spot");
         } else if (result.unlit == Unlit::none_on) {
             lines << MainWindow::tr("No light reaches the works: every light is off or cannot be "
                                     "placed");
         } else if (!result.works.empty()) {
-            lines << MainWindow::tr("Mean of 25 points on each work's face · %1 s")
-                         .arg(QLocale().toString(result.seconds, 'f', 1));
+            lines << MainWindow::tr("Mean of 25 points on each work's face");
         }
         for (const std::string& problem : result.problems) {
             lines << QString::fromStdString(problem);
@@ -368,6 +399,14 @@ void register_lux_panel(MainWindow& window) {
     auto* panel = new LuxPanel(window);
     dock->setWidget(panel);
     window.addDockWidget(Qt::RightDockWidgetArea, dock);
+    // View > Lux brings the dock back after its title bar's x closed it, and closes it too.
+    QAction* item = window.add_menu_item(window.add_menu(MainWindow::tr("&View"), menu_order::view),
+                                         lux_item_order, MainWindow::tr("&Lux"));
+    item->setCheckable(true);
+    item->setChecked(true);
+    item->setStatusTip(MainWindow::tr("Shows or hides the lux on every work"));
+    QObject::connect(item, &QAction::toggled, dock, &QDockWidget::setVisible);
+    QObject::connect(dock->toggleViewAction(), &QAction::toggled, item, &QAction::setChecked);
     QObject::connect(&window, &MainWindow::document_changed, panel, [panel] { panel->request(); });
     QObject::connect(&window, &MainWindow::project_changed, panel, [panel] { panel->request(); });
     panel->request();
