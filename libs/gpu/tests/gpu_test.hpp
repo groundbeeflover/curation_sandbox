@@ -85,11 +85,8 @@ class ScopedEnv {
 // ---- Devices -----------------------------------------------------------------------------------
 
 // CI and /ship set CS_REQUIRE_GPU=1: then no device (or, in debug, no validation layer) is a
-// failure rather than a skip.
-inline bool gpu_required() {
-    const std::optional<std::string> value = read_env("CS_REQUIRE_GPU");
-    return value && !value->empty() && *value != "0";
-}
+// failure rather than a skip. Read by gpu itself (device.hpp), as everything else that asks does.
+using cs::gpu::gpu_required;
 
 // In a debug build under CS_REQUIRE_GPU=1 the validation layer must load (ADR 0011). A
 // function, not an `if` on debug_build: MSVC warns (C4127) on a constant in a condition.

@@ -61,7 +61,9 @@ constexpr std::array platform_surface_extensions = {
 
 std::atomic<bool> device_alive{false};
 
-std::mutex handler_mutex;
+// Held while a handler runs, so that set_validation_handler waits for it (device.hpp). Recursive:
+// a handler may make a Vulkan call that reports a message, or replace itself, on its own thread.
+std::recursive_mutex handler_mutex;
 ValidationHandler validation_handler; // guarded by handler_mutex
 
 ValidationMessage::Severity to_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
@@ -96,15 +98,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL on_debug_message(VkDebugUtilsMessageSeverityFlagB
             message.id = data->pMessageIdName != nullptr ? data->pMessageIdName : "";
             message.text = data->pMessage != nullptr ? data->pMessage : "";
         }
-        ValidationHandler handler;
-        {
-            const std::lock_guard lock(handler_mutex);
-            handler = validation_handler;
-        }
-        if (handler)
+        const std::lock_guard lock(handler_mutex);
+        if (validation_handler) {
+            // A copy, which stays alive if the handler replaces itself while it runs.
+            const ValidationHandler handler = validation_handler;
             handler(message);
-        else
+        } else {
             std::cerr << to_string(message) << '\n';
+        }
     } catch (...) {
         // Out of memory, or the handler threw: print without allocating, and carry on.
         std::fputs(data != nullptr && data->pMessage != nullptr ? data->pMessage
@@ -214,6 +215,11 @@ ValidationHandler set_validation_handler(ValidationHandler handler) {
     const std::lock_guard lock(handler_mutex);
     std::swap(validation_handler, handler);
     return handler;
+}
+
+bool gpu_required() {
+    const std::string value = environment_variable("CS_REQUIRE_GPU");
+    return !value.empty() && value != "0";
 }
 
 Device::Device(const DeviceOptions& options) {

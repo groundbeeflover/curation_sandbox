@@ -5,10 +5,9 @@
 #include <cs/gpu/scene.hpp>
 #include <cs/gpu/standard_tier.hpp>
 
+#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <iostream>
-#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -18,28 +17,10 @@ namespace {
 // A driver's name, from the device, is bounded before it names a file.
 constexpr std::size_t max_driver_label_length = 64;
 
-std::optional<std::string> environment_variable(const char* name) {
-#ifdef _WIN32
-    // MSVC deprecates getenv (an error under /WX).
-    char* value = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&value, &size, name) != 0 || value == nullptr) {
-        return std::nullopt;
-    }
-    std::string result(value);
-    std::free(value);
-    return result;
-#else
-    const char* value = std::getenv(name);
-    return value != nullptr ? std::optional<std::string>(value) : std::nullopt;
-#endif
-}
-
 } // namespace
 
 bool gpu_required() {
-    const std::optional<std::string> value = environment_variable("CS_REQUIRE_GPU");
-    return value && !value->empty() && *value != "0";
+    return cs::gpu::gpu_required();
 }
 
 cs::gpu::DeviceOptions device_options() {
