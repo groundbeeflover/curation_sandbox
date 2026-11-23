@@ -298,14 +298,12 @@ jobs:
       # of which ci.yml's release job runs.
       - name: Tests (-L engine)
         run: ctest --preset debug -L engine --timeout 300
-      # One test is left out here, and only here, until its follow-up (PR #166) lands: the one
-      # that disables the validation layer through VK_LOADER_LAYERS_DISABLE, which the loader
-      # ignores in the runner's elevated process (ADR 0010).
+      # Every GPU test. The one that disables the validation layer through
+      # VK_LOADER_LAYERS_DISABLE skips the parts that need it, as the loader ignores the variable
+      # in the runner's elevated process (ADR 0010).
       - name: Tests (-L gpu)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: >-
-          ctest --preset debug -L gpu --timeout 120
-          -E "without the validation layer, required throws"
+        run: ctest --preset debug -L gpu --timeout 120
       - name: Upload golden-out
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

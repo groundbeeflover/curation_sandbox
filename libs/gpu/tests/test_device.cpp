@@ -20,15 +20,20 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 using Catch::Matchers::ContainsSubstring;
@@ -62,6 +67,38 @@ std::string version_string(std::uint32_t version) {
     return std::to_string(VK_API_VERSION_MAJOR(version)) + "." +
            std::to_string(VK_API_VERSION_MINOR(version)) + "." +
            std::to_string(VK_API_VERSION_PATCH(version));
+}
+
+// Whether the loader lists the Khronos validation layer. One that honours VK_LOADER_LAYERS_DISABLE
+// leaves a layer it names out of the list, as it leaves it out of every instance. Needs volk's
+// loader functions: any Device made earlier in the process has loaded them.
+bool loader_lists_validation_layer() {
+    REQUIRE(vkEnumerateInstanceLayerProperties != nullptr);
+    std::uint32_t count = 0;
+    REQUIRE(vkEnumerateInstanceLayerProperties(&count, nullptr) == VK_SUCCESS);
+    std::vector<VkLayerProperties> layers(count);
+    REQUIRE(vkEnumerateInstanceLayerProperties(&count, layers.data()) == VK_SUCCESS);
+    layers.resize(count);
+    return std::any_of(layers.begin(), layers.end(), [](const VkLayerProperties& layer) {
+        return std::string(layer.layerName) == "VK_LAYER_KHRONOS_validation";
+    });
+}
+
+// With VK_LOADER_LAYERS_DISABLE naming the validation layer, when the loader still lists the
+// layer, because it ignores the variable: on Windows, where an elevated process's loader does so
+// (CI's runner, ADR 0010), the test skips, saying why. Elsewhere no loader the tests support does
+// (1.3.234 or later), so the test fails, saying why, rather than leave ADR 0011 untested.
+void skip_if_loader_ignores_layers_disable() {
+    if (!loader_lists_validation_layer()) {
+        return;
+    }
+#ifdef _WIN32
+    SKIP("the Vulkan loader ignores VK_LOADER_LAYERS_DISABLE here, as it does in an elevated "
+         "process on Windows (ADR 0010), so the validation layer cannot be disabled");
+#else
+    FAIL("the Vulkan loader ignores VK_LOADER_LAYERS_DISABLE, so the validation layer cannot be "
+         "disabled: the variable needs loader 1.3.234 or later");
+#endif
 }
 
 } // namespace
@@ -540,16 +577,160 @@ TEST_CASE("device: set_validation_handler returns the previous handler, and a me
     }
 }
 
+// Header (set_validation_handler), issue M1-48: once set_validation_handler has returned, the
+// handler it replaced is never called again, even while another thread's Vulkan calls report
+// messages. Before, the callback copied the handler under a lock and called the copy after
+// releasing it, so a replaced handler could still run, after its owner (cs-render's
+// ValidationCounter, say) was gone.
+//
+// Each handler records its calls; once replaced, it is marked, and a call that finds the mark is
+// late. Every handler sleeps in its call, after counting it, and each replacement waits until the
+// handler it replaces has been called, so each replacement races a call that is still running: a
+// set_validation_handler that did not wait for it would see a late call within a few
+// replacements. The marks are atomics and every handler's record outlives the reporting thread,
+// so a late call is counted, not undefined behaviour, in any build.
+//
+// Under ThreadSanitizer this also checks that the handler is read and replaced under one lock.
+// The debug preset's ASan cannot see that, but it need not: the property is an order between two
+// threads, which the marks observe directly, and that order is what the old code got wrong, with
+// no data race for a sanitizer to find (it copied the handler under its lock).
+//
+// The messages come from vkSubmitDebugUtilsMessageEXT, which reaches the device's messenger as the
+// validation layer's do: the layer reports any one message only a few times (its duplicate message
+// limit), and this test needs hundreds. Any other message is a real one, which the harness's
+// handler would have failed the test on: the test's handlers count it, and the test fails too.
+TEST_CASE("device: a validation handler is never called after set_validation_handler has "
+          "replaced it",
+          "[gpu]") {
+    const std::unique_ptr<Device> gpu = make_device();
+    if (!gpu->report().validation) {
+        SKIP("the Khronos validation layer is not loaded, so the device has no debug messenger");
+    }
+    REQUIRE(vkSubmitDebugUtilsMessageEXT != nullptr);
+
+    struct Record {
+        std::atomic<int> calls{0};
+        std::atomic<bool> replaced{false};
+    };
+    constexpr std::string_view message_id = "cs-test-handler-replaced";
+    std::atomic<int> late_calls{0};
+    std::atomic<int> other_messages{0};
+    const auto handler_for = [&late_calls, &other_messages, message_id](Record* record) {
+        return [record, &late_calls, &other_messages, message_id](const ValidationMessage& m) {
+            if (m.id != message_id) {
+                std::cerr << cs::gpu::to_string(m) << '\n';
+                if (m.kind != ValidationMessage::Kind::general) {
+                    other_messages.fetch_add(1);
+                }
+                return;
+            }
+            record->calls.fetch_add(1);
+            // Long enough that a replacement which does not wait for this call marks the record
+            // before the call ends.
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            if (record->replaced.load()) {
+                late_calls.fetch_add(1);
+            }
+        };
+    };
+
+    std::vector<std::unique_ptr<Record>> records;
+    records.push_back(std::make_unique<Record>());
+    // Replaces the harness's handler, which would abort on a message from another thread.
+    HandlerGuard guard{handler_for(records.back().get())};
+
+    std::atomic<bool> stop{false};
+    const VkInstance instance = gpu->instance();
+    std::thread reporter([&stop, instance, message_id] {
+        VkDebugUtilsMessengerCallbackDataEXT data{};
+        data.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT;
+        data.pMessageIdName = message_id.data();
+        data.pMessage = "a message from another thread while the handler is replaced";
+        while (!stop.load()) {
+            vkSubmitDebugUtilsMessageEXT(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
+                                         VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT, &data);
+            // A pause in which a waiting set_validation_handler takes the lock: the lock is not
+            // fair, and this thread would otherwise take it again before the waiter wakes.
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    });
+    const auto stop_reporter = [&stop, &reporter] {
+        stop = true;
+        if (reporter.joinable()) {
+            reporter.join();
+        }
+    };
+    // Before the guard and the records go, also when an assertion throws.
+    const Cleanup on_exit{stop_reporter};
+
+    // The old callback was late after every replacement, of 100 or of 300. More would be slow on
+    // Windows, where the sleeps above last a millisecond or more.
+    constexpr int replacements = 100;
+    // A bound on the wait for each call, only so that a broken messenger cannot hang the run.
+    constexpr auto call_timeout = std::chrono::seconds(10);
+    int replaced = 0;
+    for (; replaced < replacements; ++replaced) {
+        Record& current = *records.back();
+        const auto deadline = std::chrono::steady_clock::now() + call_timeout;
+        while (current.calls.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::yield();
+        }
+        if (current.calls.load() == 0) {
+            break; // no message reached the handler; the REQUIRE below says so
+        }
+        records.push_back(std::make_unique<Record>());
+        cs::gpu::set_validation_handler(handler_for(records.back().get()));
+        current.replaced = true;
+    }
+    stop_reporter();
+    guard.restore(); // before any assertion, so a failing CHECK runs under the harness's handler
+
+    CAPTURE(replaced);
+    REQUIRE(replaced == replacements);
+    CHECK(late_calls.load() == 0);
+    CHECK(other_messages.load() == 0);
+}
+
+// Header (gpu_required): the one reading of CS_REQUIRE_GPU, for the GPU tests, the integration
+// tests, cs-render and the app; needs no device.
+TEST_CASE("device: gpu_required says whether CS_REQUIRE_GPU is set, not empty and not 0", "[gpu]") {
+    {
+        const ScopedEnv env{"CS_REQUIRE_GPU", std::nullopt};
+        CHECK_FALSE(cs::gpu::gpu_required());
+    }
+#ifndef _WIN32 // on Windows an empty value unsets the variable, which the case above covers
+    {
+        const ScopedEnv env{"CS_REQUIRE_GPU", std::string()};
+        CHECK_FALSE(cs::gpu::gpu_required());
+    }
+#endif
+    {
+        const ScopedEnv env{"CS_REQUIRE_GPU", std::string("0")};
+        CHECK_FALSE(cs::gpu::gpu_required());
+    }
+    {
+        const ScopedEnv env{"CS_REQUIRE_GPU", std::string("1")};
+        CHECK(cs::gpu::gpu_required());
+    }
+    {
+        const ScopedEnv env{"CS_REQUIRE_GPU", std::string("yes")};
+        CHECK(cs::gpu::gpu_required());
+    }
+}
+
 // ---- ADR 0011: a missing validation layer is reported, and fails when required -----------------
 
 // Disables the layer through VK_LOADER_LAYERS_DISABLE, which the Vulkan loader (1.3.234 or later)
-// reads at every vkCreateInstance, so setting it in the middle of the process takes effect for the
-// next device.
+// reads at every vkCreateInstance and vkEnumerateInstanceLayerProperties, so setting it in the
+// middle of the process takes effect for the next device. A loader in an elevated process on
+// Windows, as in CI's runner, ignores it (ADR 0010): the layer cannot be disabled there, and the
+// sections that need it disabled skip.
 TEST_CASE("device: without the validation layer, required throws and if_available reports "
           "validation off",
           "[gpu]") {
     // First a device as every test makes one, so that no device skips (or, under
-    // CS_REQUIRE_GPU=1, fails) as usual rather than surfacing below as NoDeviceError.
+    // CS_REQUIRE_GPU=1, fails) as usual rather than surfacing below as NoDeviceError. It also
+    // loads the loader's own functions (volk), which loader_lists_validation_layer() calls.
     {
         const std::unique_ptr<Device> probe = make_device();
     }
@@ -564,6 +745,7 @@ TEST_CASE("device: without the validation layer, required throws and if_availabl
 
     SECTION("disabled layer: Validation::required throws ValidationUnavailableError naming it") {
         const ScopedEnv env{"VK_LOADER_LAYERS_DISABLE", std::string("VK_LAYER_KHRONOS_validation")};
+        skip_if_loader_ignores_layers_disable();
         DeviceOptions options = test_options();
         options.validation = Validation::required;
         CHECK_THROWS_MATCHES(Device{options}, ValidationUnavailableError,
@@ -572,6 +754,7 @@ TEST_CASE("device: without the validation layer, required throws and if_availabl
 
     SECTION("disabled layer: Validation::if_available runs and says validation is off") {
         const ScopedEnv env{"VK_LOADER_LAYERS_DISABLE", std::string("VK_LAYER_KHRONOS_validation")};
+        skip_if_loader_ignores_layers_disable();
         DeviceOptions options = test_options();
         options.validation = Validation::if_available;
         const Device gpu{options};

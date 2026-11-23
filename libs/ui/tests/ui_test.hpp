@@ -11,6 +11,7 @@
 #include "viewport/gpu_context.hpp"
 #include "viewport/viewport.hpp"
 
+#include <cs/gpu/device.hpp>
 #include <cs/ui/main_window.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -100,10 +101,10 @@ class ScopedEnv {
     std::optional<std::string> previous_;
 };
 
-// CS_REQUIRE_GPU set, not empty and not "0", read here rather than through the code under test.
+// CS_REQUIRE_GPU set, not empty and not "0": gpu's one reading of it (cs/gpu/device.hpp), rather
+// than ui's code under test.
 inline bool require_gpu_env() {
-    const std::optional<std::string> value = read_env("CS_REQUIRE_GPU");
-    return value && !value->empty() && *value != "0";
+    return gpu::gpu_required();
 }
 
 // ---- Folders -----------------------------------------------------------------------------------

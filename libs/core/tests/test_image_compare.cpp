@@ -66,14 +66,17 @@ bool valid_flip(double mean_flip) {
 }
 
 // The message compare throws for images of different sizes; fails the test if it throws nothing.
+// The message is returned from after the handler: FAIL throws, so a return after it is unreachable
+// (MSVC's warning C4702 in a debug build), and FAIL's own exception is no std::invalid_argument.
 std::string size_error_message(const cs::Image& reference, const cs::Image& test) {
+    std::string message;
     try {
         (void)cs::compare(reference, test);
+        FAIL("compare did not throw std::invalid_argument for images of different sizes");
     } catch (const std::invalid_argument& error) {
-        return error.what();
+        message = error.what();
     }
-    FAIL("compare did not throw std::invalid_argument for images of different sizes");
-    return "";
+    return message;
 }
 
 // 0.25 and 0.75 are exact in float and their difference, 0.5, is exact too; so is 0.5 / 4096 =

@@ -16,8 +16,7 @@ QString validation_status_text(bool active, std::size_t count) {
 }
 
 bool gpu_required() {
-    const QString value = qEnvironmentVariable("CS_REQUIRE_GPU");
-    return !value.isEmpty() && value != QLatin1String("0");
+    return gpu::gpu_required();
 }
 
 gpu::DeviceOptions app_device_options(bool headless) {

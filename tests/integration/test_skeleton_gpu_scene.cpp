@@ -5,10 +5,12 @@
 // texture loader. It belongs here because gpu may not depend on the document (blueprint
 // section 7), so its own tests cannot load a project.
 //
-// This executable has Catch2's own main, not the gpu tests' harness (libs/gpu/tests/main.cpp), so
-// it brings the two things of that harness it needs: a device that skips without a GPU and fails
-// without one under CS_REQUIRE_GPU=1 (ADR 0010), and a validation handler under which any
-// validation warning or error fails the test.
+// The device comes from libs/gpu/tests/gpu_test.hpp's make_device(), as in gpu_validation.cpp: it
+// skips without a GPU and fails without one under CS_REQUIRE_GPU=1 (ADR 0010). A validation
+// collector, below, makes any validation warning or error fail the test, what the device reports
+// as it is destroyed included.
+
+#include "../../libs/gpu/tests/gpu_test.hpp"
 
 #include <cs/assets/texture.hpp>
 #include <cs/core/image.hpp>
@@ -29,72 +31,17 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace {
-
-// ---- A device for this test, as libs/gpu/tests/gpu_test.hpp makes one ---------------------------
-
-#ifdef NDEBUG
-constexpr bool debug_build = false;
-#else
-constexpr bool debug_build = true;
-#endif
-
-// CS_REQUIRE_GPU=1 (CI, /ship): no device is a failure rather than a skip. MSVC deprecates
-// getenv, so Windows reads through _dupenv_s.
-bool gpu_required() {
-#ifdef _WIN32
-    char* value = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&value, &size, "CS_REQUIRE_GPU") != 0 || value == nullptr) {
-        return false;
-    }
-    const std::string text(value);
-    std::free(value);
-#else
-    const char* value = std::getenv("CS_REQUIRE_GPU");
-    if (value == nullptr) {
-        return false;
-    }
-    const std::string text(value);
-#endif
-    return !text.empty() && text != "0";
-}
-
-// In a debug build under CS_REQUIRE_GPU=1 the validation layer must load (ADR 0011).
-bool validation_layer_required() {
-    return debug_build && gpu_required();
-}
-
-std::unique_ptr<cs::gpu::Device> make_device() {
-    cs::gpu::DeviceOptions options;
-    options.validation = validation_layer_required() ? cs::gpu::Validation::required
-                                                     : cs::gpu::Validation::if_available;
-    // Returned from after the handler, as gpu_test.hpp's make_device does: a return after FAIL
-    // and SKIP alone is unreachable (MSVC's warning C4702 in debug builds).
-    std::unique_ptr<cs::gpu::Device> device;
-    try {
-        device = std::make_unique<cs::gpu::Device>(options);
-    } catch (const cs::gpu::NoDeviceError& e) {
-        if (gpu_required()) {
-            FAIL("no Vulkan device was found, and CS_REQUIRE_GPU=1 requires one: " << e.what());
-        } else {
-            SKIP("no Vulkan device was found: " << e.what());
-        }
-    }
-    return device;
-}
 
 // ---- Validation messages fail the test ---------------------------------------------------------
 
@@ -213,7 +160,7 @@ TEST_CASE("the skeleton project uploads to the GPU: its vertices exactly, its ch
     // Declared first, so it outlives the device and sees what the device reports as it goes.
     const ValidationCollector validation;
     {
-        const std::unique_ptr<cs::gpu::Device> gpu = make_device();
+        const std::unique_ptr<cs::gpu::Device> gpu = cs::gpu::test::make_device();
         {
             const cs::gpu::Scene scene(*gpu, world,
                                        cs::gpu::project_texture_loader(project / "assets"));
