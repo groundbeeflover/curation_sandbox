@@ -2184,3 +2184,102 @@ TEST_CASE("add_work_in_row: what it makes reads back from its project.json", "[e
     CHECK(read == history.document());
     CHECK(doc::to_project_json(read) == text);
 }
+
+// ---- add_work_in_row and the spots that light the row ----------------------------------------
+
+// The owner's choice in the M1-27 session (23 November 2026): a spot aimed at a work the row moves
+// moves with it, along its track, so that it keeps the angle add_spot_for chose for it.
+
+// A room of 6 x 4 x 3.5 m with One (0.73 x 0.92 m, 0.84 m framed) hung by add_work_in_row at
+// the middle of face A, 3 m, and a spot add_spot_for aimed at it.
+struct LitRow {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    WorkIds one;
+    SpotIds spot;
+
+    LitRow() {
+        commit_new_room(history, ids, 6.0, 4.0, 3.5);
+        one = commit_add_work_in_row(history, ids, 0.73, 0.92, "One");
+        spot = commit_add_spot(history, ids, one.exhibit);
+    }
+
+    // Adds Two (0.5 x 0.4 m, 0.61 m framed): the row is 0.84 + 0.4 + 0.61 = 1.85 m from
+    // u = 2.075 m, so One's centre moves from 3 m to 2.075 + 0.42 = 2.495 m, 0.505 m to the left.
+    void add_two() { commit_add_work_in_row(history, ids, 0.5, 0.4, "Two"); }
+
+    const doc::OnTrack& spot_at() const {
+        return on_track_of(entity_of(history.document(), spot.spot));
+    }
+
+    void commit(doc::Transaction transaction) { history.commit(std::move(transaction)); }
+};
+
+constexpr double one_moves_m = -0.505;
+
+TEST_CASE("add_work_in_row: a spot aimed at a work it moves slides along its track by as much, "
+          "keeping its place relative to the work, and one undo puts it back",
+          "[editor][commands]") {
+    LitRow lit;
+    const doc::OnTrack before = lit.spot_at();
+    const world::World first = world::compile(lit.history.document());
+    const dvec3 offset_before_m = light_of(first, lit.spot.spot).luminaire.position_m() -
+                                  exhibit_of(first, lit.one.exhibit).face_centre_m;
+
+    lit.add_two();
+    const doc::Document& document = lit.history.document();
+    CHECK_THAT(on_wall_of(entity_of(document, lit.one.exhibit)).distance_m,
+               WithinAbs(3.0 + one_moves_m, exact_m));
+    const doc::OnTrack after = lit.spot_at();
+    CHECK(after.track == before.track);
+    // add_spot_for's track begins opposite the face's left end: a distance along it is a u along
+    // the face.
+    CHECK_THAT(after.distance_m, WithinAbs(before.distance_m + one_moves_m, exact_m));
+    // Where the light is, seen from the work, is as it was: so is the angle of its aim.
+    const world::World moved = world::compile(document);
+    check_near(light_of(moved, lit.spot.spot).luminaire.position_m() -
+                   exhibit_of(moved, lit.one.exhibit).face_centre_m,
+               offset_before_m, exact_m);
+    CHECK(entity_of(document, lit.spot.spot).luminaire->aim ==
+          doc::Aim{doc::AimAtEntity{lit.one.exhibit}});
+
+    lit.history.undo();
+    CHECK(lit.spot_at() == before);
+}
+
+TEST_CASE("add_work_in_row: a spot aimed at a point, or on a track at an angle to the face, stays "
+          "where it is",
+          "[editor][commands]") {
+    LitRow lit;
+    doc::Transaction change(lit.history.document(), "Change the spot");
+    SECTION("aimed at a point") {
+        doc::Luminaire luminaire = *entity_of(lit.history.document(), lit.spot.spot).luminaire;
+        luminaire.aim = doc::AimAtPoint{doc::Vec3{3.0, 0.1, 1.5}};
+        change.set(lit.spot.spot, std::move(luminaire));
+    }
+    SECTION("on a track at an angle to the face") {
+        doc::Track track = *entity_of(lit.history.document(), lit.spot.track).track;
+        REQUIRE(track.points_m.size() == 2);
+        track.points_m[1].y += 1.0;
+        change.set(lit.spot.track, std::move(track));
+    }
+    lit.commit(std::move(change));
+    const doc::OnTrack before = lit.spot_at();
+
+    lit.add_two();
+    CHECK(lit.spot_at() == before);
+}
+
+TEST_CASE("add_work_in_row: a spot that would slide past its track's end stops at it",
+          "[editor][commands]") {
+    LitRow lit;
+    // 0.2 m from the track's first point: sliding 0.505 m towards it would pass it.
+    doc::OnTrack near_start = lit.spot_at();
+    near_start.distance_m = 0.2;
+    doc::Transaction change(lit.history.document(), "Move the spot");
+    change.set(lit.spot.spot, doc::Placement{near_start});
+    lit.commit(std::move(change));
+
+    lit.add_two();
+    CHECK(lit.spot_at().distance_m == 0.0);
+}

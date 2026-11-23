@@ -11,9 +11,14 @@
 #include <cs/geom/wall_face.hpp>
 #include <cs/world/compile.hpp>
 
+#include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
+
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <iomanip>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -29,11 +34,57 @@ namespace {
 // that a row that fits exactly is not refused for the last bit of a sum. [C]
 constexpr double row_fit_tolerance_m = 1e-9;
 
+// A track is parallel to a face when the sine of the angle between them is at most this: a
+// microradian, which a track drawn along the wall (add_spot_for's, but for rounding) is well within
+// and a track at an angle to it well outside. [C]
+constexpr double parallel_tolerance = 1e-6;
+
 // A length for the curator: "6.20 m".
 std::string metres(double value_m) {
     std::ostringstream text;
     text << std::fixed << std::setprecision(2) << value_m << " m";
     return text.str();
+}
+
+// Slides each spot aimed at a moved exhibit along its track by as much as the exhibit moved along
+// the face, kept on the track: a luminaire with an AimAtEntity of the exhibit, OnTrack on a track
+// of two points parallel to the face. Its place relative to the work, and so its angle, stays.
+void slide_spots(const doc::Document& document, const geom::FaceFrame& face,
+                 const std::map<doc::Uuid, double>& moved_m, doc::Transaction& transaction) {
+    const glm::dvec2 along_face(face.u);
+    for (const auto& [id, entity] : document.entities()) {
+        if (!entity.luminaire || !entity.placement) {
+            continue;
+        }
+        const auto* aim = std::get_if<doc::AimAtEntity>(&entity.luminaire->aim);
+        const auto* on_track = std::get_if<doc::OnTrack>(&*entity.placement);
+        if (aim == nullptr || on_track == nullptr) {
+            continue;
+        }
+        const auto moved = moved_m.find(aim->target);
+        const doc::Entity* holder = document.find_entity(on_track->track);
+        if (moved == moved_m.end() || holder == nullptr || !holder->track ||
+            holder->track->points_m.size() != 2) {
+            continue;
+        }
+        const glm::dvec2 run =
+            detail::to_glm(holder->track->points_m[1]) - detail::to_glm(holder->track->points_m[0]);
+        const double length_m = glm::length(run);
+        if (!(length_m > 0.0)) {
+            continue;
+        }
+        const glm::dvec2 along = run / length_m;
+        if (!(std::abs(along.x * along_face.y - along.y * along_face.x) <= parallel_tolerance)) {
+            continue;
+        }
+        // add_spot_for's track runs the face's way; one drawn the other way runs against it.
+        const double sign = glm::dot(along, along_face) > 0.0 ? 1.0 : -1.0;
+        doc::OnTrack slid = *on_track;
+        slid.distance_m = std::clamp(on_track->distance_m + sign * moved->second, 0.0, length_m);
+        if (slid != *on_track) {
+            transaction.set(id, doc::Placement{slid});
+        }
+    }
 }
 
 } // namespace
@@ -148,15 +199,18 @@ AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
             " long");
     }
 
+    std::map<doc::Uuid, double> moved_m; // how far each exhibit moved along the face
     double left_m = clearance_m;
     for (Member& member : row) {
         const double distance_m = left_m + member.width_m / 2.0;
         left_m += member.width_m + row_gap_m;
         if (member.placement.distance_m != distance_m) {
+            moved_m.emplace(member.entity, distance_m - member.placement.distance_m);
             member.placement.distance_m = distance_m;
             added.transaction.set(member.entity, doc::Placement{member.placement});
         }
     }
+    slide_spots(document, face, moved_m, added.transaction);
     return added;
 }
 
