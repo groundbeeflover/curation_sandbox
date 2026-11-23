@@ -1204,6 +1204,52 @@ TEST_CASE("Walking skeleton: the lux panel follows undo, New and Open", "[ui][ac
     CHECK(opened[0].total_lx == report.total_lux.mean);
 }
 
+// Titles come from project files, which are hostile (CLAUDE.md). Qt reads markup in a tooltip or a
+// message box as rich text, and rich text loads <img> sources (on Windows from network shares) and
+// opens links: the security review of this pull request. The panel and Add spot show a title as
+// written.
+TEST_CASE("Walking skeleton: a work's title is shown as written, never read as markup", "[ui]") {
+    std::unique_ptr<MainWindow> window = app_window();
+    const LuxPanel panel = lux_panel(*window);
+    build_room(*window);
+    const doc::Uuid work_id =
+        add_painting(*window, picked_chart("walking-skeleton-markup", "Photo.PNG"));
+    const std::string title = "Water Lilies<img src=\"//example.invalid/s/a.png\"> & <b>bold</b>";
+    {
+        doc::Work work = *window->document().find_work(work_id);
+        work.title = title;
+        doc::Transaction rename(window->document(), "Rename the work");
+        rename.set_work(work_id, std::move(work));
+        window->commit(std::move(rename));
+    }
+    add_spot(*window);
+    REQUIRE(wait_for_lux(panel));
+    REQUIRE(panel.table->topLevelItemCount() == 1);
+    const QTreeWidgetItem* row = panel.table->topLevelItem(0);
+    CHECK(row->text(0).toStdString() == title);
+    const QString tip = row->toolTip(0);
+    INFO("tooltip: " << tip.toStdString());
+    CHECK_FALSE(tip.contains(QStringLiteral("<img")));
+    CHECK(tip.contains(QStringLiteral("&lt;img")));
+
+    // Add spot again asks first, naming the work: as plain text. Cancelled.
+    Qt::TextFormat format = Qt::AutoText;
+    std::string text;
+    QAction* action = menu_action(*window, QStringLiteral("Lights"), add_spot_text());
+    ModalAnswerer answers({[&format, &text](QWidget& modal) {
+        if (const auto* box = qobject_cast<QMessageBox*>(&modal)) {
+            format = box->textFormat();
+            text = box->text().toStdString();
+        }
+        return false;
+    }});
+    action->trigger();
+    CHECK(answers.finish());
+    CHECK(format == Qt::PlainText);
+    CHECK_THAT(text, Catch::Matchers::ContainsSubstring(title));
+    CHECK(luminaires_of(window->document()).size() == 1);
+}
+
 // ==== The camera ==============================================================================
 
 // Acceptance criterion: "Orbit by default". Dragging with the left button turns the camera round

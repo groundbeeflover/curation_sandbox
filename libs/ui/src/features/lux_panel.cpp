@@ -34,6 +34,7 @@
 #include <QLocale>
 #include <QMetaObject>
 #include <QStringList>
+#include <QTextDocument>
 #include <QThreadPool>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -246,6 +247,7 @@ class LuxPanel : public QWidget {
         status_ = new QLabel(this);
         status_->setObjectName(QStringLiteral("lux_status"));
         status_->setWordWrap(true);
+        status_->setTextFormat(Qt::PlainText); // it may name works by their titles
         status_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
         auto* layout = new QVBoxLayout(this);
@@ -348,7 +350,9 @@ class LuxPanel : public QWidget {
             auto* item = new QTreeWidgetItem(table_);
             item->setText(0, reading.title.empty() ? MainWindow::tr("Untitled work")
                                                    : QString::fromStdString(reading.title));
-            item->setToolTip(0, item->text(0));
+            // As written: a title comes from a project file, and Qt reads markup in a tooltip as
+            // rich text, which loads <img> sources (on Windows from network shares).
+            item->setToolTip(0, Qt::convertFromPlainText(item->text(0), Qt::WhiteSpaceNormal));
             for (const int column : {1, 2}) {
                 const double lux = column == 1 ? reading.direct_lux : reading.total_lux;
                 item->setTextAlignment(column, Qt::AlignRight | Qt::AlignVCenter);

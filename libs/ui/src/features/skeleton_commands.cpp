@@ -75,8 +75,20 @@ constexpr double facing_distance_from_far_wall_m = 0.5;
 // How long the status bar says what a command did.
 constexpr int passing_message_ms = 10000;
 
+// A message box that shows its text as written. Titles come from project files and names from
+// the file system, which are hostile (CLAUDE.md); Qt would read markup in them as rich text, which
+// loads <img> sources (on Windows from network shares) and opens links.
+QMessageBox::StandardButton ask(MainWindow& window, QMessageBox::Icon icon, const QString& title,
+                                const QString& text, QMessageBox::StandardButtons buttons,
+                                QMessageBox::StandardButton default_button) {
+    QMessageBox box(icon, title, text, buttons, &window);
+    box.setTextFormat(Qt::PlainText);
+    box.setDefaultButton(default_button);
+    return static_cast<QMessageBox::StandardButton>(box.exec());
+}
+
 void warn(MainWindow& window, const QString& title, const QString& text) {
-    QMessageBox::warning(&window, title, text);
+    ask(window, QMessageBox::Warning, title, text, QMessageBox::Ok, QMessageBox::Ok);
 }
 
 // What a command did, in the status bar: the viewport may not show it (a room stays dark until a
@@ -393,12 +405,11 @@ void add_spot(MainWindow& window) {
     const QString painting = quoted(work != nullptr ? work->title : std::string());
     // A second spot goes exactly where the first is, doubling the light: asked, Cancel first.
     if (lit(document, *exhibit) &&
-        QMessageBox::question(&window, MainWindow::tr("Add spot"),
-                              MainWindow::tr("A spot lights %1 already. Add a second one in the "
-                                             "same place, which doubles the light on it?")
-                                  .arg(painting),
-                              QMessageBox::Yes | QMessageBox::Cancel,
-                              QMessageBox::Cancel) != QMessageBox::Yes) {
+        ask(window, QMessageBox::Question, MainWindow::tr("Add spot"),
+            MainWindow::tr("A spot lights %1 already. Add a second one in the same place, which "
+                           "doubles the light on it?")
+                .arg(painting),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
         return;
     }
     try {
