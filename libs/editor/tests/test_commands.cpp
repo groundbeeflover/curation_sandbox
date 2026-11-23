@@ -2,12 +2,13 @@
 
 // The first editor commands (#66, M1-25): new_room, add_work and add_spot_for, each one
 // transaction that undoes in one step, from the issue's acceptance criteria and the headers of
-// libs/editor/include/cs/editor/commands/. The numbers are the issue's and ADR 0006's: four walls
-// lettered A to D, a work at the middle of wall A on the project's centre line, and a spot on a
-// ceiling track (ceiling height - 1.6 m) x tan 30 degrees = 1.097 m from the face of a 3.5 m room,
-// slid along it until its aim at the centre of the work's face is 30 degrees from vertical. The
-// skeleton scene (tests/scenes/skeleton/README.md) is the worked example: there the slide is
-// 0.465 m.
+// libs/editor/include/cs/editor/commands/. At the end, add_work_in_row and hung_width_m (#88,
+// M1-27): several paintings side by side on wall A. The numbers are the issue's and ADR 0006's:
+// four walls lettered A to D, a work at the middle of wall A on the project's centre line, and a
+// spot on a ceiling track (ceiling height - 1.6 m) x tan 30 degrees = 1.097 m from the face of
+// a 3.5 m room, slid along it until its aim at the centre of the work's face is 30 degrees from
+// vertical. The skeleton scene (tests/scenes/skeleton/README.md) is the worked example: there the
+// slide is 0.465 m.
 //
 // Coordinates as in the document: metres, z up, the floor at z = 0. new_room(6, 4, 3.5) builds
 // wall A along y = 0, so face A of wall A faces +y, its left end (seen facing it from the room) is
@@ -26,6 +27,7 @@
 #include <cs/doc/transaction.hpp>
 #include <cs/doc/uuid.hpp>
 #include <cs/doc/work.hpp>
+#include <cs/geom/box_frame.hpp>
 #include <cs/geom/wall_face.hpp>
 #include <cs/world/compile.hpp>
 #include <cs/world/ids.hpp>
@@ -34,6 +36,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
@@ -1564,6 +1567,581 @@ TEST_CASE("commands: what they make reads back from its project.json", "[editor]
     commit_add_spot(history, ids, gallery.work.exhibit);
     commit_add_spot(history, ids, gallery.work.exhibit);
     commit_new_room(history, ids, 3.0, 2.0, 2.8);
+
+    const std::string text = doc::to_project_json(history.document());
+    const doc::Document read = doc::parse_project_json(text);
+    CHECK(read == history.document());
+    CHECK(doc::to_project_json(read) == text);
+}
+
+// ==== add_work_in_row (#88, M1-27) ============================================================
+//
+// The issue's criterion: "editor::add_work_in_row (hanging.hpp), with add_work's arguments and
+// result, hangs the new work on face A of wall A on the centre line and moves the works already
+// there so that the row is centred on the face with equal 0.4 m gaps between the frames' outer
+// edges, all in one transaction; when either end would be closer than 0.3 m to the face's ends it
+// throws std::invalid_argument ('Wall A is full') and changes nothing. [editor] tests: three works
+// of different widths do not overlap, have equal gaps and are centred; one too wide is refused;
+// undo puts the others back."
+//
+// In new_room(6, 4, 3.5), face A of wall A is 6 m long and a distance along it, u, runs from its
+// left end (x = 6) seen from the room; "left to right" is increasing u. A box-framed work takes
+// its width - 2 x 0.005 m (the frame's rebate) + 2 x 0.06 m (its members) on the wall: 0.11 m
+// more than the work (world::default_frame).
+
+namespace {
+
+// A work's width on the wall in a box frame with members member_width_m wide, from
+// world::default_frame's numbers: the sight opening, the work less the rebate on each side, plus
+// a member on each side (geom::outer_size).
+double framed_width_m(double work_width_m,
+                      double member_width_m = world::default_frame.member_width_m) {
+    return work_width_m - 2.0 * world::default_frame.rebate_m + 2.0 * member_width_m;
+}
+
+doc::Work flat_work(double width_m, double height_m) {
+    doc::Work work;
+    work.form = doc::FlatForm{.width_m = width_m, .height_m = height_m, .depth_m = std::nullopt};
+    work.image = chart_image;
+    return work;
+}
+
+doc::Framing framing_of_style(std::string style) {
+    doc::Framing framing;
+    framing.style = std::move(style);
+    return framing;
+}
+
+WorkIds commit_add_work_in_row(doc::History& history, doc::IdGenerator& ids, double width_m,
+                               double height_m, std::string title = {}) {
+    AddedWork made =
+        add_work_in_row(history.document(), ids, chart_image, width_m, height_m, std::move(title));
+    const WorkIds work{made.work, made.exhibit};
+    history.commit(std::move(made.transaction));
+    return work;
+}
+
+// One exhibit of the row on face A of wall A, with its width on the wall worked out here (not by
+// hung_width_m, which has a test of its own).
+struct RowWork {
+    doc::Uuid exhibit;
+    double distance_m = 0.0;
+    double width_m = 0.0;
+    double left_m() const { return distance_m - width_m / 2.0; }
+    double right_m() const { return distance_m + width_m / 2.0; }
+};
+
+// Every exhibit on face A of `wall`, left to right (by distance, then id, as the header orders
+// them).
+std::vector<RowWork> row_on(const doc::Document& document, const doc::Uuid& wall) {
+    std::vector<RowWork> row;
+    for (const auto& [id, entity] : document.entities()) {
+        if (!entity.exhibit.has_value() || !entity.placement.has_value()) {
+            continue;
+        }
+        const auto* at = std::get_if<doc::OnWall>(&*entity.placement);
+        if (at == nullptr || at->wall != wall || at->face != doc::WallFace::a) {
+            continue;
+        }
+        const doc::Work* work = document.find_work(entity.exhibit->work);
+        REQUIRE(work != nullptr);
+        const double width_m =
+            entity.framing.has_value()
+                ? framed_width_m(work->form.width_m, entity.framing->width_m.value_or(
+                                                         world::default_frame.member_width_m))
+                : work->form.width_m;
+        row.push_back({id, at->distance_m, width_m});
+    }
+    std::sort(row.begin(), row.end(), [](const RowWork& a, const RowWork& b) {
+        return a.distance_m != b.distance_m ? a.distance_m < b.distance_m : a.exhibit < b.exhibit;
+    });
+    return row;
+}
+
+// The issue's rule for a row on a face face_length_m long: no overlap, row_gap_m between each
+// work's outer edge and the next's, the same clearance at both ends, at least row_end_clearance_m.
+void check_centred_row(const std::vector<RowWork>& row, double face_length_m) {
+    REQUIRE_FALSE(row.empty());
+    for (std::size_t i = 0; i + 1 < row.size(); ++i) {
+        CAPTURE(i);
+        CHECK(row[i].right_m() < row[i + 1].left_m());
+        CHECK_THAT(row[i + 1].left_m() - row[i].right_m(), WithinAbs(row_gap_m, exact_m));
+    }
+    const double left_clearance_m = row.front().left_m();
+    const double right_clearance_m = face_length_m - row.back().right_m();
+    CAPTURE(left_clearance_m, right_clearance_m);
+    CHECK_THAT(left_clearance_m, WithinAbs(right_clearance_m, exact_m));
+    CHECK(left_clearance_m >= row_end_clearance_m - exact_m);
+}
+
+std::vector<doc::Uuid> exhibits_of(const std::vector<RowWork>& row) {
+    std::vector<doc::Uuid> exhibits;
+    for (const RowWork& work : row) {
+        exhibits.push_back(work.exhibit);
+    }
+    return exhibits;
+}
+
+} // namespace
+
+TEST_CASE("hung_width_m: a framed work's outer width, its width - 2 x 0.005 + 2 x 0.06 m, "
+          "whatever the style",
+          "[editor][commands]") {
+    // world::default_frame's numbers, which the issue's widths assume.
+    CHECK(world::default_frame.member_width_m == 0.06);
+    CHECK(world::default_frame.rebate_m == 0.005);
+
+    const auto [width_m, height_m] =
+        GENERATE(std::pair{0.73, 0.92}, std::pair{0.5, 0.4}, std::pair{1.2, 0.8});
+    CAPTURE(width_m, height_m);
+    const doc::Work work = flat_work(width_m, height_m);
+    const double expected_m = width_m - 2.0 * 0.005 + 2.0 * 0.06;
+
+    // Sums of a few numbers near 1: exact but for rounding (exact_m above).
+    CHECK_THAT(hung_width_m(work, framing_of_style("box")), WithinAbs(expected_m, exact_m));
+    // Every style is a box frame until M2-08.
+    CHECK_THAT(hung_width_m(work, framing_of_style("gilded-swept")),
+               WithinAbs(expected_m, exact_m));
+    // geom::outer_size of the same frame, as world::compile builds it.
+    const geom::BoxFrame frame{.work_width_m = width_m,
+                               .work_height_m = height_m,
+                               .member_width_m = world::default_frame.member_width_m,
+                               .depth_m = world::default_frame.depth_m,
+                               .rebate_m = world::default_frame.rebate_m};
+    CHECK_THAT(hung_width_m(work, framing_of_style("box")),
+               WithinAbs(geom::outer_size(frame).x, exact_m));
+}
+
+TEST_CASE("hung_width_m: the framing's member width when it sets one", "[editor][commands]") {
+    const doc::Work work = flat_work(0.73, 0.92);
+    doc::Framing narrow = framing_of_style("box");
+    narrow.width_m = 0.03;
+    // 0.73 - 0.01 + 2 x 0.03 = 0.78.
+    CHECK_THAT(hung_width_m(work, narrow), WithinAbs(0.78, exact_m));
+    doc::Framing wide = framing_of_style("box");
+    wide.width_m = 0.1;
+    // 0.73 - 0.01 + 2 x 0.1 = 0.92.
+    CHECK_THAT(hung_width_m(work, wide), WithinAbs(0.92, exact_m));
+}
+
+TEST_CASE("hung_width_m: an unframed work, or one whose frame cannot be built, takes its own "
+          "width",
+          "[editor][commands]") {
+    CHECK(hung_width_m(flat_work(0.73, 0.92), std::nullopt) == 0.73);
+    CHECK(hung_width_m(flat_work(1.2, 0.8), std::nullopt) == 1.2);
+    // Narrower or lower than twice the rebate, 0.01 m: the sight opening is empty, so no frame
+    // (geom::box_frame refuses it) and the work is shown unframed.
+    CHECK(hung_width_m(flat_work(0.008, 0.5), framing_of_style("box")) == 0.008);
+    CHECK(hung_width_m(flat_work(0.5, 0.008), framing_of_style("box")) == 0.5);
+}
+
+TEST_CASE("add_work_in_row: three works of different widths hang left to right in the order "
+          "added, 0.4 m apart, without overlapping, the row centred on face A of wall A",
+          "[editor][commands]") {
+    CHECK(row_gap_m == 0.4);
+    CHECK(row_end_clearance_m == 0.3);
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const doc::Uuid wall_a = room.walls[0];
+
+    // Widths on the wall: 0.61, 0.84 and 1.31 m.
+    const WorkIds one = commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+    {
+        INFO("one work: in the middle of the face");
+        const std::vector<RowWork> row = row_on(history.document(), wall_a);
+        REQUIRE(row.size() == 1);
+        CHECK(row[0].exhibit == one.exhibit);
+        CHECK_THAT(row[0].distance_m, WithinAbs(3.0, exact_m));
+        check_centred_row(row, 6.0);
+    }
+
+    const WorkIds two = commit_add_work_in_row(history, ids, 0.73, 0.92, "Two");
+    {
+        // The row is 0.61 + 0.4 + 0.84 = 1.85 m, from u = (6 - 1.85) / 2 = 2.075: centres at
+        // 2.075 + 0.305 = 2.38 and 2.075 + 0.61 + 0.4 + 0.42 = 3.505.
+        INFO("two works");
+        const std::vector<RowWork> row = row_on(history.document(), wall_a);
+        REQUIRE(row.size() == 2);
+        CHECK(exhibits_of(row) == std::vector<doc::Uuid>{one.exhibit, two.exhibit});
+        CHECK_THAT(row[0].distance_m, WithinAbs(2.38, exact_m));
+        CHECK_THAT(row[1].distance_m, WithinAbs(3.505, exact_m));
+        check_centred_row(row, 6.0);
+    }
+
+    const WorkIds three = commit_add_work_in_row(history, ids, 1.2, 0.8, "Three");
+    const doc::Document& document = history.document();
+    // The row is 0.61 + 0.4 + 0.84 + 0.4 + 1.31 = 3.56 m, from u = (6 - 3.56) / 2 = 1.22 to
+    // 4.78: centres at 1.22 + 0.305 = 1.525, 1.22 + 0.61 + 0.4 + 0.42 = 2.65 and
+    // 4.78 - 0.655 = 4.125; 1.22 m clear at each end.
+    const std::vector<RowWork> row = row_on(document, wall_a);
+    REQUIRE(row.size() == 3);
+    CHECK(exhibits_of(row) == std::vector<doc::Uuid>{one.exhibit, two.exhibit, three.exhibit});
+    CHECK_THAT(row[0].distance_m, WithinAbs(1.525, exact_m));
+    CHECK_THAT(row[1].distance_m, WithinAbs(2.65, exact_m));
+    CHECK_THAT(row[2].distance_m, WithinAbs(4.125, exact_m));
+    CHECK_THAT(row[0].left_m(), WithinAbs(1.22, exact_m));
+    CHECK_THAT(6.0 - row[2].right_m(), WithinAbs(1.22, exact_m));
+    check_centred_row(row, 6.0);
+
+    // Every one on face A of wall A, on the centre line, 0.04 m out; the face is 6 m long.
+    for (const doc::Uuid& exhibit : {one.exhibit, two.exhibit, three.exhibit}) {
+        CAPTURE(exhibit);
+        const doc::OnWall& at = on_wall_of(entity_of(document, exhibit));
+        CHECK(at.wall == wall_a);
+        CHECK(at.face == doc::WallFace::a);
+        CHECK(at.centre_height_m == document.settings().centre_line_m);
+        CHECK(at.stand_off_m == default_stand_off_m);
+        CHECK_THAT(face_of(document, exhibit).length_m, WithinAbs(6.0, exact_m));
+    }
+    // Each work as add_work makes it: a box frame, the size, the image, the title.
+    const doc::Entity& third = entity_of(document, three.exhibit);
+    CHECK(third.name == "Three");
+    REQUIRE(third.exhibit.has_value());
+    CHECK(third.exhibit->work == three.work);
+    REQUIRE(third.framing.has_value());
+    CHECK(*third.framing == framing_of_style(std::string(default_frame_style)));
+    const doc::Work* work = document.find_work(three.work);
+    REQUIRE(work != nullptr);
+    CHECK(work->title == "Three");
+    CHECK(work->form.width_m == 1.2);
+    CHECK(work->form.height_m == 0.8);
+    CHECK(work->image == chart_image);
+    CHECK(work->material.preset == std::string(default_material_preset));
+    CHECK_FALSE(work->source.has_value());
+    CHECK(document.works().size() == 3);
+}
+
+TEST_CASE("add_work_in_row: a work hung by add_work in the middle is moved into the row with the "
+          "new one",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const WorkIds middle = commit_add_work(history, ids, 0.73, 0.92, "Middle");
+    REQUIRE_THAT(on_wall_of(entity_of(history.document(), middle.exhibit)).distance_m,
+                 WithinAbs(3.0, exact_m));
+
+    const WorkIds added = commit_add_work_in_row(history, ids, 0.5, 0.4, "Added");
+    // The row is 0.84 + 0.4 + 0.61 = 1.85 m from u = 2.075: centres at 2.075 + 0.42 = 2.495 and
+    // 2.075 + 0.84 + 0.4 + 0.305 = 3.62.
+    const std::vector<RowWork> row = row_on(history.document(), room.walls[0]);
+    REQUIRE(row.size() == 2);
+    CHECK(exhibits_of(row) == std::vector<doc::Uuid>{middle.exhibit, added.exhibit});
+    CHECK_THAT(row[0].distance_m, WithinAbs(2.495, exact_m));
+    CHECK_THAT(row[1].distance_m, WithinAbs(3.62, exact_m));
+    check_centred_row(row, 6.0);
+}
+
+TEST_CASE("add_work_in_row: the works already there keep their order along the face, equal "
+          "distances by id, and the new one goes at the right end",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    // Both hung by add_work at the middle of the face, u = 3: the same distance.
+    const WorkIds first = commit_add_work(history, ids, 0.73, 0.92, "First");
+    const WorkIds second = commit_add_work(history, ids, 0.5, 0.4, "Second");
+    REQUIRE(first.exhibit < second.exhibit);
+
+    std::vector<doc::Uuid> expected;
+    SECTION("at the same distance: in order of id") {
+        expected = {first.exhibit, second.exhibit};
+    }
+    SECTION("the second moved to u = 1 m, left of the first: in order of distance") {
+        doc::OnWall at = on_wall_of(entity_of(history.document(), second.exhibit));
+        at.distance_m = 1.0;
+        commit_set(history, second.exhibit, doc::Placement{at});
+        expected = {second.exhibit, first.exhibit};
+    }
+    const WorkIds added = commit_add_work_in_row(history, ids, 1.2, 0.8, "Added");
+    expected.push_back(added.exhibit);
+
+    const std::vector<RowWork> row = row_on(history.document(), room.walls[0]);
+    REQUIRE(row.size() == 3);
+    CHECK(exhibits_of(row) == expected);
+    // Strictly left to right now: no two at one distance.
+    CHECK(row[0].distance_m < row[1].distance_m);
+    CHECK(row[1].distance_m < row[2].distance_m);
+    check_centred_row(row, 6.0);
+}
+
+TEST_CASE("add_work_in_row: the others keep their heights and stand-offs; the new work is on the "
+          "project's centre line, 0.04 m out",
+          "[editor][commands]") {
+    const double centre_line_m = GENERATE(1.5, 1.45);
+    CAPTURE(centre_line_m);
+    doc::DocumentData data;
+    data.settings.centre_line_m = centre_line_m;
+    doc::History history{doc::Document(data)};
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const WorkIds first = commit_add_work_in_row(history, ids, 0.73, 0.92, "First");
+
+    doc::OnWall raised = on_wall_of(entity_of(history.document(), first.exhibit));
+    raised.centre_height_m = 1.7;
+    raised.stand_off_m = 0.02;
+    commit_set(history, first.exhibit, doc::Placement{raised});
+
+    const WorkIds second = commit_add_work_in_row(history, ids, 0.5, 0.4, "Second");
+    const doc::OnWall& first_at = on_wall_of(entity_of(history.document(), first.exhibit));
+    CHECK(first_at.centre_height_m == 1.7);
+    CHECK(first_at.stand_off_m == 0.02);
+    CHECK(first_at.wall == room.walls[0]);
+    CHECK(first_at.face == doc::WallFace::a);
+    // Moved along the face, from the middle to the row's left.
+    CHECK(first_at.distance_m < 3.0);
+    const doc::OnWall& second_at = on_wall_of(entity_of(history.document(), second.exhibit));
+    CHECK(second_at.centre_height_m == centre_line_m);
+    CHECK(second_at.stand_off_m == default_stand_off_m);
+    check_centred_row(row_on(history.document(), room.walls[0]), 6.0);
+}
+
+TEST_CASE("add_work_in_row: an unframed work in the row takes its own width",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const WorkIds bare = commit_add_work_in_row(history, ids, 0.5, 0.4, "Bare");
+    doc::Transaction unframe(history.document(), "Remove frame");
+    unframe.remove(bare.exhibit, doc::ComponentKind::framing);
+    history.commit(std::move(unframe));
+
+    const WorkIds framed = commit_add_work_in_row(history, ids, 0.73, 0.92, "Framed");
+    // The row is 0.5 + 0.4 + 0.84 = 1.74 m from u = (6 - 1.74) / 2 = 2.13: centres at
+    // 2.13 + 0.25 = 2.38 and 2.13 + 0.5 + 0.4 + 0.42 = 3.45.
+    const std::vector<RowWork> row = row_on(history.document(), room.walls[0]);
+    REQUIRE(row.size() == 2);
+    CHECK(exhibits_of(row) == std::vector<doc::Uuid>{bare.exhibit, framed.exhibit});
+    CHECK_THAT(row[0].distance_m, WithinAbs(2.38, exact_m));
+    CHECK_THAT(row[1].distance_m, WithinAbs(3.45, exact_m));
+    check_centred_row(row, 6.0);
+}
+
+TEST_CASE("add_work_in_row: works on another wall, or on face B of wall A, are not in the row and "
+          "stay where they are",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const WorkIds on_b = commit_add_work(history, ids, 0.73, 0.92, "On wall B");
+    commit_set(history, on_b.exhibit,
+               doc::Placement{doc::OnWall{.wall = room.walls[1],
+                                          .face = doc::WallFace::a,
+                                          .distance_m = 2.0,
+                                          .centre_height_m = 1.5,
+                                          .stand_off_m = 0.04}});
+    const WorkIds behind = commit_add_work(history, ids, 0.5, 0.4, "Behind wall A");
+    commit_set(history, behind.exhibit,
+               doc::Placement{doc::OnWall{.wall = room.walls[0],
+                                          .face = doc::WallFace::b,
+                                          .distance_m = 1.0,
+                                          .centre_height_m = 1.5,
+                                          .stand_off_m = 0.04}});
+    const doc::Placement on_b_before = *entity_of(history.document(), on_b.exhibit).placement;
+    const doc::Placement behind_before = *entity_of(history.document(), behind.exhibit).placement;
+
+    const WorkIds added = commit_add_work_in_row(history, ids, 0.73, 0.92, "Added");
+    CHECK(*entity_of(history.document(), on_b.exhibit).placement == on_b_before);
+    CHECK(*entity_of(history.document(), behind.exhibit).placement == behind_before);
+    // Alone in the row: in the middle of the face.
+    const std::vector<RowWork> row = row_on(history.document(), room.walls[0]);
+    REQUIRE(row.size() == 1);
+    CHECK(row[0].exhibit == added.exhibit);
+    CHECK_THAT(row[0].distance_m, WithinAbs(3.0, exact_m));
+}
+
+TEST_CASE("add_work_in_row: one transaction named as add_work's, adding the work and its exhibit "
+          "and moving the others, with ids taken for the work, then the entity",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const WorkIds one = commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+    const WorkIds two = commit_add_work_in_row(history, ids, 0.73, 0.92, "Two");
+    const std::size_t steps = history.undo_count();
+
+    AddedWork made = add_work_in_row(history.document(), ids, chart_image, 1.2, 0.8, "Three");
+    CHECK(made.transaction.name() == "Add Three");
+    CHECK(&made.transaction.document() == &history.document());
+    CHECK(room.walls[3] < made.work);
+    CHECK(two.exhibit < made.work);
+    CHECK(made.work < made.exhibit);
+
+    const doc::ChangeList changes = made.transaction.changes();
+    CHECK_FALSE(changes.settings);
+    CHECK(changes.fixture_types.empty());
+    REQUIRE(changes.works.size() == 1);
+    CHECK(changes.works[0] == doc::WorkChange{made.work, doc::ChangeKind::added});
+    REQUIRE(changes.entities.size() == 1);
+    CHECK(changes.entities[0] == doc::EntityChange{made.exhibit, doc::ChangeKind::added});
+    // The others: their placements changed, and nothing else of theirs.
+    std::vector<doc::Uuid> moved;
+    for (const doc::ComponentChange& change : changes.components) {
+        if (change.entity == made.exhibit) {
+            CHECK(change.kind == doc::ChangeKind::added);
+            continue;
+        }
+        CAPTURE(change.entity);
+        CHECK(change.component == doc::ComponentKind::placement);
+        CHECK(change.kind == doc::ChangeKind::changed);
+        moved.push_back(change.entity);
+    }
+    CHECK(moved == std::vector<doc::Uuid>{one.exhibit, two.exhibit});
+    // Made, not committed.
+    CHECK(history.document().works().size() == 2);
+    CHECK(history.undo_count() == steps);
+
+    history.commit(std::move(made.transaction));
+    CHECK(history.undo_count() == steps + 1);
+    CHECK(history.undo_name().value_or("") == "Add Three");
+
+    AddedWork untitled = add_work_in_row(history.document(), ids, chart_image, 0.3, 0.2);
+    CHECK(untitled.transaction.name() == "Add work");
+}
+
+TEST_CASE("add_work_in_row: one undo takes the new work away and puts the others back",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const WorkIds one = commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+    const WorkIds two = commit_add_work_in_row(history, ids, 0.73, 0.92, "Two");
+    const doc::OnWall one_before = on_wall_of(entity_of(history.document(), one.exhibit));
+    const doc::OnWall two_before = on_wall_of(entity_of(history.document(), two.exhibit));
+    const std::string before = doc::to_project_json(history.document());
+
+    const WorkIds three = commit_add_work_in_row(history, ids, 1.2, 0.8, "Three");
+    // Moved left by the third.
+    CHECK(on_wall_of(entity_of(history.document(), one.exhibit)).distance_m <
+          one_before.distance_m);
+    CHECK(on_wall_of(entity_of(history.document(), two.exhibit)).distance_m <
+          two_before.distance_m);
+
+    history.undo();
+    CHECK(history.document().find_work(three.work) == nullptr);
+    CHECK(history.document().find_entity(three.exhibit) == nullptr);
+    // Back where they were, exactly: undo restores the values it replaced.
+    CHECK(on_wall_of(entity_of(history.document(), one.exhibit)) == one_before);
+    CHECK(on_wall_of(entity_of(history.document(), two.exhibit)) == two_before);
+    CHECK(doc::to_project_json(history.document()) == before);
+    check_centred_row(row_on(history.document(), room.walls[0]), 6.0);
+
+    // And the whole of it undoes and redoes in one step, as every command does.
+    AddedWork again = add_work_in_row(history.document(), ids, chart_image, 1.2, 0.8, "Three");
+    check_undoes_in_one_step(history, std::move(again.transaction));
+}
+
+TEST_CASE("add_work_in_row: a row that would leave less than 0.3 m at an end of the face throws "
+          "std::invalid_argument, 'Wall A is full', and changes nothing",
+          "[editor][commands]") {
+    using Catch::Matchers::ContainsSubstring;
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    commit_new_room(history, ids, 6.0, 4.0, 3.5);
+
+    double width_m = 0.0;
+    SECTION("one work too wide for an empty wall: 5.291 m, 5.401 m framed, 0.2995 m at each end") {
+        width_m = 5.291;
+    }
+    SECTION("a fourth after three: 3.56 m of row + 0.4 + 1.61 = 5.57 m, beyond 6 - 2 x 0.3") {
+        commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+        commit_add_work_in_row(history, ids, 0.73, 0.92, "Two");
+        commit_add_work_in_row(history, ids, 1.2, 0.8, "Three");
+        width_m = 1.5;
+    }
+    SECTION("1 mm more than fits after two: 6 - 0.6 - (0.61 + 0.4 + 0.84 + 0.4) = 3.15 m framed, "
+            "so 3.041 m is 3.151 m") {
+        commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+        commit_add_work_in_row(history, ids, 0.73, 0.92, "Two");
+        width_m = 3.041;
+    }
+    CAPTURE(width_m);
+    const std::string before = doc::to_project_json(history.document());
+    const std::size_t steps = history.undo_count();
+
+    CHECK_THROWS_AS(add_work_in_row(history.document(), ids, chart_image, width_m, 0.5, "Big"),
+                    std::invalid_argument);
+    CHECK_THROWS_WITH(add_work_in_row(history.document(), ids, chart_image, width_m, 0.5, "Big"),
+                      ContainsSubstring("Wall A is full"));
+    // Nothing changed: no work, no entity, every placement as it was. Ids may have been taken.
+    CHECK(doc::to_project_json(history.document()) == before);
+    CHECK(history.undo_count() == steps);
+}
+
+// An exact fit is not closer than 0.3 m, so it is taken. The sums are exact only analytically: in
+// doubles they may come out a few ulps either side, so this asks that a rounding error far below
+// a millimetre does not refuse a row that fits.
+TEST_CASE("add_work_in_row: a row that leaves exactly 0.3 m at each end is taken",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+
+    SECTION("one work, 5.29 m: 5.4 m framed") {
+        CHECK_NOTHROW(commit_add_work_in_row(history, ids, 5.29, 0.5, "Wide"));
+    }
+    SECTION("a third after two: 3.04 m, 3.15 m framed, makes the row 5.4 m") {
+        commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+        commit_add_work_in_row(history, ids, 0.73, 0.92, "Two");
+        CHECK_NOTHROW(commit_add_work_in_row(history, ids, 3.04, 0.5, "Wide"));
+    }
+    const std::vector<RowWork> row = row_on(history.document(), room.walls[0]);
+    REQUIRE_FALSE(row.empty());
+    // 0.3 m at each end; exact_m allows the rounding of the sums.
+    CHECK_THAT(row.front().left_m(), WithinAbs(0.3, exact_m));
+    CHECK_THAT(6.0 - row.back().right_m(), WithinAbs(0.3, exact_m));
+    check_centred_row(row, 6.0);
+}
+
+TEST_CASE("add_work_in_row: refuses what add_work refuses, with std::invalid_argument",
+          "[editor][commands]") {
+    doc::IdGenerator ids = fixed_ids();
+
+    SECTION("no walls") {
+        const doc::Document empty;
+        CHECK_THROWS_AS(add_work_in_row(empty, ids, chart_image, 0.73, 0.92),
+                        std::invalid_argument);
+    }
+    SECTION("wall A relabelled in lower case") {
+        doc::History history;
+        const RoomIds room = commit_new_room(history, ids, 6.0, 4.0, 3.5);
+        doc::Wall a = *entity_of(history.document(), room.walls[0]).wall;
+        a.label = "a";
+        commit_set(history, room.walls[0], a);
+        CHECK_THROWS_AS(add_work_in_row(history.document(), ids, chart_image, 0.73, 0.92),
+                        std::invalid_argument);
+    }
+    SECTION("sizes, an image that is not an asset name, a title too long") {
+        doc::History history;
+        commit_new_room(history, ids, 6.0, 4.0, 3.5);
+        commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+        const std::string before = doc::to_project_json(history.document());
+        const doc::Document& document = history.document();
+
+        const double bad = GENERATE(0.0, -0.0, -0.73, not_a_number, inf, -inf);
+        CAPTURE(bad);
+        CHECK_THROWS_AS(add_work_in_row(document, ids, chart_image, bad, 0.92),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(add_work_in_row(document, ids, chart_image, 0.73, bad),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(
+            add_work_in_row(document, ids, doc::AssetRef{chart_image.sha256, "PNG"}, 0.73, 0.92),
+            std::invalid_argument);
+        CHECK_THROWS_AS(add_work_in_row(document, ids, chart_image, 0.73, 0.92,
+                                        std::string(doc::max_string_bytes + 1, 'x')),
+                        std::invalid_argument);
+        CHECK(doc::to_project_json(history.document()) == before);
+    }
+}
+
+TEST_CASE("add_work_in_row: what it makes reads back from its project.json", "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    commit_add_work_in_row(history, ids, 0.5, 0.4, "One");
+    commit_add_work(history, ids, 0.73, 0.92, "Two");
+    commit_add_work_in_row(history, ids, 1.2, 0.8, "Three");
 
     const std::string text = doc::to_project_json(history.document());
     const doc::Document read = doc::parse_project_json(text);

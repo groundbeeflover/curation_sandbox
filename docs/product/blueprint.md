@@ -198,7 +198,7 @@ everything else stays private. Re-exports are marked *(re-exported)* below.
 | `engine` | the calculation engine: Embree scene, path tracer, lux meter, baker, still renderer, denoising | core, world, light, material, assets | Embree, OIDN |
 | `gpu` | the Vulkan renderer: device, memory, swapchain and offscreen targets, texture residency, the Standard tier, later Ray-traced and GPU path tracing; shaders in `libs/gpu/shaders/` | core *(re-exported)*, world *(re-exported)*, light, material, assets *(re-exported)* | volk, vk-bootstrap, VMA, Slang |
 | `editor` | everything a curator does, without a UI: tools, commands, selection, snapping, measuring, camera controllers, checklist import, exports as CSV and drawing display lists | core, doc *(re-exported)*, world *(re-exported)*, geom, light, material, assets, engine | |
-| `ui` | the Qt Widgets shell, panels and the viewport adapter | editor *(re-exported)*, gpu, assets, core | Qt 6 |
+| `ui` | the Qt Widgets shell, panels and the viewport adapter | editor *(re-exported)*, gpu, assets, core, engine | Qt 6 |
 
 Applications under `apps/`: `curation` (the desktop app), `cs-render` (headless: render a
 project at a tier to EXR or PNG and print a lux report as JSON; used by tests, skills and
@@ -215,7 +215,7 @@ graph BT
   engine --> world & assets
   gpu --> world & assets
   editor --> engine & world & doc
-  ui --> editor & gpu
+  ui --> editor & gpu & engine
   apps["apps: curation, cs-render, cs-bench"] --> ui & engine & gpu
 ```
 
