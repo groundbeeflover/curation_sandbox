@@ -112,8 +112,9 @@ const world::AssetRef* photograph_of(const world::Material& material) {
     return painting != nullptr && painting->image ? &*painting->image : nullptr;
 }
 
-// The photographs last loaded, kept for later readings from the same folder while they hold every
-// photograph a reading needs: an undo, a redo or a save in place then loads none again. Only the
+// The photographs last loaded, and those that could not be, kept for later readings from the same
+// folder while they account for every photograph a reading needs: an undo, a redo or a save in
+// place then loads none again, nor does an edit while one photograph cannot be read. Only the
 // worker thread touches it.
 class TextureCache {
   public:
@@ -122,23 +123,40 @@ class TextureCache {
         if (!textures_ || folder != folder_ || !holds_all(world)) {
             textures_.emplace(engine::load_textures(world, folder));
             folder_ = folder;
-        } else {
-            // Problems of photographs this world does not name: it names none that failed.
-            textures_->problems.clear();
+            failed_ = textures_->problems;
+        }
+        // The problems of the photographs this world names, in the order of its materials.
+        textures_->problems.clear();
+        for (const world::Material& material : world.materials) {
+            const world::AssetRef* photograph = photograph_of(material);
+            const engine::TextureProblem* problem =
+                photograph != nullptr ? failed(*photograph) : nullptr;
+            if (problem != nullptr &&
+                std::ranges::find(textures_->problems, *photograph,
+                                  &engine::TextureProblem::asset) == textures_->problems.end()) {
+                textures_->problems.push_back(*problem);
+            }
         }
         return *textures_;
     }
 
   private:
+    const engine::TextureProblem* failed(const world::AssetRef& photograph) const {
+        const auto found = std::ranges::find(failed_, photograph, &engine::TextureProblem::asset);
+        return found != failed_.end() ? &*found : nullptr;
+    }
+
     bool holds_all(const world::World& world) const {
         return std::ranges::all_of(world.materials, [this](const world::Material& material) {
             const world::AssetRef* photograph = photograph_of(material);
-            return photograph == nullptr || textures_->textures.find(*photograph) != nullptr;
+            return photograph == nullptr || textures_->textures.find(*photograph) != nullptr ||
+                   failed(*photograph) != nullptr;
         });
     }
 
     std::optional<engine::LoadedTextures> textures_;
-    std::filesystem::path folder_; // where textures_ came from
+    std::vector<engine::TextureProblem> failed_; // as load_textures reported them
+    std::filesystem::path folder_;               // where textures_ came from
 };
 
 // The works whose face shows the photograph, by title, for the curator: "“Photo”, “Second”".

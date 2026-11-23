@@ -2361,3 +2361,25 @@ TEST_CASE("add_work_in_row: a spot that would slide past its track's end stops a
     lit.add_two();
     CHECK(lit.spot_at().distance_m == 0.0);
 }
+
+// A spot placed by hand beyond its track's end (compile marks it beyond_track) is not one
+// add_spot_for makes: moving it onto the track would change its light on the work for any move of
+// the work, however small.
+TEST_CASE("add_work_in_row: a spot already beyond its track's end stays where it is",
+          "[editor][commands]") {
+    LitRow lit;
+    const doc::Entity* holder = lit.history.document().find_entity(lit.spot_at().track);
+    REQUIRE(holder != nullptr);
+    REQUIRE(holder->track);
+    REQUIRE(holder->track->points_m.size() == 2);
+    const doc::Vec2 a = holder->track->points_m[0];
+    const doc::Vec2 b = holder->track->points_m[1];
+    doc::OnTrack beyond = lit.spot_at();
+    beyond.distance_m = glm::length(dvec2(b.x - a.x, b.y - a.y)) + 0.3;
+    doc::Transaction change(lit.history.document(), "Move the spot");
+    change.set(lit.spot.spot, doc::Placement{beyond});
+    lit.commit(std::move(change));
+
+    lit.add_two();
+    CHECK(lit.spot_at() == beyond);
+}

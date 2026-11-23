@@ -1053,6 +1053,37 @@ TEST_CASE("Walking skeleton: Add spot lights the work just added with a luminair
     CHECK(window->history().undo_name().value_or("") == "Add spot");
 }
 
+// Ids grow only within one window's run (doc::IdGenerator): a project saved on a machine whose
+// clock was ahead holds greater ones. Add spot still lights the painting Add painting just hung,
+// not the work with the greatest id (the second code review of this pull request).
+TEST_CASE("Walking skeleton: Add spot lights the painting just added, even when another work has a "
+          "greater id",
+          "[ui]") {
+    std::unique_ptr<MainWindow> window = app_window();
+    build_room(*window);
+    const doc::Uuid first =
+        add_painting(*window, picked_chart("walking-skeleton-ahead-1", "Photo.PNG"));
+    // 1 January 2100, in milliseconds since 1970: later than any id this window makes.
+    doc::IdGenerator ahead(1, [] { return std::int64_t{4'102'444'800'000}; });
+    cs::editor::AddedWork later = cs::editor::add_work_in_row(
+        window->document(), ahead, *window->document().find_work(first)->image, 0.5, 0.4,
+        "Hung on a clock ahead");
+    const doc::Uuid later_exhibit = later.exhibit;
+    window->commit(std::move(later.transaction));
+
+    const doc::Uuid second = add_painting(
+        *window, picked_chart("walking-skeleton-ahead-2", "Second.png"), SizeCm{50.0, 40.0});
+    const doc::Uuid second_exhibit = exhibit_of_work(window->document(), second);
+    REQUIRE(second_exhibit < later_exhibit);
+    add_spot(*window);
+
+    const doc::Document& document = window->document();
+    const std::vector<doc::Uuid> luminaires = luminaires_of(document);
+    REQUIRE(luminaires.size() == 1);
+    CHECK(document.find_entity(luminaires.front())->luminaire->aim ==
+          doc::Aim{doc::AimAtEntity{second_exhibit}});
+}
+
 // ==== The lux panel ===========================================================================
 
 // Acceptance criterion: "A lux panel shows the work's mean direct and total lux from
@@ -1202,6 +1233,38 @@ TEST_CASE("Walking skeleton: the lux panel follows undo, New and Open", "[ui][ac
     CHECK_FALSE(fresh_panel.status->text().contains(QStringLiteral("plain grey")));
     CHECK(opened[0].direct_lx == report.direct_lux.mean);
     CHECK(opened[0].total_lx == report.total_lux.mean);
+}
+
+// A photograph the project names but its assets folder does not hold: the panel says so, naming the
+// work, in every reading, also those that take the photographs it keeps (an undo and a redo here)
+// instead of trying to load them all again.
+TEST_CASE("Walking skeleton: the lux panel names a work whose photograph cannot be read, reading "
+          "after reading",
+          "[ui]") {
+    std::unique_ptr<MainWindow> window = app_window();
+    const LuxPanel panel = lux_panel(*window);
+    build_room(*window);
+    const doc::AssetRef missing{.sha256 = std::string(64, 'a'), .extension = "png"};
+    cs::editor::AddedWork lost =
+        cs::editor::add_work_in_row(window->document(), window->ids(), missing, 0.73, 0.92, "Lost");
+    window->commit(std::move(lost.transaction));
+    add_spot(*window);
+    REQUIRE(wait_for_lux(panel));
+    INFO("status: " << panel.status->text().toStdString());
+    CHECK(panel.status->text().contains(QStringLiteral("“Lost”")));
+    CHECK(panel.status->text().contains(QStringLiteral("plain grey")));
+    REQUIRE(panel.table->topLevelItemCount() == 1);
+    const double direct_lx = lux_rows(panel).front().direct_lx;
+    CHECK(direct_lx > 10.0);
+
+    window->undo(); // the spot: no light, read without the photographs
+    REQUIRE(wait_for_lux(panel));
+    window->redo();
+    REQUIRE(wait_for_lux(panel));
+    INFO("status after the redo: " << panel.status->text().toStdString());
+    CHECK(panel.status->text().contains(QStringLiteral("“Lost”")));
+    CHECK(panel.status->text().contains(QStringLiteral("plain grey")));
+    CHECK(lux_rows(panel).front().direct_lx == direct_lx);
 }
 
 // Titles come from project files, which are hostile (CLAUDE.md). Qt reads markup in a tooltip or a
@@ -1452,6 +1515,39 @@ TEST_CASE("Walking skeleton: Tab walks with the pointer captured, W walks forwar
     REQUIRE(QTest::qWaitFor([&] { return shell.line_edit->hasFocus(); }, 1000));
     CHECK(QTest::qWaitFor([&] { return !viewport->pointer_locked(); }, 1000));
     CHECK_FALSE(window.statusBar()->currentMessage().contains(walking_message));
+
+    cs::ui::test::require_no_validation_messages(window);
+}
+
+// New and Open show the project from its first viewpoint and end a walk. A key still held must not
+// walk one last step from the old project's walk, which would show it over the new viewpoint (the
+// second code review of this pull request).
+TEST_CASE("Walking skeleton: New while walking with W held shows the new project from its first "
+          "viewpoint",
+          "[ui][gpu]") {
+    Shell shell = shown_shell();
+    Viewport* viewport = shell.viewport;
+    MainWindow& window = *shell.window;
+    QWindow* top = window.windowHandle();
+    REQUIRE(top != nullptr);
+    // What New shows when nothing is walking.
+    window.new_project();
+    const cs::world::Camera first_view = viewport->camera();
+
+    build_room(window);
+    focus_viewport(shell);
+    QTest::keyClick(top, Qt::Key_Tab);
+    REQUIRE(QTest::qWaitFor([&] { return viewport->pointer_locked(); }, 1000));
+    const cs::world::Camera before_walk = viewport->camera();
+    QTest::keyPress(top, Qt::Key_W);
+    REQUIRE(QTest::qWaitFor([&] { return viewport->camera() != before_walk; }, 1000));
+
+    window.new_project();
+    CHECK(viewport->camera() == first_view);
+    CHECK(QTest::qWaitFor([&] { return !viewport->pointer_locked(); }, 1000));
+    QTest::keyRelease(top, Qt::Key_W);
+    QApplication::processEvents();
+    CHECK(viewport->camera() == first_view);
 
     cs::ui::test::require_no_validation_messages(window);
 }

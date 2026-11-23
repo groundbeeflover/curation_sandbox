@@ -47,8 +47,9 @@ std::string metres(double value_m) {
 }
 
 // Slides each spot aimed at a moved exhibit along its track by as much as the exhibit moved along
-// the face, kept on the track: a luminaire with an AimAtEntity of the exhibit, OnTrack on a track
-// of two points parallel to the face. Its place relative to the work, and so its angle, stays.
+// the face, kept on the track: a luminaire with an AimAtEntity of the exhibit, OnTrack within the
+// ends of a track of two points parallel to the face. Its place relative to the work, and so its
+// angle, stays.
 void slide_spots(const doc::Document& document, const geom::FaceFrame& face,
                  const std::map<doc::Uuid, double>& moved_m, doc::Transaction& transaction) {
     const glm::dvec2 along_face(face.u);
@@ -70,7 +71,10 @@ void slide_spots(const doc::Document& document, const geom::FaceFrame& face,
         const glm::dvec2 run =
             detail::to_glm(holder->track->points_m[1]) - detail::to_glm(holder->track->points_m[0]);
         const double length_m = glm::length(run);
-        if (!(length_m > 0.0)) {
+        // A spot beyond its track's ends (placed by hand; compile marks it beyond_track) is not
+        // one add_spot_for made: moving it onto the track would change its light for a small move.
+        if (!(length_m > 0.0) ||
+            !(on_track->distance_m >= 0.0 && on_track->distance_m <= length_m)) {
             continue;
         }
         const glm::dvec2 along = run / length_m;

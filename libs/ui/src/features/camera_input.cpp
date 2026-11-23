@@ -409,6 +409,9 @@ class CameraInput : public QObject {
     // camera (a walk still waiting for the pointer) it cannot tell them apart, so it ends the walk.
     void project_changed() {
         if (!shown_ || viewport_.camera() != *shown_) {
+            // No last step with the keys held: it would show the old walk over the new viewpoint.
+            keys_ = {};
+            tick_.stop();
             stop_walking();
         } else {
             room_changed();

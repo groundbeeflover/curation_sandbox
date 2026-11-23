@@ -298,17 +298,18 @@ std::optional<PaintingChoice> ask_painting(MainWindow& window) {
     return PaintingChoice{file->text().trimmed(), width->value() / 100.0, height->value() / 100.0};
 }
 
-void add_painting(MainWindow& window) {
+// Returns the exhibit it hung, or none.
+std::optional<doc::Uuid> add_painting(MainWindow& window) {
     // Asked first, so that the curator does not pick a photograph for nothing.
     if (!editor::find_wall_labelled(window.document(), editor::default_wall_label)) {
         warn(window, MainWindow::tr("Cannot add a painting"),
              MainWindow::tr("A painting hangs on wall A, and this project has no wall labelled A. "
                             "Make a room first: Room > New room."));
-        return;
+        return std::nullopt;
     }
     const std::optional<PaintingChoice> choice = ask_painting(window);
     if (!choice) {
-        return;
+        return std::nullopt;
     }
     const QString cannot_add = MainWindow::tr("Cannot add the painting");
     const QFileInfo info(choice->file);
@@ -320,7 +321,7 @@ void add_painting(MainWindow& window) {
              MainWindow::tr("“%1” is not a PNG or JPEG photograph, the kinds the app reads. Save "
                             "it as PNG or JPEG and try again.")
                  .arg(info.fileName()));
-        return;
+        return std::nullopt;
     }
     // From Qt's text, not std::filesystem::path::u8string(), which throws for a name that is not
     // valid UTF-16 (Windows allows one); toUtf8() never throws, and title_from_file_name and
@@ -335,7 +336,7 @@ void add_painting(MainWindow& window) {
             window.document(), window.ids(), stand_in, choice->width_m, choice->height_m, title);
     } catch (const std::exception& error) {
         warn(window, cannot_add, message_of(error));
-        return;
+        return std::nullopt;
     }
     assets::AssetName asset;
     try {
@@ -347,12 +348,12 @@ void add_painting(MainWindow& window) {
         warn(window, cannot_add,
              MainWindow::tr("“%1” cannot be shown as a painting: %2")
                  .arg(info.fileName(), message_of(error)));
-        return;
+        return std::nullopt;
     } catch (const std::exception& error) {
         warn(window, cannot_add,
              MainWindow::tr("“%1” cannot be read or stored in the project: %2")
                  .arg(info.fileName(), message_of(error)));
-        return;
+        return std::nullopt;
     }
     try {
         editor::AddedWork added = editor::add_work_in_row(
@@ -367,15 +368,27 @@ void add_painting(MainWindow& window) {
         }
         tell(window,
              MainWindow::tr("%1 hangs on wall A. Lights > Add spot lights it").arg(quoted(title)));
+        return added.exhibit;
     } catch (const std::exception& error) {
         warn(window, cannot_add, message_of(error));
+        return std::nullopt;
     }
 }
 
 // ---- Lights > Add spot -----------------------------------------------------------------------
 
-// The exhibit added last, or none.
-std::optional<doc::Uuid> newest_exhibit(const doc::Document& document) {
+// The painting Add spot lights: the one Add painting hung last in this project, while it is still
+// there; else (after undoing it, or in a project just opened) the exhibit with the greatest id. Ids
+// grow only within one window's run: an opened project may hold greater ones, made on a machine
+// whose clock was ahead. Selection replaces this (M2-14).
+std::optional<doc::Uuid> painting_to_light(const doc::Document& document,
+                                           const std::optional<doc::Uuid>& hung_last) {
+    if (hung_last) {
+        const doc::Entity* entity = document.find_entity(*hung_last);
+        if (entity != nullptr && entity->exhibit) {
+            return hung_last;
+        }
+    }
     std::optional<doc::Uuid> newest;
     for (const auto& [id, entity] : document.entities()) { // in order of id
         if (entity.exhibit) {
@@ -393,9 +406,9 @@ bool lit(const doc::Document& document, const doc::Uuid& exhibit) {
     });
 }
 
-void add_spot(MainWindow& window) {
+void add_spot(MainWindow& window, const std::optional<doc::Uuid>& hung_last) {
     const doc::Document& document = window.document();
-    const std::optional<doc::Uuid> exhibit = newest_exhibit(document);
+    const std::optional<doc::Uuid> exhibit = painting_to_light(document, hung_last);
     if (!exhibit) {
         warn(window, MainWindow::tr("Cannot add a spot"),
              MainWindow::tr("Add a painting first: Add spot lights the painting added last."));
@@ -431,18 +444,26 @@ void register_skeleton_commands(MainWindow& window) {
     QAction* new_room_item = window.add_menu_item(room_menu, 0, MainWindow::tr("&New room…"));
     QObject::connect(new_room_item, &QAction::triggered, &window, [&window] { new_room(window); });
 
+    // The exhibit Add painting hung last, for Add spot (painting_to_light checks it is still
+    // there).
+    auto hung_last = std::make_shared<std::optional<doc::Uuid>>();
+
     QMenu* works_menu = window.add_menu(MainWindow::tr("&Works"), works_menu_order);
     QAction* add_painting_item =
         window.add_menu_item(works_menu, 0, MainWindow::tr("Add &painting…"));
-    QObject::connect(add_painting_item, &QAction::triggered, &window,
-                     [&window] { add_painting(window); });
+    QObject::connect(add_painting_item, &QAction::triggered, &window, [&window, hung_last] {
+        if (const std::optional<doc::Uuid> exhibit = add_painting(window)) {
+            *hung_last = exhibit;
+        }
+    });
 
     QMenu* lights_menu = window.add_menu(MainWindow::tr("&Lights"), lights_menu_order);
     QAction* add_spot_item = window.add_menu_item(lights_menu, 0, MainWindow::tr("Add &spot"));
     add_spot_item->setStatusTip(
         MainWindow::tr("Puts a spot on a ceiling track and aims it at the painting added last, "
                        "30° from vertical (the Canadian Conservation Institute's rule)"));
-    QObject::connect(add_spot_item, &QAction::triggered, &window, [&window] { add_spot(window); });
+    QObject::connect(add_spot_item, &QAction::triggered, &window,
+                     [&window, hung_last] { add_spot(window, *hung_last); });
 
     // A second room would be built at the origin too, overlapping the first, until rooms can be
     // placed (M2): New room makes a project's one room. Why it is greyed is said in a tooltip too,

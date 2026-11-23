@@ -71,11 +71,12 @@ double hung_width_m(const doc::Work& work, const std::optional<doc::Framing>& fr
 // heights and stand-offs. Each is moved along the face so that the row, from the first work's
 // outer left edge to the last one's outer right edge (hung_width_m), is centred on the face, with
 // row_gap_m between each work and the next. A spot that lights a work it moves (a luminaire aimed
-// at its exhibit by an AimAtEntity, OnTrack on a track of two points parallel to the face, as
-// add_spot_for makes) slides along its track by as much, so that it lights the work from the same
-// place relative to it, at the same angle; it stops at the track's ends. Other luminaires stay
-// where they are. All of it is the one transaction add_work names, so one undo takes the new work
-// away and puts the others, and their spots, back.
+// at its exhibit by an AimAtEntity, OnTrack within the ends of a track of two points parallel to
+// the face, as add_spot_for makes) slides along its track by as much, so that it lights the work
+// from the same place relative to it, at the same angle; it stops at the track's ends. Other
+// luminaires, and spots beyond their track's ends, stay where they are. All of it is the one
+// transaction add_work names, so one undo takes the new work away and puts the others, and their
+// spots, back.
 //
 // Throws std::invalid_argument, changing nothing, as add_work does, and when either end of the row
 // would be closer than row_end_clearance_m to the face's ends: "Wall A is full: ...", saying how
