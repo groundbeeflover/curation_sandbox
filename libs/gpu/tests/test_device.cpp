@@ -32,6 +32,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -596,7 +597,8 @@ TEST_CASE("device: set_validation_handler returns the previous handler, and a me
 //
 // The messages come from vkSubmitDebugUtilsMessageEXT, which reaches the device's messenger as the
 // validation layer's do: the layer reports any one message only a few times (its duplicate message
-// limit), and this test needs thousands.
+// limit), and this test needs hundreds. Any other message is a real one, which the harness's
+// handler would have failed the test on: the test's handlers count it, and the test fails too.
 TEST_CASE("device: a validation handler is never called after set_validation_handler has "
           "replaced it",
           "[gpu]") {
@@ -610,9 +612,18 @@ TEST_CASE("device: a validation handler is never called after set_validation_han
         std::atomic<int> calls{0};
         std::atomic<bool> replaced{false};
     };
+    constexpr std::string_view message_id = "cs-test-handler-replaced";
     std::atomic<int> late_calls{0};
-    const auto handler_for = [&late_calls](Record* record) {
-        return [record, &late_calls](const ValidationMessage&) {
+    std::atomic<int> other_messages{0};
+    const auto handler_for = [&late_calls, &other_messages, message_id](Record* record) {
+        return [record, &late_calls, &other_messages, message_id](const ValidationMessage& m) {
+            if (m.id != message_id) {
+                std::cerr << cs::gpu::to_string(m) << '\n';
+                if (m.kind != ValidationMessage::Kind::general) {
+                    other_messages.fetch_add(1);
+                }
+                return;
+            }
             record->calls.fetch_add(1);
             // Long enough that a replacement which does not wait for this call marks the record
             // before the call ends.
@@ -630,10 +641,10 @@ TEST_CASE("device: a validation handler is never called after set_validation_han
 
     std::atomic<bool> stop{false};
     const VkInstance instance = gpu->instance();
-    std::thread reporter([&stop, instance] {
+    std::thread reporter([&stop, instance, message_id] {
         VkDebugUtilsMessengerCallbackDataEXT data{};
         data.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT;
-        data.pMessageIdName = "cs-test-handler-replaced";
+        data.pMessageIdName = message_id.data();
         data.pMessage = "a message from another thread while the handler is replaced";
         while (!stop.load()) {
             vkSubmitDebugUtilsMessageEXT(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
@@ -652,7 +663,9 @@ TEST_CASE("device: a validation handler is never called after set_validation_han
     // Before the guard and the records go, also when an assertion throws.
     const Cleanup on_exit{stop_reporter};
 
-    constexpr int replacements = 300;
+    // The old callback was late after every replacement, of 100 or of 300. More would be slow on
+    // Windows, where the sleeps above last a millisecond or more.
+    constexpr int replacements = 100;
     // A bound on the wait for each call, only so that a broken messenger cannot hang the run.
     constexpr auto call_timeout = std::chrono::seconds(10);
     int replaced = 0;
@@ -675,6 +688,7 @@ TEST_CASE("device: a validation handler is never called after set_validation_han
     CAPTURE(replaced);
     REQUIRE(replaced == replacements);
     CHECK(late_calls.load() == 0);
+    CHECK(other_messages.load() == 0);
 }
 
 // Header (gpu_required): the one reading of CS_REQUIRE_GPU, for the GPU tests, the integration

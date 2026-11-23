@@ -88,8 +88,10 @@ struct ValidationMessage {
 // Calls run one at a time, under a lock that set_validation_handler takes too: it waits for a
 // call running on another thread, so once it returns, the handler it replaced is never called
 // again, and whatever that handler used may be destroyed. A handler may replace itself. It must
-// not make Vulkan calls, nor wait for another thread that makes them: the validation layer holds
-// its own lock while it calls the handler, so either can deadlock, with this lock or without it.
+// not make Vulkan calls (the specification forbids it to a debug messenger's callback), nor wait
+// for another thread that makes them: the validation layer holds its own lock while it calls the
+// handler. Nor may it wait for a thread inside set_validation_handler, or take a lock that such a
+// thread holds: so set_validation_handler is never called while holding a lock a handler takes.
 using ValidationHandler = std::function<void(const ValidationMessage&)>;
 ValidationHandler set_validation_handler(ValidationHandler handler);
 
