@@ -30,10 +30,13 @@ constexpr VkDeviceSize texel_bytes = texture_channels * sizeof(std::uint16_t);
 constexpr VkImageUsageFlags texture_usage =
     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 const std::uint16_t half_one = glm::packHalf1x16(1.0f);
-// Who reads a texture in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: the Standard tier's fragment
-// shader samples it (standard_tier.cpp's descriptor set). A tier that samples textures in another
-// stage adds it here.
-constexpr detail::Access texture_read{VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+// Who reads a texture in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: shaders that sample it. Today
+// that is the Standard tier's fragment shader; the vertex and compute stages are named too, as
+// for the Standard tier's own white image, so that a tier that samples there is ordered after
+// the layout transition. Any other stage is added here.
+constexpr detail::Access texture_read{VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                                          VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                       VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
 
 constexpr VkBufferUsageFlags buffer_usage =
@@ -257,9 +260,9 @@ void record_upload(VkCommandBuffer cmd, VkBuffer staging, std::span<const Sectio
 
     // The copies' writes, visible to every later read on the queue, in this submission's order or
     // a later one's. The buffers have many readers: the tiers' shaders and index fetches, and
-    // download()'s copies. The textures, in the layout for sampling, are read by the Standard
-    // tier's fragment shader only; download_texture() reaches them through its own barrier, which
-    // waits for every earlier command.
+    // download()'s copies. The textures, in the layout for sampling, are read by shaders
+    // (texture_read); download_texture() reaches them through its own barrier, which waits for
+    // every earlier command.
     const Access copied{VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT};
     const Access any_read{VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT};
     VkMemoryBarrier2 written{};

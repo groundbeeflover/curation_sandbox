@@ -83,14 +83,21 @@ bool loader_lists_validation_layer() {
     });
 }
 
-// With VK_LOADER_LAYERS_DISABLE naming the validation layer: skips, saying why, when the loader
-// still lists the layer, because it ignores the variable (in an elevated process on Windows, as
-// in CI's runner: ADR 0010).
+// With VK_LOADER_LAYERS_DISABLE naming the validation layer, when the loader still lists the
+// layer, because it ignores the variable: on Windows, where an elevated process's loader does so
+// (CI's runner, ADR 0010), the test skips, saying why. Elsewhere no loader the tests support does
+// (1.3.234 or later), so the test fails, saying why, rather than leave ADR 0011 untested.
 void skip_if_loader_ignores_layers_disable() {
-    if (loader_lists_validation_layer()) {
-        SKIP("the Vulkan loader ignores VK_LOADER_LAYERS_DISABLE here, as it does in an elevated "
-             "process on Windows (ADR 0010), so the validation layer cannot be disabled");
+    if (!loader_lists_validation_layer()) {
+        return;
     }
+#ifdef _WIN32
+    SKIP("the Vulkan loader ignores VK_LOADER_LAYERS_DISABLE here, as it does in an elevated "
+         "process on Windows (ADR 0010), so the validation layer cannot be disabled");
+#else
+    FAIL("the Vulkan loader ignores VK_LOADER_LAYERS_DISABLE, so the validation layer cannot be "
+         "disabled: the variable needs loader 1.3.234 or later");
+#endif
 }
 
 } // namespace

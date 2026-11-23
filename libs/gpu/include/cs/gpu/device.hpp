@@ -87,15 +87,17 @@ struct ValidationMessage {
 //
 // Calls run one at a time, under a lock that set_validation_handler takes too: it waits for a
 // call running on another thread, so once it returns, the handler it replaced is never called
-// again, and whatever that handler used may be destroyed. So a handler must not wait for another
-// thread that makes Vulkan calls. On its own thread it may make Vulkan calls, and replace itself.
+// again, and whatever that handler used may be destroyed. A handler may replace itself. It must
+// not make Vulkan calls, nor wait for another thread that makes them: the validation layer holds
+// its own lock while it calls the handler, so either can deadlock, with this lock or without it.
 using ValidationHandler = std::function<void(const ValidationMessage&)>;
 ValidationHandler set_validation_handler(ValidationHandler handler);
 
 // Whether the environment variable CS_REQUIRE_GPU is set, and neither empty nor "0". CI and /ship
 // set it: then no Vulkan device, or in a debug build no validation layer, is a failure rather than
 // something to skip or do without (ADR 0010, ADR 0011). The GPU tests, the integration tests,
-// cs-render and the app all ask here rather than read it themselves.
+// cs-render and the app all ask here rather than read it themselves; only cs-render's CTest
+// checks (apps/cs-render/checks.cmake), a CMake script, read it the same way on their own.
 [[nodiscard]] bool gpu_required();
 
 // No Vulkan loader, no driver, or no device with Vulkan 1.3 and the features below (or none

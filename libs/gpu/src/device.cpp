@@ -61,8 +61,8 @@ constexpr std::array platform_surface_extensions = {
 
 std::atomic<bool> device_alive{false};
 
-// Held while a handler runs, so that set_validation_handler waits for it (device.hpp). Recursive:
-// a handler may make a Vulkan call that reports a message, or replace itself, on its own thread.
+// Held while a handler runs, so that set_validation_handler waits for it (device.hpp). Recursive,
+// so that a handler may replace itself.
 std::recursive_mutex handler_mutex;
 ValidationHandler validation_handler; // guarded by handler_mutex
 
