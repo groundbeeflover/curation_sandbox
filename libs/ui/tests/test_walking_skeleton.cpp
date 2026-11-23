@@ -545,15 +545,21 @@ struct Shell {
     QLineEdit* line_edit = nullptr;
 };
 
-Shell shown_shell() {
+// The input tests add their line edit as an inspector page and use a size of their own; the
+// documentation's screenshot shows the window as a curator sees it, at its own size.
+enum class ShellFor { input_tests, documentation };
+
+Shell shown_shell(ShellFor use = ShellFor::input_tests) {
     cs::ui::test::require_offscreen();
     Shell shell;
     shell.window = cs::ui::test::make_shell();
     shell.viewport = shell.window->viewport();
     REQUIRE(shell.viewport->headless());
-    shell.line_edit = new QLineEdit;
-    shell.window->add_inspector_page(10, QStringLiteral("Test input"), shell.line_edit);
-    shell.window->resize(1024, 700);
+    if (use == ShellFor::input_tests) {
+        shell.line_edit = new QLineEdit;
+        shell.window->add_inspector_page(10, QStringLiteral("Test input"), shell.line_edit);
+        shell.window->resize(1024, 700);
+    }
     shell.window->show();
     shell.window->activateWindow();
     REQUIRE(QTest::qWaitForWindowActive(shell.window.get()));
@@ -1356,7 +1362,7 @@ TEST_CASE("Walking skeleton: Tab walks with the pointer captured, W walks forwar
 // through the menus, the test chart added as a painting and lit, a few steps walked towards it,
 // the lux panel up to date. Copying it to docs/ (and keeping it under 300 KB) is done by hand.
 TEST_CASE("Walking skeleton: the screenshot of a room, a lit painting and its lux", "[ui][gpu]") {
-    Shell shell = shown_shell();
+    Shell shell = shown_shell(ShellFor::documentation);
     Viewport* viewport = shell.viewport;
     MainWindow& window = *shell.window;
     QWindow* top = window.windowHandle();
