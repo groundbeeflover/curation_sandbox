@@ -187,9 +187,7 @@ class CameraInput : public QObject {
         last_mouse_ = event.position();
         editor::CameraInput input;
         input.mouse_delta_px = {delta.x(), delta.y()};
-        editor::OrbitController& controller = orbit();
-        controller.update(input);
-        show(controller.camera());
+        drive(orbit(), input);
         return true;
     }
 
@@ -199,9 +197,7 @@ class CameraInput : public QObject {
         }
         editor::CameraInput input;
         input.wheel_notches = event.angleDelta().y() / 120.0;
-        editor::OrbitController& controller = orbit();
-        controller.update(input);
-        show(controller.camera());
+        drive(orbit(), input);
         return true;
     }
 
@@ -220,14 +216,11 @@ class CameraInput : public QObject {
             stop_walking();
             return true;
         }
-        if (event.isAutoRepeat()) {
-            return movement_key(code) != nullptr && mode_ == Mode::walking;
-        }
         bool* held = movement_key(code);
         if (held == nullptr || mode_ != Mode::walking) {
             return false; // back_to_orbit() let go of every key
         }
-        if (*held != pressed) {
+        if (!event.isAutoRepeat() && *held != pressed) {
             advance(); // walk the time so far with the keys as they were
             *held = pressed;
             update_tick();
@@ -304,7 +297,7 @@ class CameraInput : public QObject {
 
     void pointer_locked_changed(bool locked) {
         if (locked) {
-            if (mode_ == Mode::waiting && walk_) {
+            if (mode_ == Mode::waiting) {
                 mode_ = Mode::walking;
                 show(walk_->camera()); // at eye height, inside the room
                 say(MainWindow::tr("Walking: W A S D to move, the mouse to look. Esc to stop "
@@ -329,63 +322,67 @@ class CameraInput : public QObject {
         }
     }
 
+    // The orbit starts again from what the viewport shows: where the walk left the view, or where
+    // it was if the walk never began (the lock not granted yet).
     void back_to_orbit() {
         advance();
-        const world::Camera camera = walk_ ? walk_->camera() : viewport_.camera();
         mode_ = Mode::orbit;
         walk_.reset();
         keys_ = {};
         tick_.stop();
-        orbit_.emplace(camera, orbit_distance_m(window_.document(), camera));
-        shown_ = viewport_.camera();
+        orbit_.reset();
         unsay();
     }
 
     void look(double dx, double dy) {
-        if (mode_ != Mode::walking || !walk_) {
+        if (mode_ != Mode::walking) {
             return;
         }
         editor::CameraInput input;
         input.mouse_delta_px = {dx, dy};
-        walk_->update(input);
-        show(walk_->camera());
+        drive(*walk_, input);
     }
 
     // Walks the time since the last step with the keys held.
     void advance() {
-        if (mode_ != Mode::walking || !walk_ || !tick_.isActive()) {
+        if (mode_ != Mode::walking || !tick_.isActive()) {
             return;
         }
         editor::CameraInput input = keys_;
         input.elapsed_s = static_cast<double>(clock_.nsecsElapsed()) * 1e-9;
         clock_.restart();
-        walk_->update(input);
-        show(walk_->camera());
+        drive(*walk_, input);
     }
 
     // ---- The project --------------------------------------------------------------------------
 
     // The walls may have moved: a walk goes on in the room as it is now.
     void room_changed() {
-        if (walk_) {
+        if (mode_ != Mode::orbit) {
             advance();
             walk_.emplace(walk_room_for(viewport_.camera()), window_.document().settings(),
                           viewport_.camera());
         }
     }
 
-    // New and Open show the project from its first viewpoint, which ends a walk; a save leaves
-    // the camera where it was.
+    // New and Open show the project from its first viewpoint, which ends a walk (and orbit()
+    // starts from it); a save leaves the camera where it was.
     void project_changed() {
         if (shown_ && viewport_.camera() != *shown_) {
             stop_walking();
-            orbit_.reset();
         } else {
             room_changed();
         }
     }
 
     // ---- Output -------------------------------------------------------------------------------
+
+    // Moves a controller with the input and shows its camera.
+    template <class Controller>
+    void drive(Controller& controller, const editor::CameraInput& input) {
+        controller.update(input);
+        show(controller.camera());
+    }
 
     void show(const world::Camera& camera) {
         viewport_.set_camera(camera);
@@ -409,8 +406,8 @@ class CameraInput : public QObject {
     Viewport& viewport_;
     Mode mode_ = Mode::orbit;
     std::optional<editor::OrbitController> orbit_;
-    std::optional<editor::WalkController> walk_;
-    std::optional<world::Camera> shown_; // the camera this feature last showed
+    std::optional<editor::WalkController> walk_; // exactly while the mode is not orbit
+    std::optional<world::Camera> shown_;         // the camera this feature last showed
     bool dragging_ = false;
     QPointF last_mouse_;
     editor::CameraInput keys_; // only the movement keys are used

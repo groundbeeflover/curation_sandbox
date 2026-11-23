@@ -39,8 +39,10 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <glm/geometric.hpp>
+#include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <algorithm>
 #include <array>
@@ -1733,6 +1735,40 @@ TEST_CASE("hung_width_m: an unframed work, or one whose frame cannot be built, t
     // (geom::box_frame refuses it) and the work is shown unframed.
     CHECK(hung_width_m(flat_work(0.008, 0.5), framing_of_style("box")) == 0.008);
     CHECK(hung_width_m(flat_work(0.5, 0.008), framing_of_style("box")) == 0.5);
+}
+
+// hung_width_m repeats world::compile's recipe for a frame (world/src/compile.cpp, add_frame),
+// which is private to world. Should a frame's style or numbers change there (M2-08), this test
+// fails rather than the row's gaps going wrong unnoticed.
+TEST_CASE("hung_width_m: the width of the frame world::compile builds round the work",
+          "[editor][commands]") {
+    doc::History history;
+    doc::IdGenerator ids = fixed_ids();
+    commit_new_room(history, ids, 6.0, 4.0, 3.5);
+    const auto [width_m, height_m] =
+        GENERATE(std::pair{0.73, 0.92}, std::pair{0.5, 0.4}, std::pair{1.2, 0.8});
+    CAPTURE(width_m, height_m);
+    const WorkIds added = commit_add_work_in_row(history, ids, width_m, height_m, "Framed");
+    const doc::Document& document = history.document();
+    const world::World compiled = world::compile(document);
+    const world::Exhibit& exhibit = exhibit_of(compiled, added.exhibit);
+    REQUIRE(exhibit.frame_instance.has_value());
+    const world::Instance& frame = compiled.instances.at(*exhibit.frame_instance);
+    REQUIRE(frame.part == world::Part::frame);
+
+    // The frame's extent along the face, from its vertices in world coordinates.
+    double left_m = inf;
+    double right_m = -inf;
+    for (const dvec3& position : compiled.meshes.at(frame.mesh).positions) {
+        const dvec3 at_m = dvec3(frame.transform * glm::dvec4(position, 1.0));
+        const double u_m = glm::dot(at_m - exhibit.face_centre_m, exhibit.face_u);
+        left_m = std::min(left_m, u_m);
+        right_m = std::max(right_m, u_m);
+    }
+    const doc::Entity& entity = entity_of(document, added.exhibit);
+    // A rotation and a translation of numbers near 1 to 10 m: rounding of about 1e-15 m.
+    CHECK_THAT(hung_width_m(*document.find_work(added.work), entity.framing),
+               WithinAbs(right_m - left_m, exact_m));
 }
 
 TEST_CASE("add_work_in_row: three works of different widths hang left to right in the order "

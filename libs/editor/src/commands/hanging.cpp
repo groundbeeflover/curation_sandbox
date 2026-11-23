@@ -100,7 +100,9 @@ AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
                           std::string title) {
     // add_work checks the arguments, finds the wall and takes the ids; the row then moves its work.
     AddedWork added = add_work(document, ids, image, width_m, height_m, std::move(title));
-    const doc::Uuid wall_id = *find_wall_labelled(document, default_wall_label);
+    const doc::Entity& made = *added.transaction.find_entity(added.exhibit);
+    const doc::OnWall& placed = std::get<doc::OnWall>(*made.placement);
+    const doc::Uuid wall_id = placed.wall;
     const geom::FaceFrame face =
         detail::face_frame(*document.find_entity(wall_id)->wall, doc::WallFace::a);
 
@@ -124,8 +126,7 @@ AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
         row.push_back({id, *on_wall, hung_width_m(*work, entity.framing)});
     }
     std::ranges::stable_sort(row, {}, [](const Member& m) { return m.placement.distance_m; });
-    const doc::Entity& made = *added.transaction.find_entity(added.exhibit);
-    row.push_back({added.exhibit, std::get<doc::OnWall>(*made.placement),
+    row.push_back({added.exhibit, placed,
                    hung_width_m(*added.transaction.find_work(added.work), made.framing)});
 
     double length_m = row_gap_m * static_cast<double>(row.size() - 1);

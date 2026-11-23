@@ -4,6 +4,7 @@
 
 #include <cs/doc/project_io.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -118,11 +119,7 @@ std::string title_from_file_name(std::string_view file_name) {
     // '.' is ASCII, so it is never a byte of a longer UTF-8 sequence, valid or not.
     const std::size_t dot = file_name.rfind('.');
     std::string stem(dot == std::string_view::npos ? file_name : file_name.substr(0, dot));
-    for (char& c : stem) {
-        if (c == '_') {
-            c = ' ';
-        }
-    }
+    std::ranges::replace(stem, '_', ' ');
     std::string title = collapse_white_space(valid_utf8(stem));
     cut_to_bound(title);
     // The cut may end the title just after a space.

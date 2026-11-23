@@ -5,7 +5,9 @@
 // window, so that one undo takes it back. A command that cannot be done says why in a message box
 // and changes nothing.
 //
-// Selection arrives with M2-14, so Add spot lights the painting added last in this project.
+// Selection arrives with M2-14, so Add spot lights the painting added last: the exhibit with the
+// greatest id, since ids sort in the order they were made (doc/uuid.hpp). That holds whoever added
+// it, and after undo, redo and Open.
 
 #include "features/feature.hpp"
 #include "viewport/viewport.hpp"
@@ -62,11 +64,6 @@ constexpr double default_painting_width_cm = 73.0;
 constexpr double default_painting_height_cm = 92.0;
 // After New room the curator stands this far in from the wall opposite A, facing A. [C]
 constexpr double facing_distance_from_far_wall_m = 0.5;
-
-// What the commands remember between them.
-struct SkeletonState {
-    std::optional<doc::Uuid> last_exhibit; // the painting Add spot lights
-};
 
 void warn(MainWindow& window, const QString& title, const QString& text) {
     QMessageBox::warning(&window, title, text);
@@ -235,7 +232,7 @@ std::string file_name_bytes(const std::filesystem::path& file) {
     return {name.begin(), name.end()};
 }
 
-void add_painting(MainWindow& window, SkeletonState& state) {
+void add_painting(MainWindow& window) {
     // Asked first, so that the curator does not pick a photograph for nothing.
     if (!editor::find_wall_labelled(window.document(), editor::default_wall_label)) {
         warn(window, MainWindow::tr("Cannot add a painting"),
@@ -270,7 +267,6 @@ void add_painting(MainWindow& window, SkeletonState& state) {
         work.source = editor::source_from_file_name(name);
         added.transaction.set_work(added.work, std::move(work));
         window.commit(std::move(added.transaction));
-        state.last_exhibit = added.exhibit;
     } catch (const std::exception& error) {
         warn(window, cannot_add, message_of(error));
     }
@@ -278,15 +274,26 @@ void add_painting(MainWindow& window, SkeletonState& state) {
 
 // ---- Lights > Add spot -----------------------------------------------------------------------
 
-void add_spot(MainWindow& window, const SkeletonState& state) {
-    if (!state.last_exhibit || window.document().find_entity(*state.last_exhibit) == nullptr) {
+// The exhibit added last, or none.
+std::optional<doc::Uuid> newest_exhibit(const doc::Document& document) {
+    std::optional<doc::Uuid> newest;
+    for (const auto& [id, entity] : document.entities()) { // in order of id
+        if (entity.exhibit) {
+            newest = id;
+        }
+    }
+    return newest;
+}
+
+void add_spot(MainWindow& window) {
+    const std::optional<doc::Uuid> exhibit = newest_exhibit(window.document());
+    if (!exhibit) {
         warn(window, MainWindow::tr("Cannot add a spot"),
              MainWindow::tr("Add a painting first: Add spot lights the painting added last."));
         return;
     }
     try {
-        editor::AddedSpot spot =
-            editor::add_spot_for(window.document(), window.ids(), *state.last_exhibit);
+        editor::AddedSpot spot = editor::add_spot_for(window.document(), window.ids(), *exhibit);
         window.commit(std::move(spot.transaction));
     } catch (const std::exception& error) {
         warn(window, MainWindow::tr("Cannot add a spot"), message_of(error));
@@ -296,8 +303,6 @@ void add_spot(MainWindow& window, const SkeletonState& state) {
 } // namespace
 
 void register_skeleton_commands(MainWindow& window) {
-    auto state = std::make_shared<SkeletonState>();
-
     QMenu* room_menu = window.add_menu(MainWindow::tr("&Room"), room_menu_order);
     QAction* new_room_item = window.add_menu_item(room_menu, 0, MainWindow::tr("&New room…"));
     QObject::connect(new_room_item, &QAction::triggered, &window, [&window] { new_room(window); });
@@ -306,14 +311,13 @@ void register_skeleton_commands(MainWindow& window) {
     QAction* add_painting_item =
         window.add_menu_item(works_menu, 0, MainWindow::tr("Add &painting…"));
     QObject::connect(add_painting_item, &QAction::triggered, &window,
-                     [&window, state] { add_painting(window, *state); });
+                     [&window] { add_painting(window); });
 
     QMenu* lights_menu = window.add_menu(MainWindow::tr("&Lights"), lights_menu_order);
     QAction* add_spot_item = window.add_menu_item(lights_menu, 0, MainWindow::tr("Add &spot"));
     add_spot_item->setStatusTip(MainWindow::tr("Lights the painting added last, as the Canadian "
                                                "Conservation Institute advises"));
-    QObject::connect(add_spot_item, &QAction::triggered, &window,
-                     [&window, state] { add_spot(window, *state); });
+    QObject::connect(add_spot_item, &QAction::triggered, &window, [&window] { add_spot(window); });
 
     // A second room would be built at the origin too, overlapping the first, until rooms can be
     // placed (M2): New room makes a project's one room.
@@ -326,12 +330,6 @@ void register_skeleton_commands(MainWindow& window) {
     update_new_room();
     QObject::connect(&window, &MainWindow::document_changed, new_room_item, update_new_room);
     QObject::connect(&window, &MainWindow::project_changed, new_room_item, update_new_room);
-    // A new or opened project has no painting added in it yet.
-    QObject::connect(&window, &MainWindow::project_changed, &window, [&window, state] {
-        if (state->last_exhibit && window.document().find_entity(*state->last_exhibit) == nullptr) {
-            state->last_exhibit.reset();
-        }
-    });
 }
 
 } // namespace cs::ui

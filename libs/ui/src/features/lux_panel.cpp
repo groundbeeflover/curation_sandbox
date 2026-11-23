@@ -6,11 +6,11 @@
 //
 // Each change of the document (document_changed, project_changed) compiles the world on the UI
 // thread and reads the meter on a worker thread, so that the window stays responsive. One reading
-// runs at a time; when the document changed again while it ran, its result is dropped and the
-// newest document read instead, so the panel shows only readings of the document as it is. The
-// paintings' photographs are loaded from the project's assets folder, once while the folder and
-// the set of images stay the same: without them every painting would reflect its 0.8 grey base
-// colour and the total would differ from cs-render's.
+// runs at a time; a change while it runs is read once it ends, and until then the status says
+// "Calculating…". A change that leaves the world and the titles as they were (a save) reads
+// nothing. The paintings' photographs are loaded from the project's assets folder and kept while
+// they are all a reading needs: without them every painting would reflect its 0.8 grey base colour
+// and the total would differ from cs-render's.
 //
 // M2-37 replaces the computation with the engine's lux service (M2-28).
 
@@ -46,6 +46,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -56,19 +57,25 @@ namespace cs::ui {
 
 namespace {
 
-// The meter's settings: cs-render's defaults (--lux-samples 1024, --seed 1), so that the panel
-// reads what cs-render's lux report gives for the saved project.
+// The meter's settings: cs-render's defaults (--lux-samples 1024, --seed 1), written out rather
+// than taken from LuxOptions' own, so that the panel reads what cs-render's lux report gives for
+// the saved project.
 constexpr std::uint32_t lux_samples = 1024;
 constexpr std::uint64_t lux_seed = 1;
 
 constexpr double no_reading = std::numeric_limits<double>::quiet_NaN();
 
-// What a reading needs, copied on the UI thread: the worker never sees the document.
+// What a reading needs, made on the UI thread from the document: the worker never sees it.
 struct LuxJob {
-    std::uint64_t generation = 0;
     world::World world;
-    std::vector<std::string> titles; // per exhibit, in the world's order
-    std::filesystem::path assets_folder;
+    std::vector<std::string> titles;     // per exhibit, in the world's order
+    std::filesystem::path assets_folder; // empty when the world names no photograph
+
+    // Equal worlds and titles read the same, wherever the photographs are stored: their names are
+    // their content (ADR 0007). So a save, which moves an untitled project's images, reads nothing.
+    [[nodiscard]] bool same_reading(const LuxJob& other) const {
+        return world == other.world && titles == other.titles;
+    }
 };
 
 struct WorkReading {
@@ -79,56 +86,47 @@ struct WorkReading {
 };
 
 struct LuxResult {
-    std::uint64_t generation = 0;
     std::vector<WorkReading> works;
     std::vector<std::string> problems;
     double seconds = 0.0;
+    bool unlit = false; // the world has no light, so nothing was traced
 };
 
-using AssetKey = std::pair<std::string, std::string>; // (sha256, extension)
-
-// The photographs a world names, each once, in order.
-std::vector<AssetKey> photographs(const world::World& world) {
-    std::vector<AssetKey> keys;
-    for (const world::Material& material : world.materials) {
-        const auto* painting = std::get_if<world::PaintingSurface>(&material);
-        if (painting != nullptr && painting->image) {
-            keys.emplace_back(painting->image->sha256, painting->image->extension);
-        }
-    }
-    std::ranges::sort(keys);
-    const auto [first, last] = std::ranges::unique(keys);
-    keys.erase(first, last);
-    return keys;
+const world::AssetRef* photograph_of(const world::Material& material) {
+    const auto* painting = std::get_if<world::PaintingSurface>(&material);
+    return painting != nullptr && painting->image ? &*painting->image : nullptr;
 }
 
-// The photographs last loaded, which the next reading reuses while they are still the ones it
-// needs. Only the worker thread touches it, one reading at a time.
+// The photographs last loaded, kept for later readings while they hold every photograph a reading
+// needs: an undo, a redo or a save then loads none again. Only the worker thread touches it.
 class TextureCache {
   public:
     const engine::LoadedTextures& load(const world::World& world,
                                        const std::filesystem::path& folder) {
-        std::vector<AssetKey> keys = photographs(world);
-        if (!textures_ || folder != folder_ || keys != keys_) {
-            textures_ =
-                std::make_unique<engine::LoadedTextures>(engine::load_textures(world, folder));
-            folder_ = folder;
-            keys_ = std::move(keys);
+        if (!textures_ || !holds_all(world)) {
+            textures_.emplace(engine::load_textures(world, folder));
+        } else {
+            // Problems of photographs this world does not name: it names none that failed.
+            textures_->problems.clear();
         }
         return *textures_;
     }
 
   private:
-    std::unique_ptr<engine::LoadedTextures> textures_;
-    std::filesystem::path folder_;
-    std::vector<AssetKey> keys_;
+    bool holds_all(const world::World& world) const {
+        return std::ranges::all_of(world.materials, [this](const world::Material& material) {
+            const world::AssetRef* photograph = photograph_of(material);
+            return photograph == nullptr || textures_->textures.find(*photograph) != nullptr;
+        });
+    }
+
+    std::optional<engine::LoadedTextures> textures_;
 };
 
 LuxResult read_lux(const LuxJob& job, TextureCache& cache, ThreadPool& pool) {
     QElapsedTimer clock;
     clock.start();
     LuxResult result;
-    result.generation = job.generation;
     try {
         const engine::LoadedTextures& loaded = cache.load(job.world, job.assets_folder);
         for (const engine::TextureProblem& problem : loaded.problems) {
@@ -163,6 +161,17 @@ LuxResult read_lux(const LuxJob& job, TextureCache& cache, ThreadPool& pool) {
     return result;
 }
 
+// The reading of a world with no work, or with no light, where every work reads 0 lx (there is no
+// daylight yet): no path need be traced.
+LuxResult untraced(const LuxJob& job) {
+    LuxResult result;
+    result.unlit = job.world.lights.empty();
+    for (const std::string& title : job.titles) {
+        result.works.push_back({title, 0.0, 0.0, {}});
+    }
+    return result;
+}
+
 // Lux as a curator reads it: whole lux, with a tenth below 10 lx, where limits such as 50 lx are
 // set and one lux is a large part.
 QString lux_text(double lux) {
@@ -171,8 +180,7 @@ QString lux_text(double lux) {
 
 class LuxPanel : public QWidget {
   public:
-    explicit LuxPanel(MainWindow& window)
-        : window_(window), pool_(std::max(1u, std::thread::hardware_concurrency())) {
+    explicit LuxPanel(MainWindow& window) : window_(window) {
         // One reading at a time, in order.
         jobs_.setMaxThreadCount(1);
 
@@ -219,54 +227,70 @@ class LuxPanel : public QWidget {
 
     // The document changed: read it again.
     void request() {
-        ++wanted_;
-        if (!running_) {
-            start();
-        }
         if (running_) {
+            // finished() reads the document as it is then.
             status_->setText(MainWindow::tr("Calculating…"));
+            return;
         }
+        start();
     }
 
   private:
-    void start() {
+    std::shared_ptr<const LuxJob> make_job() {
         auto job = std::make_shared<LuxJob>();
-        job->generation = wanted_;
+        const doc::Document& document = window_.document();
+        job->world = world::compile(document);
+        for (const world::Exhibit& exhibit : job->world.exhibits) {
+            const doc::Work* work = document.find_work(doc::Uuid(exhibit.work.bytes()));
+            job->titles.push_back(work != nullptr ? work->title : std::string());
+        }
+        // Only then, since an untitled project's folder is made the first time it is asked for.
+        if (std::ranges::any_of(job->world.materials, photograph_of)) {
+            job->assets_folder = window_.assets_folder();
+        }
+        return job;
+    }
+
+    void start() {
+        std::shared_ptr<const LuxJob> job;
         try {
-            const doc::Document& document = window_.document();
-            job->world = world::compile(document);
-            for (const world::Exhibit& exhibit : job->world.exhibits) {
-                const doc::Work* work = document.find_work(doc::Uuid(exhibit.work.bytes()));
-                job->titles.push_back(work != nullptr ? work->title : std::string());
-            }
-            if (!photographs(job->world).empty()) {
-                job->assets_folder = window_.assets_folder();
-            }
+            job = make_job();
         } catch (const std::exception& error) {
+            shown_.reset();
             LuxResult failed;
-            failed.generation = wanted_;
             failed.problems.push_back(std::string("The lux cannot be calculated: ") + error.what());
             display(failed);
             return;
         }
-        if (job->world.exhibits.empty()) {
-            display(LuxResult{wanted_, {}, {}, 0.0});
+        if (shown_ && job->same_reading(*shown_)) {
+            return;
+        }
+        if (job->world.exhibits.empty() || job->world.lights.empty()) {
+            show_reading(job, untraced(*job));
             return;
         }
         running_ = true;
+        status_->setText(MainWindow::tr("Calculating…"));
         jobs_.start([this, job] {
-            auto result = std::make_shared<LuxResult>(read_lux(*job, cache_, pool_));
+            if (!pool_) {
+                pool_.emplace(std::max(1u, std::thread::hardware_concurrency()));
+            }
+            auto result = std::make_shared<LuxResult>(read_lux(*job, cache_, *pool_));
             QMetaObject::invokeMethod(
-                this, [this, result] { finished(std::move(*result)); }, Qt::QueuedConnection);
+                this, [this, job, result] { finished(job, *result); }, Qt::QueuedConnection);
         });
     }
 
-    void finished(LuxResult result) {
+    // Shows the reading, then reads the document again if it changed meanwhile: until that one is
+    // shown, the status says "Calculating…".
+    void finished(const std::shared_ptr<const LuxJob>& job, const LuxResult& result) {
         running_ = false;
-        if (result.generation != wanted_) {
-            start(); // the document changed while it ran
-            return;
-        }
+        show_reading(job, result);
+        start();
+    }
+
+    void show_reading(std::shared_ptr<const LuxJob> job, const LuxResult& result) {
+        shown_ = std::move(job);
         display(result);
     }
 
@@ -292,6 +316,8 @@ class LuxPanel : public QWidget {
         QStringList lines;
         if (result.works.empty() && result.problems.empty()) {
             lines << MainWindow::tr("No works hung yet");
+        } else if (result.unlit) {
+            lines << MainWindow::tr("No light reaches the works yet: Lights > Add spot");
         } else if (!result.works.empty()) {
             lines << MainWindow::tr("Mean of 25 points on each work's face · %1 s")
                          .arg(QLocale().toString(result.seconds, 'f', 1));
@@ -303,12 +329,13 @@ class LuxPanel : public QWidget {
     }
 
     MainWindow& window_;
-    // Declared before jobs_, so that they outlive it.
-    ThreadPool pool_;
+    // The worker's alone, and declared before jobs_, so that they outlive it. The pool is made
+    // with the first reading, so that a window that reads nothing starts no threads.
+    std::optional<ThreadPool> pool_;
     TextureCache cache_;
     QTreeWidget* table_ = nullptr;
     QLabel* status_ = nullptr;
-    std::uint64_t wanted_ = 0; // the generation of the document as it is
+    std::shared_ptr<const LuxJob> shown_; // the reading the panel shows
     bool running_ = false;
     QThreadPool jobs_;
 };
