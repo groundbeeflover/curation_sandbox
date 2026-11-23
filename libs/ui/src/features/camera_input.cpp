@@ -366,9 +366,10 @@ class CameraInput : public QObject {
     }
 
     // New and Open show the project from its first viewpoint, which ends a walk (and orbit()
-    // starts from it); a save leaves the camera where it was.
+    // starts from it); a save leaves the camera where it was. Before this feature has shown a
+    // camera (a walk still waiting for the pointer) it cannot tell them apart, so it ends the walk.
     void project_changed() {
-        if (shown_ && viewport_.camera() != *shown_) {
+        if (!shown_ || viewport_.camera() != *shown_) {
             stop_walking();
         } else {
             room_changed();

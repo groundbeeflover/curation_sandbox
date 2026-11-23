@@ -29,6 +29,7 @@
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -170,7 +171,7 @@ bool has_room(const doc::Document& document) {
 // ---- Works > Add painting --------------------------------------------------------------------
 
 struct PaintingChoice {
-    std::filesystem::path file;
+    QString file; // as the curator chose or typed it
     double width_m = 0.0;
     double height_m = 0.0;
 };
@@ -221,15 +222,7 @@ std::optional<PaintingChoice> ask_painting(MainWindow& window) {
     if (dialog.exec() != QDialog::Accepted || file->text().trimmed().isEmpty()) {
         return std::nullopt;
     }
-    return PaintingChoice{std::filesystem::path(file->text().trimmed().toStdU16String()),
-                          width->value() / 100.0, height->value() / 100.0};
-}
-
-// The file's name as bytes, UTF-8 where the system's names are: title_from_file_name and
-// source_from_file_name make it valid and bounded.
-std::string file_name_bytes(const std::filesystem::path& file) {
-    const std::u8string name = file.filename().u8string();
-    return {name.begin(), name.end()};
+    return PaintingChoice{file->text().trimmed(), width->value() / 100.0, height->value() / 100.0};
 }
 
 void add_painting(MainWindow& window) {
@@ -245,9 +238,25 @@ void add_painting(MainWindow& window) {
         return;
     }
     const QString cannot_add = MainWindow::tr("Cannot add the painting");
+    // From Qt's text, not std::filesystem::path::u8string(), which throws for a name that is not
+    // valid UTF-16 (Windows allows one); toUtf8() never throws, and title_from_file_name and
+    // source_from_file_name make what it gives valid and bounded.
+    const std::string name = QFileInfo(choice->file).fileName().toUtf8().toStdString();
+    const std::string title = editor::title_from_file_name(name);
+    // Tried first with a stand-in for the photograph, so that a painting the row cannot take (wall
+    // A full) leaves no copy of its photograph in the project's assets.
+    try {
+        const doc::AssetRef stand_in{.sha256 = std::string(64, '0'), .extension = "png"};
+        [[maybe_unused]] const editor::AddedWork trial = editor::add_work_in_row(
+            window.document(), window.ids(), stand_in, choice->width_m, choice->height_m, title);
+    } catch (const std::exception& error) {
+        warn(window, cannot_add, message_of(error));
+        return;
+    }
     assets::AssetName asset;
     try {
-        asset = assets::store_image(choice->file, window.assets_folder());
+        asset = assets::store_image(std::filesystem::path(choice->file.toStdU16String()),
+                                    window.assets_folder());
     } catch (const std::invalid_argument& error) {
         // Not an image the tiers can show: too large, not PNG or JPEG, or not decodable.
         warn(window, cannot_add, message_of(error));
@@ -258,11 +267,10 @@ void add_painting(MainWindow& window) {
                  .arg(message_of(error)));
         return;
     }
-    const std::string name = file_name_bytes(choice->file);
     try {
         editor::AddedWork added = editor::add_work_in_row(
             window.document(), window.ids(), doc::AssetRef{asset.sha256, asset.extension},
-            choice->width_m, choice->height_m, editor::title_from_file_name(name));
+            choice->width_m, choice->height_m, title);
         doc::Work work = *added.transaction.find_work(added.work);
         work.source = editor::source_from_file_name(name);
         added.transaction.set_work(added.work, std::move(work));

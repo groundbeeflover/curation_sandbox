@@ -70,12 +70,23 @@ struct LuxJob {
     world::World world;
     std::vector<std::string> titles;     // per exhibit, in the world's order
     std::filesystem::path assets_folder; // empty when the world names no photograph
+    // The document has a luminaire, on or off: the world leaves out one dimmed to 0 or one that
+    // cannot be placed.
+    bool has_luminaire = false;
 
     // Equal worlds and titles read the same, wherever the photographs are stored: their names are
     // their content (ADR 0007). So a save, which moves an untitled project's images, reads nothing.
     [[nodiscard]] bool same_reading(const LuxJob& other) const {
-        return world == other.world && titles == other.titles;
+        return world == other.world && titles == other.titles &&
+               has_luminaire == other.has_luminaire;
     }
+};
+
+// Why a reading of hung works traced nothing.
+enum class Unlit {
+    no,           // it traced, or there is no work
+    no_luminaire, // the document has no luminaire
+    none_on,      // every luminaire is dimmed to 0 or cannot be placed
 };
 
 struct WorkReading {
@@ -89,7 +100,7 @@ struct LuxResult {
     std::vector<WorkReading> works;
     std::vector<std::string> problems;
     double seconds = 0.0;
-    bool unlit = false; // the world has no light, so nothing was traced
+    Unlit unlit = Unlit::no;
 };
 
 const world::AssetRef* photograph_of(const world::Material& material) {
@@ -165,7 +176,9 @@ LuxResult read_lux(const LuxJob& job, TextureCache& cache, ThreadPool& pool) {
 // daylight yet): no path need be traced.
 LuxResult untraced(const LuxJob& job) {
     LuxResult result;
-    result.unlit = job.world.lights.empty();
+    if (job.world.lights.empty()) {
+        result.unlit = job.has_luminaire ? Unlit::none_on : Unlit::no_luminaire;
+    }
     for (const std::string& title : job.titles) {
         result.works.push_back({title, 0.0, 0.0, {}});
     }
@@ -244,6 +257,9 @@ class LuxPanel : public QWidget {
             const doc::Work* work = document.find_work(doc::Uuid(exhibit.work.bytes()));
             job->titles.push_back(work != nullptr ? work->title : std::string());
         }
+        job->has_luminaire = std::ranges::any_of(document.entities(), [](const auto& entry) {
+            return entry.second.luminaire.has_value();
+        });
         // Only then, since an untitled project's folder is made the first time it is asked for.
         if (std::ranges::any_of(job->world.materials, photograph_of)) {
             job->assets_folder = window_.assets_folder();
@@ -316,8 +332,11 @@ class LuxPanel : public QWidget {
         QStringList lines;
         if (result.works.empty() && result.problems.empty()) {
             lines << MainWindow::tr("No works hung yet");
-        } else if (result.unlit) {
-            lines << MainWindow::tr("No light reaches the works yet: Lights > Add spot");
+        } else if (result.unlit == Unlit::no_luminaire) {
+            lines << MainWindow::tr("No light in the room yet: Lights > Add spot");
+        } else if (result.unlit == Unlit::none_on) {
+            lines << MainWindow::tr("No light reaches the works: every light is off or cannot be "
+                                    "placed");
         } else if (!result.works.empty()) {
             lines << MainWindow::tr("Mean of 25 points on each work's face · %1 s")
                          .arg(QLocale().toString(result.seconds, 'f', 1));

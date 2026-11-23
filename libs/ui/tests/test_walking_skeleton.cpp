@@ -50,6 +50,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <QAction>
 #include <QApplication>
@@ -943,6 +944,35 @@ TEST_CASE("Walking skeleton: a file that is not a PNG or JPEG image is refused w
     CHECK(window->document().entities().size() == entities);
     CHECK(window->history().undo_count() == steps);
     // Nothing stored: store_image writes nothing when it refuses.
+    CHECK(file_names(window->assets_folder()).empty());
+}
+
+// The owner's 23 November change: add_work_in_row refuses a row that would come closer than 0.3 m
+// to the face's ends ("Wall A is full: ..."). The command asks it before storing the photograph,
+// so that a refused painting leaves no copy of it in the project's assets.
+TEST_CASE("Walking skeleton: a painting wall A has no room for is refused with the editor's "
+          "message, and its photograph is not stored",
+          "[ui]") {
+    std::unique_ptr<MainWindow> window = app_window();
+    build_room(*window); // face A is 6 m long
+    const fs::path file = picked_chart("walking-skeleton-wall-full", "Photo.PNG");
+    const std::size_t entities = window->document().entities().size();
+    const std::size_t steps = window->history().undo_count();
+
+    // 5.8 m unframed, 5.91 m in its frame: with 0.3 m clear at each end it needs a 6.51 m face.
+    QAction* action = menu_action(*window, QStringLiteral("Works"), add_painting_text());
+    PaintingDialog dialog;
+    ModalAnswerer answers({painting_answer(file, dialog, SizeCm{580.0, 100.0}), accept_as_is()});
+    action->trigger();
+    answers.finish();
+    INFO("modals:\n" << answers.log());
+    const std::optional<SeenModal> message = answers.message_box();
+    REQUIRE(message.has_value());
+    CHECK_THAT(message->text, Catch::Matchers::StartsWith("Wall A is full"));
+
+    CHECK(window->document().works().empty());
+    CHECK(window->document().entities().size() == entities);
+    CHECK(window->history().undo_count() == steps);
     CHECK(file_names(window->assets_folder()).empty());
 }
 

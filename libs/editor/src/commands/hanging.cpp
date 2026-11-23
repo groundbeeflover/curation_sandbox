@@ -81,7 +81,9 @@ double hung_width_m(const doc::Work& work, const std::optional<doc::Framing>& fr
     if (!framing) {
         return work.form.width_m;
     }
-    // As world::compile builds the frame (compile.cpp, add_frame).
+    // As world::compile builds the frame (compile.cpp, add_frame). Compile takes the work's depth
+    // as at least min_face_offset_m - stand_off_m, which is at most 0.001 m since a stand-off is
+    // never negative; the frame's own 0.04 m minimum depth covers that, so the depth is the same.
     const world::DefaultFrame& frame = world::default_frame;
     const geom::BoxFrame box{
         work.form.width_m, work.form.height_m, framing->width_m.value_or(frame.member_width_m),
