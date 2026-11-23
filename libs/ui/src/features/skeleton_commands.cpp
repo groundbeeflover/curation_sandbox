@@ -25,6 +25,7 @@
 #include <cs/world/world.hpp>
 
 #include <QAction>
+#include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -32,10 +33,16 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QImageReader>
+#include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSize>
+#include <QStandardPaths>
+#include <QStatusBar>
 
 #include <algorithm>
 #include <exception>
@@ -65,10 +72,35 @@ constexpr double default_painting_width_cm = 73.0;
 constexpr double default_painting_height_cm = 92.0;
 // After New room the curator stands this far in from the wall opposite A, facing A. [C]
 constexpr double facing_distance_from_far_wall_m = 0.5;
+// How long the status bar says what a command did.
+constexpr int passing_message_ms = 10000;
 
 void warn(MainWindow& window, const QString& title, const QString& text) {
     QMessageBox::warning(&window, title, text);
 }
+
+// What a command did, in the status bar: the viewport may not show it (a room stays dark until a
+// light is added).
+void tell(MainWindow& window, const QString& text) {
+    window.statusBar()->showMessage(text, passing_message_ms);
+}
+
+QString quoted(const std::string& title) {
+    return title.empty() ? MainWindow::tr("the untitled work")
+                         : MainWindow::tr("“%1”").arg(QString::fromStdString(title));
+}
+
+// The wait cursor while the window cannot answer (a large photograph is hashed, decoded and
+// uploaded on the UI thread).
+class Busy {
+  public:
+    Busy() { QApplication::setOverrideCursor(Qt::WaitCursor); }
+    ~Busy() { QApplication::restoreOverrideCursor(); }
+    Busy(const Busy&) = delete;
+    Busy& operator=(const Busy&) = delete;
+    Busy(Busy&&) = delete;
+    Busy& operator=(Busy&&) = delete;
+};
 
 QString message_of(const std::exception& error) {
     return QString::fromUtf8(error.what());
@@ -161,6 +193,13 @@ void new_room(MainWindow& window) {
         return;
     }
     face_wall_a(window, *size);
+    const QLocale locale;
+    tell(window,
+         MainWindow::tr("Room built, %1 × %2 m and %3 m high, with walls A to D; you face "
+                        "wall A. It stays dark until a light is added: Works > Add "
+                        "painting…, then Lights > Add spot")
+             .arg(locale.toString(size->width_m, 'f', 2), locale.toString(size->depth_m, 'f', 2),
+                  locale.toString(size->height_m, 'f', 2)));
 }
 
 bool has_room(const doc::Document& document) {
@@ -185,21 +224,8 @@ std::optional<PaintingChoice> ask_painting(MainWindow& window) {
     file->setObjectName(QStringLiteral("painting_file"));
     file->setPlaceholderText(MainWindow::tr("A PNG or JPEG photograph of the work"));
     file->setMinimumWidth(320);
-    auto* choose = new QPushButton(MainWindow::tr("Choose…"), &dialog);
-    choose->setObjectName(QStringLiteral("painting_choose"));
-    QObject::connect(choose, &QPushButton::clicked, &dialog, [&dialog, file] {
-        // Every tier loads only PNG and JPEG (assets::asset_file); both cases of the extension,
-        // since some platforms' dialogs match patterns case by case.
-        const QString chosen = QFileDialog::getOpenFileName(
-            &dialog, MainWindow::tr("Choose the painting's photograph"), file->text(),
-            MainWindow::tr("PNG and JPEG images (*.png *.jpg *.jpeg *.PNG *.JPG *.JPEG)"));
-        if (!chosen.isEmpty()) {
-            file->setText(chosen);
-        }
-    });
-    auto* file_row = new QHBoxLayout;
-    file_row->addWidget(file, 1);
-    file_row->addWidget(choose);
+    auto* pixels = new QLabel(&dialog);
+    pixels->setObjectName(QStringLiteral("painting_pixels"));
 
     // The unframed work, as a catalogue gives it; up to 20 m, millimetres the finest step.
     const QString centimetres = QStringLiteral(" cm");
@@ -207,6 +233,40 @@ std::optional<PaintingChoice> ask_painting(MainWindow& window) {
         size_box(&dialog, "painting_width", default_painting_width_cm, 1.0, 2000.0, 1, centimetres);
     QDoubleSpinBox* height = size_box(&dialog, "painting_height", default_painting_height_cm, 1.0,
                                       2000.0, 1, centimetres);
+
+    auto* choose = new QPushButton(MainWindow::tr("Choose…"), &dialog);
+    choose->setObjectName(QStringLiteral("painting_choose"));
+    QObject::connect(
+        choose, &QPushButton::clicked, &dialog, [&dialog, file, pixels, width, height] {
+            // Every tier loads only PNG and JPEG (assets::asset_file); both cases of the extension,
+            // since some platforms' dialogs match patterns case by case.
+            const QString start =
+                file->text().trimmed().isEmpty()
+                    ? QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)
+                    : file->text();
+            const QString chosen = QFileDialog::getOpenFileName(
+                &dialog, MainWindow::tr("Choose the painting's photograph"), start,
+                MainWindow::tr("PNG and JPEG images (*.png *.jpg *.jpeg *.PNG *.JPG *.JPEG)"));
+            if (chosen.isEmpty()) {
+                return;
+            }
+            file->setText(chosen);
+            // The photograph's proportions give the height for the width, until the curator types
+            // the catalogue's; reading the size reads only the file's header.
+            const QSize size = QImageReader(chosen).size();
+            if (size.width() > 0 && size.height() > 0) {
+                height->setValue(width->value() * size.height() / size.width());
+                pixels->setText(
+                    MainWindow::tr("%1 × %2 pixels: type the catalogue's width and height")
+                        .arg(size.width())
+                        .arg(size.height()));
+            } else {
+                pixels->clear();
+            }
+        });
+    auto* file_row = new QHBoxLayout;
+    file_row->addWidget(file, 1);
+    file_row->addWidget(choose);
 
     QDialogButtonBox* buttons = ok_cancel(dialog);
     QPushButton* ok = buttons->button(QDialogButtonBox::Ok);
@@ -216,6 +276,7 @@ std::optional<PaintingChoice> ask_painting(MainWindow& window) {
 
     auto* form = new QFormLayout(&dialog);
     form->addRow(MainWindow::tr("Photograph:"), file_row);
+    form->addRow(QString(), pixels);
     form->addRow(MainWindow::tr("Width, unframed:"), width);
     form->addRow(MainWindow::tr("Height, unframed:"), height);
     form->addRow(buttons);
@@ -238,10 +299,21 @@ void add_painting(MainWindow& window) {
         return;
     }
     const QString cannot_add = MainWindow::tr("Cannot add the painting");
+    const QFileInfo info(choice->file);
+    // Asked here in a curator's words, before store_image would refuse it in its own.
+    const QString kind = info.suffix().toLower();
+    if (kind != QStringLiteral("png") && kind != QStringLiteral("jpg") &&
+        kind != QStringLiteral("jpeg")) {
+        warn(window, cannot_add,
+             MainWindow::tr("“%1” is not a PNG or JPEG photograph, the kinds the app reads. Save "
+                            "it as PNG or JPEG and try again.")
+                 .arg(info.fileName()));
+        return;
+    }
     // From Qt's text, not std::filesystem::path::u8string(), which throws for a name that is not
     // valid UTF-16 (Windows allows one); toUtf8() never throws, and title_from_file_name and
     // source_from_file_name make what it gives valid and bounded.
-    const std::string name = QFileInfo(choice->file).fileName().toUtf8().toStdString();
+    const std::string name = info.fileName().toUtf8().toStdString();
     const std::string title = editor::title_from_file_name(name);
     // Tried first with a stand-in for the photograph, so that a painting the row cannot take (wall
     // A full) leaves no copy of its photograph in the project's assets.
@@ -255,16 +327,19 @@ void add_painting(MainWindow& window) {
     }
     assets::AssetName asset;
     try {
+        const Busy busy;
         asset = assets::store_image(std::filesystem::path(choice->file.toStdU16String()),
                                     window.assets_folder());
     } catch (const std::invalid_argument& error) {
-        // Not an image the tiers can show: too large, not PNG or JPEG, or not decodable.
-        warn(window, cannot_add, message_of(error));
+        // Not an image the tiers can show: too large, or not decodable.
+        warn(window, cannot_add,
+             MainWindow::tr("“%1” cannot be shown as a painting: %2")
+                 .arg(info.fileName(), message_of(error)));
         return;
     } catch (const std::exception& error) {
         warn(window, cannot_add,
-             MainWindow::tr("The photograph cannot be read or stored in the project: %1")
-                 .arg(message_of(error)));
+             MainWindow::tr("“%1” cannot be read or stored in the project: %2")
+                 .arg(info.fileName(), message_of(error)));
         return;
     }
     try {
@@ -274,7 +349,12 @@ void add_painting(MainWindow& window) {
         doc::Work work = *added.transaction.find_work(added.work);
         work.source = editor::source_from_file_name(name);
         added.transaction.set_work(added.work, std::move(work));
-        window.commit(std::move(added.transaction));
+        {
+            const Busy busy; // the photograph goes to the GPU
+            window.commit(std::move(added.transaction));
+        }
+        tell(window,
+             MainWindow::tr("%1 hangs on wall A. Lights > Add spot lights it").arg(quoted(title)));
     } catch (const std::exception& error) {
         warn(window, cannot_add, message_of(error));
     }
@@ -293,16 +373,41 @@ std::optional<doc::Uuid> newest_exhibit(const doc::Document& document) {
     return newest;
 }
 
+// Whether a luminaire is aimed at the exhibit already.
+bool lit(const doc::Document& document, const doc::Uuid& exhibit) {
+    return std::ranges::any_of(document.entities(), [&exhibit](const auto& entry) {
+        const std::optional<doc::Luminaire>& luminaire = entry.second.luminaire;
+        return luminaire && luminaire->aim == doc::Aim{doc::AimAtEntity{exhibit}};
+    });
+}
+
 void add_spot(MainWindow& window) {
-    const std::optional<doc::Uuid> exhibit = newest_exhibit(window.document());
+    const doc::Document& document = window.document();
+    const std::optional<doc::Uuid> exhibit = newest_exhibit(document);
     if (!exhibit) {
         warn(window, MainWindow::tr("Cannot add a spot"),
              MainWindow::tr("Add a painting first: Add spot lights the painting added last."));
         return;
     }
+    const doc::Work* work = document.find_work(document.find_entity(*exhibit)->exhibit->work);
+    const QString painting = quoted(work != nullptr ? work->title : std::string());
+    // A second spot goes exactly where the first is, doubling the light: asked, Cancel first.
+    if (lit(document, *exhibit) &&
+        QMessageBox::question(&window, MainWindow::tr("Add spot"),
+                              MainWindow::tr("A spot lights %1 already. Add a second one in the "
+                                             "same place, which doubles the light on it?")
+                                  .arg(painting),
+                              QMessageBox::Yes | QMessageBox::Cancel,
+                              QMessageBox::Cancel) != QMessageBox::Yes) {
+        return;
+    }
     try {
-        editor::AddedSpot spot = editor::add_spot_for(window.document(), window.ids(), *exhibit);
+        editor::AddedSpot spot = editor::add_spot_for(document, window.ids(), *exhibit);
+        const QString name = QString::fromStdString(spot.transaction.find_entity(spot.spot)->name);
         window.commit(std::move(spot.transaction));
+        tell(
+            window,
+            MainWindow::tr("%1 lights %2 from the ceiling, 30° from vertical").arg(name, painting));
     } catch (const std::exception& error) {
         warn(window, MainWindow::tr("Cannot add a spot"), message_of(error));
     }
@@ -323,17 +428,23 @@ void register_skeleton_commands(MainWindow& window) {
 
     QMenu* lights_menu = window.add_menu(MainWindow::tr("&Lights"), lights_menu_order);
     QAction* add_spot_item = window.add_menu_item(lights_menu, 0, MainWindow::tr("Add &spot"));
-    add_spot_item->setStatusTip(MainWindow::tr("Lights the painting added last, as the Canadian "
-                                               "Conservation Institute advises"));
+    add_spot_item->setStatusTip(
+        MainWindow::tr("Puts a spot on a ceiling track and aims it at the painting added last, "
+                       "30° from vertical (the Canadian Conservation Institute's rule)"));
     QObject::connect(add_spot_item, &QAction::triggered, &window, [&window] { add_spot(window); });
 
     // A second room would be built at the origin too, overlapping the first, until rooms can be
-    // placed (M2): New room makes a project's one room.
+    // placed (M2): New room makes a project's one room. Why it is greyed is said in a tooltip too,
+    // since some styles (Fusion, Breeze) show no status tip for a disabled item.
+    room_menu->setToolTipsVisible(true);
     const auto update_new_room = [&window, new_room_item] {
         const bool can = !has_room(window.document());
         new_room_item->setEnabled(can);
-        new_room_item->setStatusTip(can ? MainWindow::tr("Builds a room with walls lettered A to D")
-                                        : MainWindow::tr("This project has its room already"));
+        const QString why = can ? MainWindow::tr("Builds a room with walls lettered A to D")
+                                : MainWindow::tr("This project has its room already. To build "
+                                                 "another, start a new project: File > New");
+        new_room_item->setStatusTip(why);
+        new_room_item->setToolTip(why);
     };
     update_new_room();
     QObject::connect(&window, &MainWindow::document_changed, new_room_item, update_new_room);

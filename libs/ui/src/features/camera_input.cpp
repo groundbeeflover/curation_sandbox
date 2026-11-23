@@ -13,7 +13,9 @@
 //   keeps its direction both ways.
 //
 // What walking needs from the curator is said in the status bar under the viewport: a widget
-// cannot draw over the window backend's native Vulkan window.
+// cannot draw over the window backend's native Vulkan window. So is how to move, while the view has
+// the keyboard focus and the status bar has nothing else to say; and View > Walk shows Tab and
+// walks from the menu too.
 
 #include "features/feature.hpp"
 #include "viewport/viewport.hpp"
@@ -23,12 +25,15 @@
 #include <cs/editor/camera_controller.hpp>
 #include <cs/world/world.hpp>
 
+#include <QAction>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QObject>
 #include <QPointF>
+#include <QPointer>
 #include <QStatusBar>
 #include <QTimer>
 #include <QWheelEvent>
@@ -54,6 +59,10 @@ constexpr int walk_tick_ms = 16;
 constexpr double default_orbit_distance_m = 3.0;
 // A middle of the room nearer than this along the view is too near to orbit round. [C]
 constexpr double min_orbit_target_m = 0.5;
+// How long a message that needs no answer stays in the status bar.
+constexpr int passing_message_ms = 10000;
+// View > Walk, before the panels' items.
+constexpr int walk_item_order = 0;
 
 // Whether the point lies inside the outline (even-odd rule, either way round).
 bool inside(const std::vector<doc::Vec2>& outline, glm::dvec2 p) {
@@ -118,6 +127,19 @@ class CameraInput : public QObject {
                 [this](double dx, double dy) { look(dx, dy); });
         connect(&window, &MainWindow::document_changed, this, [this] { room_changed(); });
         connect(&window, &MainWindow::project_changed, this, [this] { project_changed(); });
+
+        QMenu* view = window.add_menu(MainWindow::tr("&View"), menu_order::view);
+        // The text after the tab is shown as the item's shortcut; Tab itself is read above.
+        walk_item_ = window.add_menu_item(view, walk_item_order,
+                                          MainWindow::tr("&Walk") + QLatin1Char('\t') +
+                                              MainWindow::tr("Tab"));
+        walk_item_->setCheckable(true);
+        walk_item_->setStatusTip(MainWindow::tr("Walk at eye height: W A S D to move, the mouse to "
+                                                "look, Esc to stop"));
+        connect(walk_item_, &QAction::triggered, this, [this] {
+            viewport_.setFocus(Qt::OtherFocusReason); // the keys go to the view
+            toggle_walk();
+        });
     }
 
   protected:
@@ -142,8 +164,14 @@ class CameraInput : public QObject {
             return key(*static_cast<QKeyEvent*>(event), true);
         case QEvent::KeyRelease:
             return key(*static_cast<QKeyEvent*>(event), false);
+        case QEvent::FocusIn:
+            if (mode_ == Mode::orbit) {
+                hint();
+            }
+            return false;
         case QEvent::FocusOut:
             stop_walking(); // ADR 0011, point 10
+            unsay();
             return false;
         default:
             return false;
@@ -279,15 +307,16 @@ class CameraInput : public QObject {
     void start_walking() {
         const world::Camera camera = viewport_.camera();
         walk_.emplace(walk_room_for(camera), window_.document().settings(), camera);
-        mode_ = Mode::waiting;
+        set_mode(Mode::waiting);
         dragging_ = false;
         // On the fallback, and on Wayland with the pointer in the view, the lock is granted (and
         // pointer_locked_changed(true) arrives) within lock_pointer().
         if (!viewport_.lock_pointer()) {
-            mode_ = Mode::orbit;
+            set_mode(Mode::orbit);
             walk_.reset();
             say(MainWindow::tr("Walking needs the pointer held in the view, which this system "
-                               "does not allow"));
+                               "does not allow. Drag to turn round the room instead"),
+                passing_message_ms);
             return;
         }
         if (mode_ == Mode::waiting) {
@@ -298,7 +327,7 @@ class CameraInput : public QObject {
     void pointer_locked_changed(bool locked) {
         if (locked) {
             if (mode_ == Mode::waiting) {
-                mode_ = Mode::walking;
+                set_mode(Mode::walking);
                 show(walk_->camera()); // at eye height, inside the room
                 say(MainWindow::tr("Walking: W A S D to move, the mouse to look. Esc to stop "
                                    "walking"));
@@ -326,12 +355,22 @@ class CameraInput : public QObject {
     // it was if the walk never began (the lock not granted yet).
     void back_to_orbit() {
         advance();
-        mode_ = Mode::orbit;
+        set_mode(Mode::orbit);
         walk_.reset();
         keys_ = {};
         tick_.stop();
         orbit_.reset();
         unsay();
+        if (viewport_.hasFocus()) {
+            hint();
+        }
+    }
+
+    void set_mode(Mode mode) {
+        mode_ = mode;
+        if (walk_item_) {
+            walk_item_->setChecked(mode != Mode::orbit);
+        }
     }
 
     void look(double dx, double dy) {
@@ -390,9 +429,17 @@ class CameraInput : public QObject {
         shown_ = viewport_.camera();
     }
 
-    void say(const QString& message) {
+    void say(const QString& message, int timeout_ms = 0) {
         said_ = message;
-        window_.statusBar()->showMessage(message);
+        window_.statusBar()->showMessage(message, timeout_ms);
+    }
+
+    // How to move round, unless the status bar says something else (a problem of the project).
+    void hint() {
+        const QString current = window_.statusBar()->currentMessage();
+        if (current.isEmpty() || current == said_) {
+            say(MainWindow::tr("Drag to turn round the room · Wheel to zoom · Tab to walk"));
+        }
     }
 
     // Clears the status bar's message if it is still this feature's.
@@ -415,6 +462,9 @@ class CameraInput : public QObject {
     QTimer tick_;
     QElapsedTimer clock_;
     QString said_;
+    // View > Walk, checked while walking or waiting to. The menu owns it and may go first while the
+    // window closes.
+    QPointer<QAction> walk_item_;
 };
 
 } // namespace
