@@ -182,7 +182,7 @@ Bold IDs are on the critical path.
 | M1-24 | Orbit and walk camera controllers | editor | feature | S | agent | M1-13 | `libs/editor/include/cs/editor/camera_controller.hpp`, `libs/editor/src/camera_controller.cpp`, `libs/editor/tests/test_camera_controller.cpp` |
 | M1-25 | Commands and tools: new room, add a painting, light it | editor | feature | M | agent | M1-09, M1-10 | `libs/editor/include/cs/editor/commands/`, `libs/editor/src/commands/`, `libs/editor/include/cs/editor/tool.hpp`, `libs/editor/src/tool.cpp`, `libs/editor/tests/test_commands.cpp`, `libs/editor/tests/test_tool.cpp` |
 | M1-26 | Application shell with the Vulkan viewport | ui | feature | M | agent | M1-04, M1-22, M1-23, M1-34, M1-44, M1-45 | `libs/ui/`, `apps/curation/`, `cmake/CsQt.cmake` |
-| M1-27 | Walking skeleton: build a room, hang a painting, light it, walk | ui | feature | M | agent | M1-26, M1-24, M1-25, M1-15, M1-17, M1-43, M1-47 | `libs/ui/src/features/skeleton_commands.cpp`, `libs/ui/src/features/camera_input.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_walking_skeleton.cpp`, `.claude/agents/ux-reviewer.md`, `docs/product/screens/m1-walking-skeleton.png` |
+| M1-27 | Walking skeleton: build a room, hang a painting, light it, walk | ui | feature | M | agent | M1-26, M1-24, M1-25, M1-15, M1-17, M1-43, M1-47 | `libs/ui/src/features/skeleton_commands.cpp`, `libs/ui/src/features/camera_input.cpp`, `libs/ui/src/features/lux_panel.cpp`, `libs/ui/tests/test_walking_skeleton.cpp`, `libs/editor/include/cs/editor/work_title.hpp`, `libs/editor/src/work_title.cpp`, `libs/editor/tests/test_work_title.cpp`, `libs/editor/include/cs/editor/commands/hanging.hpp`, `libs/editor/src/commands/hanging.cpp`, `libs/editor/tests/test_commands.cpp`, `.claude/agents/ux-reviewer.md`, `docs/product/screens/m1-walking-skeleton.png` |
 | M1-28 | cs-bench, the empty-room scene and the first baseline | build | test | M | agent | M1-22, M1-33, M1-44 | `apps/cs-bench/`, `bench/scenes/empty-room/`, `bench/baselines/` |
 | **M1-29** | GPU and golden tests on lavapipe in CI | ci | test | S | agent | M1-03, M1-18, M1-22 | `.github/workflows/gpu.yml`, `apps/cs-render/`, `tests/golden/skeleton-standard/` |
 | M1-30 | CI: binary caches and the full compiler matrix | build | chore | S | agent | M1-02 | `.github/workflows/ci.yml` |
@@ -205,6 +205,7 @@ Bold IDs are on the critical path.
 | M1-47 | Store an image in a project's assets | assets | feature | S | agent | M1-43 | `libs/assets/include/cs/assets/project_assets.hpp`, `libs/assets/src/project_assets.cpp`, `libs/assets/src/sha256.hpp`, `libs/assets/src/sha256.cpp`, `libs/assets/tests/test_project_assets.cpp`, `libs/assets/tests/test_sha256.cpp` |
 | **M1-48** | One GPU test harness, and every GPU test in CI's Windows job | gpu | chore | S | agent | M1-46 | `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/gpu_test.hpp`, `libs/gpu/tests/test_device.cpp`, `tests/integration/test_skeleton_gpu_scene.cpp`, `apps/cs-render/standard.cpp`, `libs/gpu/src/scene.cpp`, `libs/core/tests/test_image_compare.cpp`, `.github/workflows/gpu.yml` |
 | M1-49 | PBR Neutral shows an infinite channel as white | core | bug | S | agent | M1-44 | `libs/core/include/cs/core/colour.hpp`, `libs/core/tests/test_colour.cpp`, `libs/gpu/tests/test_tonemap.cpp` |
+| M1-50 | Sample paintings to try in the walking skeleton | ui | feature | M | agent | M1-27 | `data/samples/paintings/`, `scripts/fetch-samples.py`, `scripts/tests/test_fetch_samples.py`, `libs/ui/src/features/sample_paintings.cpp`, `libs/ui/tests/test_sample_paintings.cpp`, `libs/ui/tests/data/samples/`, `libs/ui/CMakeLists.txt` |
 
 ### Task graph
 
@@ -268,6 +269,7 @@ graph LR
     M1_31["M1-31 The app in CI: builds on Windows..."]
     M1_45["M1-45 Relative pointer mode for walkin..."]
     M1_47["M1-47 Store an image in a project's as..."]
+    M1_50["M1-50 Sample paintings to try in the w..."]
   end
   M1_01 --> M1_02
   M1_01 --> M1_05
@@ -362,6 +364,7 @@ graph LR
   M1_43 --> M1_47
   M1_46 --> M1_48
   M1_44 --> M1_49
+  M1_27 --> M1_50
   classDef crit stroke:#b60205,stroke-width:3px
   class M1_01,M1_08,M1_32,M1_13,M1_15,M1_16,M1_17,M1_18,M1_29,M1_46,M1_48,M1_31 crit
   linkStyle 4,14,17,20,21,25,58,66,67,88,91 stroke:#b60205,stroke-width:3px
@@ -467,7 +470,7 @@ friends' machines (an RTX 40-series PC and an Intel integrated laptop) to record
 | M2-39 | Automatic exposure in the viewport | gpu | feature | M | agent | M1-22, M1-27 | `libs/gpu/include/cs/gpu/auto_exposure.hpp`, `libs/gpu/src/auto_exposure.cpp`, `libs/gpu/shaders/auto_exposure.slang`, `libs/gpu/tests/test_auto_exposure.cpp`, `libs/ui/src/features/auto_exposure.cpp`, `libs/ui/tests/test_auto_exposure_ui.cpp` |
 | M2-40 | Shrink large images to the Standard cap on import | assets | feature | M | agent | M2-32 | `libs/assets/include/cs/assets/downsample.hpp`, `libs/assets/src/downsample.cpp`, `libs/assets/tests/test_downsample.cpp`, `libs/assets/include/cs/assets/import.hpp`, `libs/assets/src/import.cpp`, `libs/assets/src/tiff.cpp`, `libs/assets/include/cs/assets/texture.hpp`, `libs/assets/src/texture.cpp` |
 | M2-41 | Check values on every commit | doc | feature | S | agent | M1-09, M2-38 | `libs/doc/include/cs/doc/project_io.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/include/cs/doc/history.hpp`, `libs/doc/src/history.cpp`, `libs/doc/tests/test_check_values.cpp` |
-| M2-42 | A centre line for each wall | doc | feature | S | agent | M1-25, M2-06 | `libs/doc/include/cs/doc/components.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/tests/test_wall_centre_line.cpp`, `libs/editor/include/cs/editor/commands/hanging.hpp`, `libs/editor/src/commands/hanging.cpp`, `libs/editor/tests/test_commands.cpp` |
+| M2-42 | A centre line for each wall | doc | feature | S | agent | M1-25, M2-06, M1-27 | `libs/doc/include/cs/doc/components.hpp`, `libs/doc/src/project_io.cpp`, `libs/doc/tests/test_wall_centre_line.cpp`, `libs/editor/include/cs/editor/commands/hanging.hpp`, `libs/editor/src/commands/hanging.cpp`, `libs/editor/tests/test_commands.cpp` |
 | M2-43 | The Standard tier accumulates jittered frames while still | gpu | feature | M | agent | M2-26, M2-27, M2-44 | `libs/gpu/include/cs/gpu/standard_tier.hpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/shaders/standard.slang`, `libs/gpu/tests/test_standard_accumulation.cpp`, `apps/cs-render/golden.cpp`, `tests/golden/skeleton-standard/`, `tests/golden/runner_checks.cmake`, `tests/golden/README.md` |
 | M2-44 | GraphicsPipeline with descriptor set layouts | gpu | chore | S | agent | M1-44, M2-26 | `libs/gpu/include/cs/gpu/pipeline.hpp`, `libs/gpu/src/pipeline.cpp`, `libs/gpu/src/standard_tier.cpp`, `libs/gpu/src/tonemap.cpp`, `libs/gpu/tests/test_pipeline.cpp` |
 | M2-45 | Present fences, and the presenter tested on Windows | gpu | chore | S | agent | M1-23, M1-48 | `libs/gpu/include/cs/gpu/presenter.hpp`, `libs/gpu/src/presenter.cpp`, `libs/gpu/include/cs/gpu/device.hpp`, `libs/gpu/src/device.cpp`, `libs/gpu/tests/test_presenter.cpp` |

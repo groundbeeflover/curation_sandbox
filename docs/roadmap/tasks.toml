@@ -1258,7 +1258,7 @@ type = "feature"
 size = "M"
 owner = "agent"
 blocked_by = ["M1-26", "M1-24", "M1-25", "M1-15", "M1-17", "M1-43", "M1-47"]
-touches = ["libs/ui/src/features/skeleton_commands.cpp", "libs/ui/src/features/camera_input.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_walking_skeleton.cpp", "libs/editor/include/cs/editor/work_title.hpp", "libs/editor/src/work_title.cpp", "libs/editor/tests/test_work_title.cpp", ".claude/agents/ux-reviewer.md", "docs/product/screens/m1-walking-skeleton.png"]
+touches = ["libs/ui/src/features/skeleton_commands.cpp", "libs/ui/src/features/camera_input.cpp", "libs/ui/src/features/lux_panel.cpp", "libs/ui/tests/test_walking_skeleton.cpp", "libs/editor/include/cs/editor/work_title.hpp", "libs/editor/src/work_title.cpp", "libs/editor/tests/test_work_title.cpp", "libs/editor/include/cs/editor/commands/hanging.hpp", "libs/editor/src/commands/hanging.cpp", "libs/editor/tests/test_commands.cpp", ".claude/agents/ux-reviewer.md", "docs/product/screens/m1-walking-skeleton.png"]
 goal = "The walking skeleton a curator can see: build a room, hang a painting at its true size, light it, walk around it and read its lux, all in the app."
 context = [
   "docs/product/blueprint.md, section 3: journeys J1 and J2 (their first steps)",
@@ -1269,6 +1269,7 @@ context = [
 acceptance = [
   "Room > New room: width, depth and height fields (defaults 6, 4, 3.5 m) create the room",
   "Works > Add painting: a file dialog and width and height fields hang the work on wall A at the centre line in a box frame; Lights > Add spot lights the work just added (selection arrives with M2-14)",
+  "Several paintings hang side by side: editor::add_work_in_row (hanging.hpp), with add_work's arguments and result, hangs the new work on face A of wall A on the centre line and moves the works already there so that the row is centred on the face with equal 0.4 m gaps between the frames' outer edges, all in one transaction; when either end would be closer than 0.3 m to the face's ends it throws std::invalid_argument ('Wall A is full') and changes nothing. Works > Add painting uses it, and M1-50's samples will. [editor] tests: three works of different widths do not overlap, have equal gaps and are centred; one too wide is refused; undo puts the others back",
   "The added work is titled from its file: editor::title_from_file_name takes the file name's stem, turns underscores into spaces, collapses and trims white space, replaces bytes that are not UTF-8 with U+FFFD and cuts at a character boundary to doc::max_string_bytes ('Monet_Haystacks  final.JPG' becomes 'Monet Haystacks final'; '.png' becomes an empty, untitled work); its source is FromImport with the file name, made valid UTF-8 and bounded the same way; `ctest --preset debug -L editor` passes with tests of each of these cases",
   "Orbit by default; Tab toggles walk (W, A, S, D and mouse look with the cursor captured; Esc releases it)",
   "A lux panel shows the work's mean direct and total lux from engine::work_lux_grid, computed on a worker thread and updated within 1 s of a change; [ui] an offscreen test runs the three commands and checks the panel's numbers equal cs-render's lux report for the saved project within 1%",
@@ -1932,6 +1933,39 @@ verification = [
   "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "python3 scripts/format.py --check",
 ]
+
+[[tasks]]
+id = "M1-50"
+epic = "E1.5"
+title = "Sample paintings to try in the walking skeleton"
+area = "ui"
+type = "feature"
+size = "M"
+owner = "agent"
+blocked_by = ["M1-27"]
+touches = ["data/samples/paintings/", "scripts/fetch-samples.py", "scripts/tests/test_fetch_samples.py", "libs/ui/src/features/sample_paintings.cpp", "libs/ui/tests/test_sample_paintings.cpp", "libs/ui/tests/data/samples/", "libs/ui/CMakeLists.txt"]
+goal = "The demo offers a handful of real paintings of very different sizes, so that a curator can try the room, the hanging and the light without finding images first. Works > Add painting (M1-27) needs a file of one's own; nothing ships with the app yet, and the catalogue (ADR 0004) is M4's."
+context = [
+  "docs/adr/0004-catalogue.md: the five open-access museums, the rights rule (the source's own record marks the image CC0 or Public Domain; the raw rights field is stored), the manifest's fields, the traps in museum dimensions, and that images are not committed (they live in releases; tests use tiny committed images) and are never loaded from museum servers at runtime",
+  "docs/dependencies.md, Data assets: the licences allowed for shipped data, and the Sample paintings row this task fills in (Status: done once it lands)",
+  "M1-27 (#88): editor::add_work_in_row hangs a work beside the others on wall A, as Works > Add painting does; assets::store_image (M1-47) puts an image into window.assets_folder(); doc::FromCatalogue{id, image_hash} is the source for a work from a catalogue",
+  "IIIF image servers (NGA, Rijksmuseum, SMK, among others) resize on the server: a URL such as .../full/!4096,4096/0/default.jpg returns at most 4096 px on the long side",
+]
+acceptance = [
+  "data/samples/paintings/ holds 6 to 8 paintings, one JSON file each: id, title, artist with birth and death years, date, institution, accession number, object page URL, image URL, licence and the raw rights field, the unframed width and height in mm with the original dimension text, medium text, and the SHA-256 of the image the URL returns. Every one passes ADR 0004's rights rule",
+  "The set spans at least three museums and true sizes from under 40 cm to over 1.5 m on the long side, with at least one portrait, one landscape and one near-square work; each image is at most 4096 px on its long side, sized by the museum's own server, and its aspect ratio is within 2% of the recorded size",
+  "`python3 scripts/fetch-samples.py` downloads every image into build/samples/paintings/ (git-ignored), checks its hash, skips images already there, and stops with a clear message on a hash mismatch or a failed download; it uses only Python's standard library, bounds each download's size, and refuses URLs that are not https; scripts/tests cover a mismatch, a skip and the size bound with local files, without the network",
+  "Works > Add sample painting lists the samples as 'Title, Artist (W × H cm)'; choosing one hangs it with editor::add_work_in_row at its true size, with its title, artist, date and medium, and source FromCatalogue{id, image hash}; the image goes through assets::store_image into window.assets_folder(). A sample whose image has not been fetched is disabled, with a tip naming the script. The app finds the folder through a compile definition (packaging is M4's)",
+  "[ui] An offscreen test uses a test manifest and a tiny committed image in libs/ui/tests/data/samples/: the submenu lists it, choosing it hangs a work of the manifest's size beside an existing one, with its title and artist, and a manifest whose image is missing gives a disabled item",
+  "Each sample's JSON records its licence and source, as docs/dependencies.md's Sample paintings row says; the test image is made by the project; the pull request shows a screenshot of three samples side by side and lit",
+]
+out_of_scope = ["The catalogue pipeline, KTX2 and the browser (ADR 0004, M4)", "Shrinking large images in the app (M2-40)", "ICC profiles (M2-09)", "Committing the images themselves"]
+verification = [
+  "python3 scripts/fetch-samples.py && python3 -m pytest -q scripts",
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Use /run: New room, add three samples of different sizes, light each, walk to them, and attach the screenshot."
 
 [[tasks]]
 id = "M2-01"
@@ -3093,13 +3127,14 @@ area = "doc"
 type = "feature"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-25", "M2-06"]
+blocked_by = ["M1-25", "M2-06", "M1-27"]
 touches = ["libs/doc/include/cs/doc/components.hpp", "libs/doc/src/project_io.cpp", "libs/doc/tests/test_wall_centre_line.cpp", "libs/editor/include/cs/editor/commands/hanging.hpp", "libs/editor/src/commands/hanging.cpp", "libs/editor/tests/test_commands.cpp"]
 goal = "A wall can have its own centre line, as ADR 0006 allows ('adjustable per project and per wall'), so that hanging (M2-15) snaps to it and a new work is hung on it. doc::Wall has no such field today, and M2-15's acceptance already reads 'the centre line (project value, or the wall's override)'."
 context = [
   "docs/adr/0006-ui-and-interaction.md, Hanging: the centre line, project default 150 cm, adjustable per project and per wall from 140 to 160 cm",
   "libs/doc: ProjectSettings::centre_line_m, written as centreLine_m and refused unless positive; doc::Wall in components.hpp",
   "M1-25 (#169): editor::add_work hangs at ProjectSettings::centre_line_m",
+  "M1-27 (#88): editor::add_work_in_row, beside add_work in hanging.hpp, also hangs at the centre line; both use the wall's own centre line once it has one",
   "M2-22 (schema versions) comes after this task, so the field is part of the first versioned schema and needs no migration",
 ]
 acceptance = [
