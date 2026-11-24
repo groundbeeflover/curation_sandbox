@@ -9,8 +9,9 @@ endif()
 set(CMAKE_AUTOMOC ON)
 # world, doc and assets come through editor's and gpu's re-exports (blueprint section 7). The main
 # window's header uses doc's History, Transaction and ChangeList, so ui re-exports editor, which
-# re-exports doc.
-cs_add_module(NAME ui DEPS editor gpu assets core EXPORTS editor EXTERNAL Qt6::Widgets)
+# re-exports doc. The engine is private: the lux panel (src/features/lux_panel.cpp) reads the lux
+# meter, and no public header of ui names an engine type.
+cs_add_module(NAME ui DEPS editor gpu assets core engine EXPORTS editor EXTERNAL Qt6::Widgets)
 # Walking's pointer lock on Wayland (src/viewport/wayland_pointer.cpp).
 cs_qt_wayland_protocols(cs_ui)
 # moc reads the QObject classes of the public headers too, which the module's sources (src/) do

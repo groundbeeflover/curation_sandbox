@@ -9,7 +9,9 @@
 #include <cs/doc/document.hpp>
 #include <cs/doc/transaction.hpp>
 #include <cs/doc/uuid.hpp>
+#include <cs/doc/work.hpp>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -47,5 +49,40 @@ struct AddedWork {
 // long, and the document has a wall labelled default_wall_label.
 AddedWork add_work(const doc::Document& document, doc::IdGenerator& ids, const doc::AssetRef& image,
                    double width_m, double height_m, std::string title = {});
+
+// The gap add_work_in_row leaves between neighbouring works, from one's outer edge to the next's,
+// and the least it leaves between the row's ends and the face's ends. [C]
+inline constexpr double row_gap_m = 0.4;
+inline constexpr double row_end_clearance_m = 0.3;
+
+// The width a work takes on a wall, from outer edge to outer edge, as world::compile builds it:
+// the outer width of its frame (geom::outer_size of world::default_frame with the framing's member
+// width, whatever the style, until M2-08), or the work's own width when it is unframed or its
+// frame cannot be built (then shown unframed).
+double hung_width_m(const doc::Work& work, const std::optional<doc::Framing>& framing);
+
+// As add_work, with the same arguments, result and refusals, but hanging the new work in a row with
+// the works already on the wall: several paintings side by side, as a curator drafts a hang
+// (blueprint J1), and the hang of M1-50's sample paintings.
+//
+// The row is every exhibit placed on face A of the wall labelled default_wall_label, left to right
+// in order of their distance along the face (equal distances in order of id), then the new work at
+// its right end. The new work's centre is at the project's centre line; the others keep their
+// heights and stand-offs. Each is moved along the face so that the row, from the first work's
+// outer left edge to the last one's outer right edge (hung_width_m), is centred on the face, with
+// row_gap_m between each work and the next. A spot that lights a work it moves (a luminaire aimed
+// at its exhibit by an AimAtEntity, OnTrack within the ends of a track of two points parallel to
+// the face, as add_spot_for makes) slides along its track by as much, so that it lights the work
+// from the same place relative to it, at the same angle; it stops at the track's ends. Other
+// luminaires, and spots beyond their track's ends, stay where they are. All of it is the one
+// transaction add_work names, so one undo takes the new work away and puts the others, and their
+// spots, back.
+//
+// Throws std::invalid_argument, changing nothing, as add_work does, and when either end of the row
+// would be closer than row_end_clearance_m to the face's ends: "Wall A is full: ...", saying how
+// long the row and the wall are and what to do, for the curator.
+AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
+                          const doc::AssetRef& image, double width_m, double height_m,
+                          std::string title = {});
 
 } // namespace cs::editor

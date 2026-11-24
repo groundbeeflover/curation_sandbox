@@ -7,12 +7,91 @@
 #include "commands/common.hpp"
 
 #include <cs/doc/work.hpp>
+#include <cs/geom/box_frame.hpp>
 #include <cs/geom/wall_face.hpp>
+#include <cs/world/compile.hpp>
 
+#include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <iomanip>
+#include <map>
 #include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <utility>
+#include <variant>
+#include <vector>
 
 namespace cs::editor {
+
+namespace {
+
+// How far a row may reach into the clearance at the face's ends, for rounding: a nanometre, so
+// that a row that fits exactly is not refused for the last bit of a sum. [C]
+constexpr double row_fit_tolerance_m = 1e-9;
+
+// A track is parallel to a face when the sine of the angle between them is at most this: a
+// microradian, which a track drawn along the wall (add_spot_for's, but for rounding) is well within
+// and a track at an angle to it well outside. [C]
+constexpr double parallel_tolerance = 1e-6;
+
+// A length for the curator: "6.20 m".
+std::string metres(double value_m) {
+    std::ostringstream text;
+    text << std::fixed << std::setprecision(2) << value_m << " m";
+    return text.str();
+}
+
+// Slides each spot aimed at a moved exhibit along its track by as much as the exhibit moved along
+// the face, kept on the track: a luminaire with an AimAtEntity of the exhibit, OnTrack within the
+// ends of a track of two points parallel to the face. Its place relative to the work, and so its
+// angle, stays.
+void slide_spots(const doc::Document& document, const geom::FaceFrame& face,
+                 const std::map<doc::Uuid, double>& moved_m, doc::Transaction& transaction) {
+    const glm::dvec2 along_face(face.u);
+    for (const auto& [id, entity] : document.entities()) {
+        if (!entity.luminaire || !entity.placement) {
+            continue;
+        }
+        const auto* aim = std::get_if<doc::AimAtEntity>(&entity.luminaire->aim);
+        const auto* on_track = std::get_if<doc::OnTrack>(&*entity.placement);
+        if (aim == nullptr || on_track == nullptr) {
+            continue;
+        }
+        const auto moved = moved_m.find(aim->target);
+        const doc::Entity* holder = document.find_entity(on_track->track);
+        if (moved == moved_m.end() || holder == nullptr || !holder->track ||
+            holder->track->points_m.size() != 2) {
+            continue;
+        }
+        const glm::dvec2 run =
+            detail::to_glm(holder->track->points_m[1]) - detail::to_glm(holder->track->points_m[0]);
+        const double length_m = glm::length(run);
+        // A spot beyond its track's ends (placed by hand; compile marks it beyond_track) is not
+        // one add_spot_for made: moving it onto the track would change its light for a small move.
+        if (!(length_m > 0.0) ||
+            !(on_track->distance_m >= 0.0 && on_track->distance_m <= length_m)) {
+            continue;
+        }
+        const glm::dvec2 along = run / length_m;
+        if (!(std::abs(along.x * along_face.y - along.y * along_face.x) <= parallel_tolerance)) {
+            continue;
+        }
+        // add_spot_for's track runs the face's way; one drawn the other way runs against it.
+        const double sign = glm::dot(along, along_face) > 0.0 ? 1.0 : -1.0;
+        doc::OnTrack slid = *on_track;
+        slid.distance_m = std::clamp(on_track->distance_m + sign * moved->second, 0.0, length_m);
+        if (slid != *on_track) {
+            transaction.set(id, doc::Placement{slid});
+        }
+    }
+}
+
+} // namespace
 
 AddedWork add_work(const doc::Document& document, doc::IdGenerator& ids, const doc::AssetRef& image,
                    double width_m, double height_m, std::string title) {
@@ -51,6 +130,97 @@ AddedWork add_work(const doc::Document& document, doc::IdGenerator& ids, const d
     transaction.set_work(work_id, std::move(work));
     transaction.add_entity(exhibit_id, std::move(exhibit));
     return {std::move(transaction), work_id, exhibit_id};
+}
+
+double hung_width_m(const doc::Work& work, const std::optional<doc::Framing>& framing) {
+    if (!framing) {
+        return work.form.width_m;
+    }
+    // As world::compile builds the frame (compile.cpp, add_frame). Compile takes the work's depth
+    // as at least min_face_offset_m - stand_off_m, which is at most 0.001 m since a stand-off is
+    // never negative; the frame's own 0.04 m minimum depth covers that, so the depth is the same.
+    const world::DefaultFrame& frame = world::default_frame;
+    const geom::BoxFrame box{
+        work.form.width_m, work.form.height_m, framing->width_m.value_or(frame.member_width_m),
+        std::max(frame.depth_m, work.form.depth_m.value_or(0.0) + frame.front_lip_m),
+        frame.rebate_m};
+    try {
+        return geom::outer_size(box).x;
+    } catch (const std::logic_error&) {
+        // A frame geom cannot build: compile shows the work unframed.
+        return work.form.width_m;
+    }
+}
+
+AddedWork add_work_in_row(const doc::Document& document, doc::IdGenerator& ids,
+                          const doc::AssetRef& image, double width_m, double height_m,
+                          std::string title) {
+    // add_work checks the arguments, finds the wall and takes the ids; the row then moves its work.
+    AddedWork added = add_work(document, ids, image, width_m, height_m, std::move(title));
+    const doc::Entity& made = *added.transaction.find_entity(added.exhibit);
+    const doc::OnWall& placed = std::get<doc::OnWall>(*made.placement);
+    const doc::Uuid wall_id = placed.wall;
+    const geom::FaceFrame face =
+        detail::face_frame(*document.find_entity(wall_id)->wall, doc::WallFace::a);
+
+    struct Member {
+        doc::Uuid entity;
+        doc::OnWall placement;
+        double width_m = 0.0; // hung_width_m
+    };
+    std::vector<Member> row;
+    // Entities come in order of id, which a stable sort keeps for equal distances.
+    for (const auto& [id, entity] : document.entities()) {
+        if (!entity.exhibit || !entity.placement) {
+            continue;
+        }
+        const auto* on_wall = std::get_if<doc::OnWall>(&*entity.placement);
+        const doc::Work* work = document.find_work(entity.exhibit->work);
+        if (on_wall == nullptr || on_wall->wall != wall_id || on_wall->face != doc::WallFace::a ||
+            work == nullptr) {
+            continue;
+        }
+        row.push_back({id, *on_wall, hung_width_m(*work, entity.framing)});
+    }
+    std::ranges::stable_sort(row, {}, [](const Member& m) { return m.placement.distance_m; });
+    row.push_back({added.exhibit, placed,
+                   hung_width_m(*added.transaction.find_work(added.work), made.framing)});
+
+    double length_m = row_gap_m * static_cast<double>(row.size() - 1);
+    for (const Member& member : row) {
+        length_m += member.width_m;
+    }
+    const double clearance_m = (face.length_m - length_m) / 2.0;
+    if (clearance_m < row_end_clearance_m - row_fit_tolerance_m) {
+        // Said to the curator as it is (Works > Add painting), so it does not start with the
+        // command's name as other refusals do. The face is the wall as the room sees it.
+        const std::string wall = "wall " + std::string(default_wall_label);
+        const std::string row_text = row.size() == 1
+                                         ? "this work is " + metres(length_m) + " wide in its frame"
+                                         : "these " + std::to_string(row.size()) + " works, " +
+                                               metres(row_gap_m) + " apart, make a row " +
+                                               metres(length_m) + " long";
+        throw std::invalid_argument(
+            "Wall " + std::string(default_wall_label) + " is full: " + row_text + ", which needs " +
+            metres(row_end_clearance_m) + " clear at each end, " +
+            metres(length_m + 2.0 * row_end_clearance_m) + " in all, but " + wall + " is " +
+            metres(face.length_m) + " long. Hang a smaller work, or start a new project with a " +
+            "longer " + wall + ".");
+    }
+
+    std::map<doc::Uuid, double> moved_m; // how far each exhibit moved along the face
+    double left_m = clearance_m;
+    for (Member& member : row) {
+        const double distance_m = left_m + member.width_m / 2.0;
+        left_m += member.width_m + row_gap_m;
+        if (member.placement.distance_m != distance_m) {
+            moved_m.emplace(member.entity, distance_m - member.placement.distance_m);
+            member.placement.distance_m = distance_m;
+            added.transaction.set(member.entity, doc::Placement{member.placement});
+        }
+    }
+    slide_spots(document, face, moved_m, added.transaction);
+    return added;
 }
 
 } // namespace cs::editor
