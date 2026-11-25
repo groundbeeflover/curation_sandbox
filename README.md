@@ -80,6 +80,30 @@ the viewpoint's EV100, tone mapped for a screen) and `build/out/skeleton.lux.jso
 work, the direct and total illuminance in lux at a 5 x 5 grid over the part a visitor sees, with
 their mean, minimum, maximum and standard error. `--help` lists the options.
 
+## Notes for demo
+### To build demo: 
+
+```sh
+export VCPKG_ROOT=$HOME/vcpkg && cmake --preset app && cmake --build --preset app
+```
+To start w/ a clean slate:
+```sh
+LSAN_OPTIONS=suppressions=tools/sanitizers/lsan.supp ./build/app/apps/curation/curation
+```
+To start w/ a ready-made scene: 
+```sh
+LSAN_OPTIONS=suppressions=tools/sanitizers/lsan.supp ./build/app/apps/curation/curation tests/scenes/skeleton
+```
+
+### To set image sizes: 
+Individual: 
+```sh
+vips thumbnail input.tif "output.jpg[Q=92]" 6500 --height 6500 --size down --linear --output-profile srgb
+```
+Folder: 
+````sh
+for f in *.tif *.jpg *.png; do [ -e "$f" ] && vips thumbnail "$f" "small-${f%.*}.jpg[Q=92]" 6500 --height 6500 --size down --linear --output-profile srgb; done
+```
 ## Licence
 
 Apache-2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Every dependency must allow
