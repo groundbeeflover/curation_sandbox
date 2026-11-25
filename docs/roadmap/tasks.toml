@@ -135,7 +135,7 @@ description = "Start before other ready tasks: /dispatch takes these first"
 [[milestones]]
 id = "M1"
 title = "M1 Walking skeleton"
-due_on = "2026-11-27"
+due_on = "2026-12-04"
 description = "The app opens, a room is built, one painting hangs at its true size under one spotlight in candela, you walk around it and read its lux; every layer exists thinly and is tested. Exit criteria: docs/roadmap.md#m1-walking-skeleton"
 
 [[milestones]]
@@ -1365,26 +1365,29 @@ verification = [
 [[tasks]]
 id = "M1-31"
 epic = "E1.5"
-title = "The app in CI: builds on Windows and Linux, UI tests on lavapipe"
+title = "The app in CI on Linux, with UI tests on lavapipe"
 area = "ci"
 type = "chore"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-26", "M1-29", "M1-30", "M1-39", "M1-46", "M1-48"]
-touches = [".github/workflows/ci.yml", ".github/workflows/gpu.yml"]
-goal = "Every pull request builds the Qt application on both platforms and runs its UI tests headless, so UI regressions are caught like any other."
+blocked_by = ["M1-26", "M1-29", "M1-46", "M1-48"]
+touches = [".github/workflows/gpu.yml"]
+goal = "Every pull request builds the Qt application on Linux and runs its UI tests headless on lavapipe, so UI regressions are caught like any other. The Windows build is M1-51's: the groom of 25 November 2026 split it off, because it waits on M1-39's triplets and a cold Windows build costs one to two hours."
 context = [
-  "docs/dependencies.md: the pinned Qt version; docs/adr/0011-qt-vulkan-viewport.md (M1-04): how Qt is installed in CI",
-  "docs/adr/0010-gpu-tests-in-ci.md (M1-03): lavapipe in the gpu workflow",
+  "docs/dependencies.md: the pinned Qt version (6.10.3); docs/adr/0011-qt-vulkan-viewport.md (M1-04): how Qt is installed in CI. Read its 'Four things went wrong on the way' before writing the job",
+  "docs/adr/0010-gpu-tests-in-ci.md (M1-03): lavapipe in the gpu workflow, whose Linux job runs on every pull request",
+  "The spike's workflow on the spike/qt-vulkan branch (commit da638cc, 'Build the spike's Wayland pointer code in CI') installs Qt's Wayland client through aqtinstall; reuse its steps",
+  "The app preset is a sanitized debug build. ctest's presets set the LeakSanitizer suppressions, but a step that runs `curation` directly needs LSAN_OPTIONS=suppressions=tools/sanitizers/lsan.supp, or it exits 1 on the Vulkan loader's 256 bytes (M1-26, #187)",
 ]
 acceptance = [
-  "Qt is installed at the pinned version and cached; ci.yml builds the app preset on Windows and Linux",
-  "The gpu workflow runs `ctest --preset app -L '^ui$'` with QT_QPA_PLATFORM=offscreen on lavapipe and uploads the UI tests' screenshots as an artefact",
+  "The gpu workflow's Linux job installs Qt at the pinned version with its Wayland client module through aqtinstall, cached, and libwayland-dev and wayland-protocols from apt (cmake --preset app stops without them since M1-45)",
+  "It builds the app preset and runs `ctest --preset app -L '^ui$'` with QT_QPA_PLATFORM=offscreen on lavapipe, and uploads the UI tests' screenshots as an artefact",
+  "Any step that runs `curation` directly sets LSAN_OPTIONS to the project's suppressions",
   "The PR states the added CI time",
 ]
-out_of_scope = ["Packaging (M4)"]
+out_of_scope = ["The app on Windows (M1-51)", "Packaging (M4)"]
 verification = [
-  "The CI run on the pull request: app builds on both platforms, UI tests green, screenshots attached",
+  "The CI run on the pull request: the gpu workflow's Linux job builds the app, the UI tests are green and their screenshots attached",
 ]
 
 [[tasks]]
@@ -1626,16 +1629,18 @@ area = "build"
 type = "chore"
 size = "S"
 owner = "agent"
-blocked_by = ["M1-35", "M1-02", "M1-41"]
-touches = ["cmake/CsModule.cmake", "cmake/tests/module_glob.cmake", "cmake/tests/module_glob/", "CMakeLists.txt", "third_party/", "libs/core/CMakeLists.txt", "libs/assets/CMakeLists.txt", "docs/product/blueprint.md", "CLAUDE.md"]
+blocked_by = ["M1-35", "M1-02", "M1-41", "M1-50"]
+touches = ["cmake/CsModule.cmake", "cmake/tests/module_glob.cmake", "cmake/tests/module_glob/", "CMakeLists.txt", "third_party/", "libs/core/CMakeLists.txt", "libs/assets/CMakeLists.txt", "libs/ui/CMakeLists.txt", "docs/product/blueprint.md", "CLAUDE.md"]
 goal = "Every module declares the third-party code it includes, as it already declares the modules it uses. Today core lists tinyexr, stb and FLIP as EXTERNAL, which cs_add_module links PUBLIC, so every module sees them as it sees glm (M1-02, #116). A module that includes stb through core breaks silently when core changes."
 context = [
   "M1-02 (#116), Departures and Follow-ups: why core links tinyexr, stb and FLIP, and that assets gets stb_image through core",
   "cmake/CsModule.cmake after M1-35: DEPS linked PRIVATE, EXPORTS and EXTERNAL linked PUBLIC",
   "docs/product/blueprint.md, section 7: the module table",
+  "M1-26 (#187): libs/ui adds its public headers to its own sources, so that AUTOMOC sees the Q_OBJECT classes there; ordered after M1-50, which also edits libs/ui/CMakeLists.txt",
 ]
 acceptance = [
   "cs_add_module accepts PRIVATE_EXTERNAL <targets>, linked PRIVATE; EXTERNAL stays PUBLIC, for libraries whose types appear in public headers (glm)",
+  "cs_add_module adds a module's public headers (include/**/*.hpp) to its sources, so that AUTOMOC sees Q_OBJECT classes there in any module, and libs/ui drops its own glob",
   "core declares tinyexr, stb and FLIP as PRIVATE_EXTERNAL, and assets declares stb itself; the cmake_module_glob fixture gains a case in which a module's user cannot include that module's private external library",
   "third_party/ is added from the root CMakeLists.txt, so any module can declare flip::flip; core no longer adds it",
   "Blueprint section 7 lists each module's external libraries, core as glm public and tinyexr, stb and FLIP private; CLAUDE.md's architecture rules mention PRIVATE_EXTERNAL",
@@ -1968,6 +1973,36 @@ verification = [
 verification_visual = "Use /run: New room, add three samples of different sizes, light each, walk to them, and attach the screenshot."
 
 [[tasks]]
+id = "M1-51"
+epic = "E1.5"
+title = "The app in CI on Windows"
+area = "ci"
+type = "chore"
+size = "S"
+owner = "agent"
+blocked_by = ["M1-31", "M1-39"]
+touches = [".github/workflows/ci.yml", ".github/workflows/gpu.yml"]
+goal = "Every pull request builds the Qt application on Windows with MSVC, so a change that breaks the app there fails like any other. The groom of 25 November 2026 split this from M1-31, because the Windows job waits on M1-39's triplets and a cold Windows build costs one to two hours."
+context = [
+  "M1-31: the Linux app job in gpu.yml, its Qt installation and cache",
+  "docs/dependencies.md: the pinned Qt version; docs/adr/0011-qt-vulkan-viewport.md (M1-04): how Qt is installed in CI",
+  "The app preset is a debug build, so on Windows it links vcpkg's debug Embree, which is correct only through triplets/x64-windows.cmake (M1-46, #184); M1-39 builds Embree and Slang in release only through the overlay triplets",
+  "ci.yml's and gpu.yml's Windows jobs move the runner's vcpkg to the manifest's baseline, but ilammy/msvc-dev-cmd then sets VCPKG_ROOT to Visual Studio's bundled vcpkg, and Configure uses that toolchain. The packages still come out at the baseline's versions, so it is harmless, but the step and its comment mislead (#184)",
+  "Before M1-46 the engine's lux panel crashed on Windows only on AVX-512 runners",
+]
+acceptance = [
+  "A Windows job in ci.yml installs Qt at the pinned version, cached, and builds the app preset with MSVC and warnings as errors",
+  "Its vcpkg cache is keyed as ci.yml's Windows job keys it, hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/x64-windows.cmake'), so it hits the entry ci.yml saves",
+  "Every Windows job in ci.yml and gpu.yml either configures with the runner's vcpkg or drops the update step and its comment; the PR says which, and what it cost (changing the vcpkg in use may change every package's ABI hash and force one cold rebuild)",
+  "If the UI tests run on Windows, the job prints the CPU first, as gpu.yml's Windows job does",
+  "The PR states the added CI time",
+]
+out_of_scope = ["The presenter's swapchain tests on Windows (lavapipe there has no headless surface; M2-45)", "Packaging (M4)"]
+verification = [
+  "The CI run on the pull request: the app builds on Windows and every job is green",
+]
+
+[[tasks]]
 id = "M2-01"
 epic = "E2.1"
 title = "Walls with thickness, joined corners and openings"
@@ -2248,30 +2283,28 @@ verification = [
 [[tasks]]
 id = "M2-11"
 epic = "E2.3"
-title = "Import dialog: four questions and the resolution warning"
+title = "Import dialog: the four questions, and hanging at the drop point"
 area = "ui"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M2-09", "M2-10", "M1-27", "M2-14", "M2-40"]
+blocked_by = ["M2-09", "M2-10", "M1-27", "M2-14"]
 touches = ["libs/ui/src/features/import_image.cpp", "libs/ui/src/features/import_dialog.cpp", "libs/ui/tests/test_import_ui.cpp", "docs/product/screens/m2-import.png"]
-goal = "Journey J3 in the app: drop an image on a wall, answer four prefilled questions, and the work hangs at its true size with a material that follows from the answers."
+goal = "Journey J3 in the app: drop an image on a wall, answer four prefilled questions, and the work hangs at its true size with a material that follows from the answers. The sharp distance and the shrink note are M2-47's: the groom of 25 November 2026 split them off, so that the dialog need not wait for M2-40."
 context = [
   "docs/product/blueprint.md, journey J3",
-  "docs/adr/0003-painting-materials.md, Import: four questions; docs/adr/0005-machine-learning.md: the resolution warning",
+  "docs/adr/0003-painting-materials.md, Import: four questions",
   "editor::title_from_file_name and the FromImport source of M1-27's Add painting: an imported work has a title and its file's name, because its image is stored under a hash (M1-47)",
   "Use the ux-reviewer subagent on the screenshots",
 ]
 acceptance = [
   "Dropping an image file on a wall, or File > Import image, opens a dialog with true size (filled by parse_dimensions from pasted text), medium preset (from the medium text), finish and glazing (defaulted by preset)",
   "The dialog also has title and artist fields, the title prefilled by editor::title_from_file_name; OK gives the work both and the source FromImport with the file's name, as M1-27's Add painting does",
-  "The dialog says how close a visitor can stand before the image looks soft ('Sharp from about 0.7 m') and warns below 1 m",
-  "An image larger than the Standard cap imports, and the dialog says so ('Shrunk from 14600 x 11680 px to 8192 x 6554 px'), with the sharp distance of the stored image (M2-40)",
   "OK hangs the work at the drop point on the centre line in one transaction",
   "[ui] An offscreen test imports a test image with pasted text '28 3/4 x 36 1/4 in. (73 x 92 cm)' and finds a Work 730 mm high and 920 mm wide, titled from the file name, with the artist it typed and the file's name as its source",
   "docs/product/screens/m2-import.png shows the dialog",
 ]
-out_of_scope = ["Material appearance of presets (M3)", "Checklists (M2-12, M2-13)"]
+out_of_scope = ["The sharp distance and the shrink note (M2-47)", "Material appearance of presets (M3)", "Checklists (M2-12, M2-13)"]
 verification = [
   "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
@@ -2500,22 +2533,21 @@ verification = [
 [[tasks]]
 id = "M2-20"
 epic = "E2.4"
-title = "Hanging in the viewport: drag with guides and the elevation view"
+title = "Hanging in the viewport: drag along a wall with guides"
 area = "ui"
 type = "feature"
 size = "M"
 owner = "agent"
-blocked_by = ["M2-15", "M2-16", "M2-18", "M2-19", "M1-27"]
-touches = ["libs/ui/src/features/hanging.cpp", "libs/ui/src/features/view_menu.cpp", "libs/ui/tests/test_hanging_ui.cpp", "docs/product/screens/m2-hanging.png"]
-goal = "Journey J1's hanging step in the app: select a work, drag it along its wall with guides, and switch to the wall elevation."
+blocked_by = ["M2-15", "M2-16", "M2-19", "M2-46", "M1-27"]
+touches = ["libs/ui/src/features/hanging.cpp", "libs/ui/tests/test_hanging_ui.cpp", "docs/product/screens/m2-hanging.png"]
+goal = "Journey J1's hanging step in the app: select a work and drag it along its wall with guides, in the walking view or the wall's elevation. The View menu is M2-46's: the groom of 25 November 2026 split it off, so that it can start before the hanging tools."
 context = [
   "docs/product/blueprint.md, journey J1",
-  "libs/editor selection (M2-14), hang tool and snapping (M2-15, M2-16); cameras (M2-18); overlays (M2-19)",
+  "libs/editor selection (M2-14), hang tool and snapping (M2-15, M2-16); overlays (M2-19); the View menu and the elevation view (M2-46)",
   "Use the ux-reviewer subagent on the screenshots",
 ]
 acceptance = [
   "Clicking selects a work (editor Selection); dragging moves it along its wall with the editor's guides drawn through the overlay pass; typed values work while dragging",
-  "A View menu switches between orbit, walk, plan and the elevation of the selected wall",
   "[ui] An offscreen test drags a work 50 cm to the right with synthetic events and finds u changed by 0.50 m within 1 cm and v on the centre line",
   "docs/product/screens/m2-hanging.png shows the elevation view with guides during a drag",
 ]
@@ -2644,24 +2676,26 @@ verification = [
 [[tasks]]
 id = "M2-25"
 epic = "E2.5"
-title = "Save, open, recent files, undo, redo and recovery in the app"
+title = "Undo, redo and crash recovery in the app"
 area = "ui"
 type = "feature"
-size = "M"
+size = "S"
 owner = "agent"
-blocked_by = ["M2-21", "M2-23", "M1-27", "M2-41"]
-touches = ["libs/ui/src/features/project_menu.cpp", "libs/ui/src/features/edit_menu.cpp", "libs/ui/tests/test_project_ui.cpp", "libs/ui/src/features/file_menu.cpp", "docs/product/screens/m2-recovery.png"]
-goal = "The file and edit behaviour every desktop user expects, including a recovery prompt after a crash."
+blocked_by = ["M2-23", "M2-41", "M2-48", "M1-27"]
+touches = ["libs/ui/src/features/edit_menu.cpp", "libs/ui/src/features/recovery.cpp", "libs/ui/tests/test_project_ui.cpp", "docs/product/screens/m2-recovery.png"]
+goal = "Undo and redo as every desktop user expects them, and no lost work: after a crash the app offers the project back. Saving and opening are M2-48's: the groom of 25 November 2026 split them off, so that they can start as soon as the container lands."
 context = [
-  "libs/doc container (M2-21), journal (M2-23), history (M1-09)",
+  "libs/doc journal (M2-23), history (M1-09), value checks on every commit (M2-41)",
+  "MainWindow::undo and MainWindow::redo (M1-26) exist; no menu calls them yet",
+  "M2-48: the File menu and the unsaved marker",
 ]
 acceptance = [
-  "File: New, Open, Save, Save As, ten recent files; Edit: Undo and Redo with platform shortcuts and the action's name ('Undo Move Water Lilies'); an unsaved-changes prompt; the title shows an unsaved marker",
+  "Edit: Undo and Redo with platform shortcuts and the action's name ('Undo Move Water Lilies'), disabled when there is nothing to undo or redo; the unsaved marker follows them",
   "After a crash, the next launch offers to recover the project",
-  "[ui] An offscreen test edits a project, simulates a crash, reopens the window and recovers the edit",
+  "[ui] An offscreen test edits a project, simulates a crash, reopens the window and recovers the edit; a second test undoes and redoes a move and checks the menu items' names",
   "docs/product/screens/m2-recovery.png shows the recovery prompt (the E2.5 demo)",
 ]
-out_of_scope = ["Autosave settings (later)"]
+out_of_scope = ["Saving and opening files (M2-48)", "Autosave settings (later)"]
 verification = [
   "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
@@ -2762,7 +2796,7 @@ area = "ci"
 type = "test"
 size = "M"
 owner = "agent"
-blocked_by = ["M1-28", "M1-29", "M2-08", "M2-27", "M2-31", "M1-31", "M1-46"]
+blocked_by = ["M1-28", "M1-29", "M2-08", "M2-27", "M2-31", "M1-31", "M1-46", "M1-51"]
 touches = ["apps/cs-bench/", "bench/baselines/", ".github/workflows/gpu.yml"]
 goal = "The full-gallery benchmark the budgets are written against, generated reproducibly through the document model and checked for memory on every pull request."
 context = [
@@ -3235,6 +3269,94 @@ out_of_scope = ["Present modes other than FIFO", "X11 and Wayland windows in tes
 verification = [
   "CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset debug -L gpu",
   "gh run list --workflow gpu.yml --branch <this branch>: the Windows job runs the presenter's tests",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-46"
+epic = "E2.4"
+title = "View menu: orbit, walk, plan and wall elevation"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-14", "M2-18", "M1-27"]
+touches = ["libs/ui/src/features/view_menu.cpp", "libs/ui/tests/test_view_menu_ui.cpp"]
+goal = "A curator switches between an orbit around the room, the walking view, the plan and a wall seen square on, the views that drawing walls and hanging are done in. The groom of 25 November 2026 split this from M2-20, so that it can start before the hanging tools."
+context = [
+  "editor::plan_camera and editor::elevation_camera (M2-18); the orbit and walk controllers (M1-24) and libs/ui/src/features/camera_input.cpp (M1-27)",
+  "editor::Selection and pick (M2-14): the selected wall and the face it was picked on, or the wall a selected work hangs on",
+  "docs/product/blueprint.md, journey J1",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "A View menu switches between Orbit, Walk, Plan and Elevation, with shortcuts; the current view is checked",
+  "Elevation looks square at the selected wall's face, or at the face a selected work hangs on; with nothing selected the item is disabled, with a tip saying why",
+  "Leaving Plan or Elevation returns to the orbit or walk camera as it was",
+  "[ui] An offscreen test selects wall A, chooses View > Elevation and finds the viewport's camera equal to elevation_camera(wall A, its face); View > Walk then restores the walk camera's pose",
+]
+out_of_scope = ["Dragging works (M2-20)", "Drawing walls in plan (M2-04)", "Animated transitions between views"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
+  "python3 scripts/format.py --check",
+]
+verification_visual = "Use /run: the skeleton in each of the four views, and attach the screenshots."
+
+[[tasks]]
+id = "M2-47"
+epic = "E2.3"
+title = "The import dialog's sharp distance and shrink note"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-11", "M2-40"]
+touches = ["libs/ui/src/features/import_dialog.cpp", "libs/ui/tests/test_import_resolution_ui.cpp", "docs/product/screens/m2-import.png"]
+goal = "Before hanging, a curator sees how close a visitor can stand before the image looks soft, and that a very large image was shrunk to the Standard cap. The groom of 25 November 2026 split this from M2-11, so that the dialog need not wait for M2-40."
+context = [
+  "docs/adr/0005-machine-learning.md, Report effective resolution: one arcminute of acuity needs about 3438 / d pixels per millimetre; warn below 1 m",
+  "assets::effective_resolution(width_px, width_m) in resolution.hpp (M1-14) computes it; the dialog only shows it",
+  "M2-40: the Standard cap (8192 px on the long edge) and what import reports when it shrinks an image",
+  "M2-11: the dialog",
+  "Use the ux-reviewer subagent on the screenshots",
+]
+acceptance = [
+  "The dialog says how close a visitor can stand before the image looks soft ('Sharp from about 0.7 m'), updated as the true size changes, and warns below 1 m",
+  "An image larger than the Standard cap imports, and the dialog says so ('Shrunk from 14600 x 11680 px to 8192 x 6554 px'), with the sharp distance of the stored image",
+  "[ui] An offscreen test with images generated in the test: a small image at 73 x 92 cm shows the warning, a larger one at 20 x 25 cm does not, and an image over the cap shows the shrink note with its stored size",
+  "docs/product/screens/m2-import.png shows the dialog with the sharp distance",
+]
+out_of_scope = ["The work inspector (M2-35)", "Super-resolution (ADR 0005: never)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
+  "python3 scripts/format.py --check",
+]
+
+[[tasks]]
+id = "M2-48"
+epic = "E2.5"
+title = "Save and open .curation files, Save As and recent files"
+area = "ui"
+type = "feature"
+size = "S"
+owner = "agent"
+blocked_by = ["M2-21", "M1-27"]
+touches = ["libs/ui/src/features/file_menu.cpp", "libs/ui/tests/test_file_menu_ui.cpp"]
+goal = "The file behaviour every desktop user expects: a project is one .curation file that opens, saves, and shows when it has unsaved changes. The groom of 25 November 2026 split this from M2-25, so that it can start as soon as the container lands."
+context = [
+  "libs/doc container (M2-21): loading and atomic saving of .curation files and project folders",
+  "libs/ui/src/features/file_menu.cpp (M1-26): New, Open folder, Save to a folder and Quit today",
+  "doc::History (M1-09): the revision a save records, for the unsaved marker",
+]
+acceptance = [
+  "File: New, Open, Save and Save As for .curation files, and Open for project folders; Save on a project never saved asks for a file",
+  "Ten recent files, most recent first, kept across launches; a recent file that no longer exists is removed, with a message, when chosen",
+  "The title shows the project's name and an unsaved marker after any change; New, Open and Quit with unsaved changes ask to save, discard or cancel",
+  "[ui] An offscreen test saves a project as a .curation file, edits it (the marker appears), saves (the marker goes), reopens it from the recent list and finds it equal to the saved document",
+]
+out_of_scope = ["Undo, redo and recovery (M2-25)", "Autosave settings (later)"]
+verification = [
+  "cmake --preset app && cmake --build --preset app && QT_QPA_PLATFORM=offscreen ctest --preset app -L '^ui$'",
   "python3 scripts/format.py --check",
 ]
 
