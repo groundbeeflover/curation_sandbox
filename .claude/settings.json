@@ -30,7 +30,25 @@
       "Bash(gh pr diff *)",
       "Bash(gh pr create *)",
       "Bash(gh run view *)",
-      "Bash(gh run list *)"
+      "Bash(gh run list *)",
+      "Bash(export VCPKG_ROOT=$HOME/vcpkg)",
+      "Bash(export LSAN_OPTIONS=suppressions=$PWD/tools/sanitizers/lsan.supp)",
+      "Bash(export LSAN_OPTIONS=suppressions=$PWD/tools/sanitizers/lsan.supp VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1)",
+      "Bash(export VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1 LSAN_OPTIONS=suppressions=$PWD/tools/sanitizers/lsan.supp CS_REQUIRE_GPU=1)",
+      "Bash(CS_REQUIRE_GPU=1 ctest *)",
+      "Bash(CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest *)",
+      "Bash(CS_REQUIRE_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json QT_QPA_PLATFORM=offscreen ctest *)",
+      "Bash(gh cache list *)",
+      "Bash(gh run watch *)",
+      "Bash(gh project list *)",
+      "Bash(gh project item-list *)",
+      "Bash(gh label list *)",
+      "Bash(claude agents)",
+      "Bash(claude agents --json)",
+      "Bash(claude --version)",
+      "Bash(pacman -Q *)",
+      "Bash(command -v *)",
+      "Bash(g++ --version)"
     ]
   },
   "hooks": {
