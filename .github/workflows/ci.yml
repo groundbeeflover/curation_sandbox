@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   checks:
-    name: checks (format, scripts, task file, dependencies)
+    name: checks (format, scripts, test chart, task file, dependencies)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
