@@ -139,11 +139,8 @@ def https_opener() -> Opener:
 
 
 def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as f:
-        while chunk := f.read(CHUNK_BYTES):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def download(sample: Sample, destination: Path, opener: Opener, max_bytes: int) -> int:
@@ -157,9 +154,8 @@ def download(sample: Sample, destination: Path, opener: Opener, max_bytes: int) 
     part = destination.with_name(f".{destination.name}.{os.getpid()}.part")
     part.unlink(missing_ok=True)
     try:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
         try:
-            out = os.fdopen(os.open(part, flags, 0o666), "wb")
+            out = part.open("xb")  # exclusive: fails on anything left at the name, links too
         except OSError as e:
             raise FetchError(f"{sample.id}: cannot write {part}: {e}") from None
         with out:

@@ -294,13 +294,9 @@ bool has_sha256(const fs::path& path, const std::string& expected) {
 
 // ---- The menu --------------------------------------------------------------------------------
 
-QString from_utf8(const std::string& text) {
-    return QString::fromStdString(text);
-}
-
 // A menu item's text shows '&' only as "&&"; a single one marks a mnemonic.
 QString menu_text(const std::string& text) {
-    return from_utf8(text).replace(QLatin1Char('&'), QStringLiteral("&&"));
+    return QString::fromStdString(text).replace(QLatin1Char('&'), QStringLiteral("&&"));
 }
 
 // Millimetres as centimetres, to the millimetre: 400 gives "40", 181 gives "18.1".
@@ -353,7 +349,7 @@ QString not_fetched_tip() {
 
 void add_sample(MainWindow& window, const Sample& sample, const fs::path& images) {
     const QString cannot_add = MainWindow::tr("Cannot add the sample painting");
-    const QString title = from_utf8(sample.title);
+    const QString title = QString::fromStdString(sample.title);
     // Asked first, before anything is read, as Add painting asks.
     if (!editor::find_wall_labelled(window.document(), editor::default_wall_label)) {
         warn(window, cannot_add,
@@ -380,29 +376,42 @@ void add_sample(MainWindow& window, const Sample& sample, const fs::path& images
         warn(window, cannot_add, QString::fromUtf8(e.what()));
         return;
     }
-    const QString changed =
-        MainWindow::tr(
-            "The image of “%1” is not the one its manifest names: it was changed after it was "
-            "downloaded. Run %2 in the source folder to download it again.")
-            .arg(title, fetch_command);
     // Checked before it is stored, so that an image that is not the sample's leaves no copy; and
     // after, in case it changed in between.
-    bool unchanged = false;
+    const auto warn_changed = [&] {
+        warn(window, cannot_add,
+             MainWindow::tr("The image of “%1” is not the one its manifest names: it was changed "
+                            "after it was downloaded. Run %2 in the source folder to download it "
+                            "again.")
+                 .arg(title, fetch_command));
+    };
+    bool matches = false;
+    {
+        const Busy busy;
+        matches = has_sha256(image, sample.image_sha256);
+    }
+    if (!matches) {
+        warn_changed();
+        return;
+    }
     assets::AssetName asset;
     try {
         const Busy busy;
-        unchanged = has_sha256(image, sample.image_sha256);
-        if (unchanged) {
-            asset = assets::store_image(image, window.assets_folder());
-        }
+        asset = assets::store_image(image, window.assets_folder());
+    } catch (const std::invalid_argument& e) {
+        // Not an image the tiers can show: too large, or not decodable.
+        warn(window, cannot_add,
+             MainWindow::tr("The image of “%1” cannot be shown as a painting: %2")
+                 .arg(title, QString::fromUtf8(e.what())));
+        return;
     } catch (const std::exception& e) {
         warn(window, cannot_add,
-             MainWindow::tr("The image of “%1” cannot be stored in the project: %2")
+             MainWindow::tr("The image of “%1” cannot be read or stored in the project: %2")
                  .arg(title, QString::fromUtf8(e.what())));
         return;
     }
-    if (!unchanged || asset.sha256 != sample.image_sha256) {
-        warn(window, cannot_add, changed);
+    if (asset.sha256 != sample.image_sha256) {
+        warn_changed();
         return;
     }
     try {
@@ -427,7 +436,7 @@ void add_sample(MainWindow& window, const Sample& sample, const fs::path& images
             window.commit(std::move(added.transaction));
         }
         window.statusBar()->showMessage(
-            MainWindow::tr("“%1” hangs on wall A. Lights > Add spot lights it").arg(title),
+            MainWindow::tr("“%1” hangs on wall A, at its true size").arg(title),
             passing_message_ms);
     } catch (const std::exception& e) {
         warn(window, cannot_add, QString::fromUtf8(e.what()));
@@ -447,8 +456,9 @@ void fill(MainWindow& window, QAction& item, QMenu& menu, const fs::path& manife
         if (fs::is_regular_file(sample.image_in(images), error)) {
             const QString source =
                 MainWindow::tr("%1, %2. %3, %4")
-                    .arg(from_utf8(sample.medium), from_utf8(sample.date),
-                         from_utf8(sample.institution), from_utf8(sample.accession_number));
+                    .arg(QString::fromStdString(sample.medium), QString::fromStdString(sample.date),
+                         QString::fromStdString(sample.institution),
+                         QString::fromStdString(sample.accession_number));
             action->setStatusTip(source);
             action->setToolTip(plain_tooltip(source));
             QObject::connect(action, &QAction::triggered, &window,
@@ -456,9 +466,10 @@ void fill(MainWindow& window, QAction& item, QMenu& menu, const fs::path& manife
         } else {
             // In a tooltip too: some styles (Fusion, Breeze) show no status tip for a disabled
             // item.
+            const QString tip = not_fetched_tip();
             action->setEnabled(false);
-            action->setStatusTip(not_fetched_tip());
-            action->setToolTip(plain_tooltip(not_fetched_tip()));
+            action->setStatusTip(tip);
+            action->setToolTip(plain_tooltip(tip));
         }
     }
 }
