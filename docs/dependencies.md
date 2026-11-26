@@ -16,7 +16,8 @@ it both ways. The checks job and the script tests run it on the repository, so C
 names or licences here and `vcpkg.json` disagree. Every build-and-test job in `ci.yml` (GCC,
 Clang and MSVC) runs it with `--installed` on its own build once vcpkg's packages are saved, so
 CI also fails when a version here is not the one vcpkg installed, on Linux or on Windows. The
-check runs after the save so that a mismatch does not throw away freshly built packages.
+check runs after the save, so that re-running the pull request once the table is fixed restores
+the packages it built instead of building them again.
 
 ## Adding or changing a dependency
 
