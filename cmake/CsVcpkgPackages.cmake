@@ -13,14 +13,16 @@
 #
 # Not checked: Qt, which comes from outside vcpkg on purpose (docs/dependencies.md, "Outside
 # vcpkg"), with everything its targets link; libraries linked by name alone (m, dl), which are
-# the system's; and imported targets a directory creates itself with add_library(... IMPORTED),
-# which are visible only there (the summary line names them).
+# the system's, and search paths given as link options (-L); and imported targets a directory
+# creates itself with add_library(... IMPORTED), which are visible only there (the summary line
+# names them).
 #
 # Imported targets are visible only in the directory that found them, so that the check, which
 # runs at the end of the top-level directory, can read them, every package found after this file
-# is included makes its imported targets global, as find_package(... GLOBAL) does. The cost: a
-# module could link an external target that only another module finds. Each module still finds
-# what it links.
+# is included makes its imported targets global, as find_package(... GLOBAL) does. The costs: a
+# module could link an external target that only another module finds (each module still finds
+# what it links), and a package found in two directories must accept that its targets exist
+# already, as CMake's generated export files and find modules do.
 
 if(NOT DEFINED VCPKG_INSTALLED_DIR)
     # Not configured with vcpkg's toolchain: there is nothing to check against.
@@ -36,9 +38,9 @@ set(cs_outside_vcpkg_targets "^Qt6?::")
 # cs_vcpkg_items(<out> <target> <property>...): the entries of the properties of <target>, with
 # generator expressions opened, so that every branch counts: $<LINK_ONLY:ZLIB::ZLIB> gives
 # ZLIB::ZLIB, and $<$<CONFIG:Debug>:/x/libz.a> gives /x/libz.a in a release configure too. A
-# colon separates a condition from its value, except in a namespace (ZLIB::ZLIB) and after a
-# drive letter (C:/x). The pieces left over from the expressions (LINK_ONLY, CONFIG, Debug) name
-# neither a target nor an absolute path, so the caller skips them.
+# colon separates a condition from its value, except in a namespace (ZLIB::ZLIB) and after the
+# drive letter that starts a Windows path (C:/x, C:\x). The pieces left over from the expressions
+# (LINK_ONLY, CONFIG, Debug) name neither a target nor an absolute path, so the caller skips them.
 function(cs_vcpkg_items out target)
     set(items "")
     foreach(property IN LISTS ARGN)
@@ -48,7 +50,7 @@ function(cs_vcpkg_items out target)
         endif()
     endforeach()
     string(REPLACE "::" "@cs_namespace@" items "${items}")
-    string(REPLACE ":/" "@cs_drive@/" items "${items}")
+    string(REGEX REPLACE "(^|[;<>,:])([A-Za-z]):([/\\])" "\\1\\2@cs_drive@\\3" items "${items}")
     string(REGEX REPLACE "\\$<|>|,|:" ";" items "${items}")
     string(REPLACE "@cs_namespace@" "::" items "${items}")
     string(REPLACE "@cs_drive@" ":" items "${items}")
@@ -89,6 +91,12 @@ function(cs_check_vcpkg_packages)
             endif()
         endforeach()
     endforeach()
+
+    # Windows paths ignore case, so they are compared lower-cased there.
+    set(prefix "${VCPKG_INSTALLED_DIR}")
+    if(CMAKE_HOST_WIN32)
+        string(TOLOWER "${prefix}" prefix)
+    endif()
 
     set(checked 0)
     set(problems "")
@@ -146,7 +154,11 @@ function(cs_check_vcpkg_packages)
                 if(NOT IS_ABSOLUTE "${path}")
                     continue()
                 endif()
-                cmake_path(IS_PREFIX VCPKG_INSTALLED_DIR "${path}" NORMALIZE inside)
+                set(compared "${path}")
+                if(CMAKE_HOST_WIN32)
+                    string(TOLOWER "${compared}" compared)
+                endif()
+                cmake_path(IS_PREFIX prefix "${compared}" NORMALIZE inside)
                 if(NOT inside)
                     if(kind STREQUAL "library_files")
                         string(APPEND outside "\n      library ${path}")
