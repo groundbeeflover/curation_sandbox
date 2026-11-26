@@ -1,6 +1,7 @@
 # Builds and tests every pull request and every push to main through the CMake presets, with
 # three compilers (GCC, Clang with sanitizers, MSVC), plus a fast job for formatting, the
-# planning scripts, the task file and the dependency list. vcpkg's built packages and the
+# planning scripts, the test chart, the task file and the dependency list. Each build also checks
+# the versions vcpkg installed against the dependency list. vcpkg's built packages and the
 # compiler output are cached between runs. GPU tests live in gpu.yml (M1-29).
 #
 # Caches saved by a pull request are visible only to that pull request; only main's are shared.
@@ -31,7 +32,7 @@ permissions:
 
 jobs:
   checks:
-    name: checks (format, scripts, task file, dependencies)
+    name: checks (format, scripts, test chart, task file, dependencies)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +49,11 @@ jobs:
 
       - name: Script tests
         run: python3 -m unittest discover -s scripts/tests -v
+
+      # Also checks that the skeleton scene's committed chart is, byte for byte, what the
+      # generator writes.
+      - name: Test chart
+        run: python3 -m unittest discover -s tools/test-chart -v
 
       - name: Task file
         run: python3 scripts/github-bootstrap.py --check
@@ -164,6 +170,19 @@ jobs:
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      # Every installed port, with its version, against docs/dependencies.md. It runs once the
+      # packages are saved, which on a cache hit is right after configure: a mismatch most often
+      # comes with a new baseline, the very change that rebuilds the packages, and failing before
+      # the save would throw that build away. The script runs on the checks job's Python, not the
+      # runner image's, so on one version everywhere; nothing earlier in the job uses Python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installed dependency versions
+        shell: bash
+        run: python3 scripts/check-dependencies.py --installed "build/${{ matrix.preset }}/vcpkg_installed"
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
