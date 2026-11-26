@@ -174,7 +174,12 @@ jobs:
       # Every installed port, with its version, against docs/dependencies.md. It runs once the
       # packages are saved, which on a cache hit is right after configure: a mismatch most often
       # comes with a new baseline, the very change that rebuilds the packages, and failing before
-      # the save would throw that build away.
+      # the save would throw that build away. The script runs on the checks job's Python, not the
+      # runner image's, so on one version everywhere; nothing earlier in the job uses Python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Installed dependency versions
         shell: bash
         run: python3 scripts/check-dependencies.py --installed "build/${{ matrix.preset }}/vcpkg_installed"
