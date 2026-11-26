@@ -9,8 +9,11 @@ that applies to it), with metric, budget, baseline, now, change and verdict. Exi
 - a budget enforced at or before --milestone (its enforced_from) is exceeded, or
 - a metric is more than 10% worse than the baseline.
 A budget not enforced yet is still reported, with the milestone it counts from, so the gap stays
-visible. Without a baseline file (a machine's first run) only the budgets are compared. Exits 2
-on input it cannot use.
+visible, and so is a metric that a budget or the baseline has but the run did not measure,
+without failing (lux, bake and still timings come from runs of their own). Without a baseline
+file (a machine's first run) only the budgets are compared; the missing file must still be where
+the run's baseline belongs, <machine>/<scene>-<tier>.json, so that a mistyped path cannot skip
+the comparison. Exits 2 on input it cannot use.
 
 A budget in bench/budgets.json applies to a run of its scene and tier, on its reference hardware
 (the run's machine or CPU slug, or "any"), and at its size where it names one.
@@ -104,7 +107,7 @@ def load_json(path: Path) -> object:
         return json.loads(path.read_text(encoding="utf-8"), parse_constant=_reject_constant)
     except OSError as error:
         raise InputError(f"{path}: {error.strerror}") from error
-    except ValueError as error:  # not UTF-8, not JSON, or NaN and Infinity
+    except (ValueError, RecursionError) as error:  # not UTF-8, not JSON, NaN, nested too deep
         raise InputError(f"{path}: not valid JSON: {error}") from error
 
 
@@ -132,10 +135,13 @@ def milestone_number(text: str) -> int:
 def check_result(data: object, source: Path) -> dict:
     """The result if it follows the schema; otherwise InputError says what does not."""
     _require(isinstance(data, dict), f"{source}: not a JSON object")
-    _require(data.get("schema") == SCHEMA,
+    _require(type(data.get("schema")) is int and data["schema"] == SCHEMA,
              f"{source}: schema is {data.get('schema')!r}; this script reads {SCHEMA}")
-    for key in ("scene", "tier", "machine", "cpu"):
+    for key in ("scene", "machine", "cpu"):
         _require(_is_slug(data.get(key)), f"{source}: {key} must be a lower-case slug")
+    _require(data.get("tier") in TIERS, f"{source}: tier must be one of {', '.join(TIERS)}")
+    _require(_is_slug(data.get("git_revision", "unknown")),
+             f"{source}: git_revision must be a lower-case slug")
     _require(_is_size(data.get("size")), f"{source}: size must be [width, height] in pixels")
     metrics = data.get("metrics")
     _require(isinstance(metrics, dict) and metrics, f"{source}: metrics must be an object")
@@ -180,28 +186,37 @@ def applies(budget: dict, result: dict) -> bool:
 
 def fmt(value: float, unit: str) -> str:
     if unit == "bytes":
-        return f"{value / 1e9:.2f} GB" if value >= 1e9 else f"{value / 1e6:.0f} MB"
+        return f"{value / 1e9:.2f} GB" if value >= 1e9 else f"{value / 1e6:.1f} MB"
     return f"{value * 1e3:.2f} ms" if value < 1 else f"{value:.2f} s"
 
 
 def compare(result: dict, budgets: list[dict], baseline: dict | None,
             milestone: int) -> tuple[list[list[str]], list[str]]:
-    """The table's rows, and a line for each failure."""
+    """The table's rows, and a line for each failure. A metric that a budget or the baseline
+    has but the run did not measure gets a row saying so; it does not fail, because lux, bake
+    and still timings come from runs of their own."""
     rows, failures = [], []
+    measured, before = result["metrics"], baseline["metrics"] if baseline else {}
     applicable = [b for b in budgets if applies(b, result)]
-    for name in sorted(result["metrics"], key=list(METRICS).index):
-        unit, now = METRICS[name], result["metrics"][name]
-        base = baseline["metrics"].get(name) if baseline else None
-        change = f"{now / base - 1:+.1%}" if base else "-"
-        worse = base is not None and now > base * (1 + REGRESSION)
+    names = set(measured) | set(before) | {b["metric"] for b in applicable}
+    for name in sorted(names, key=list(METRICS).index):
+        unit, now, base = METRICS[name], measured.get(name), before.get(name)
+
+        def show(value: float | None) -> str:
+            return "-" if value is None else fmt(value, unit)
+
+        change = f"{now / base - 1:+.1%}" if now is not None and base else "-"
+        worse = now is not None and base is not None and now > base * (1 + REGRESSION)
         for budget in [b for b in applicable if b["metric"] == name] or [None]:
             reasons, notes = [], []
-            if budget is not None:
+            if now is None:
+                notes.append("not measured")
+            elif budget is not None:
                 over = now > budget["limit"]
                 if milestone >= milestone_number(budget["enforced_from"]):
                     if over:
                         reasons.append("over budget")
-                        failures.append(f"{name} over its budget of {fmt(budget['limit'], unit)}")
+                        failures.append(f"{name} over its budget of {show(budget['limit'])}")
                 else:
                     notes.append(f"{'over' if over else 'within'} budget, "
                                  f"enforced from {budget['enforced_from']}")
@@ -209,11 +224,11 @@ def compare(result: dict, budgets: list[dict], baseline: dict | None,
                 reasons.append(f"more than {REGRESSION:.0%} worse than the baseline")
             verdict = ([f"FAIL: {', '.join(reasons)}"] if reasons else []) + notes
             checked = budget is not None or base is not None
-            rows.append([name, fmt(budget["limit"], unit) if budget else "-",
-                         fmt(base, unit) if base is not None else "-", fmt(now, unit), change,
+            rows.append([name, show(budget["limit"] if budget else None), show(base), show(now),
+                         change,
                          "; ".join(verdict) or ("pass" if checked else "-")])
         if worse:
-            failures.append(f"{name} {change} against the baseline")
+            failures.append(f"{name} {show(now)} against {show(base)} in the baseline")
     return rows, failures
 
 
@@ -246,7 +261,14 @@ def main(argv: list[str] | None = None) -> int:
         result = check_result(load_json(args.result), args.result)
         budgets = check_budgets(load_json(args.budgets), args.budgets)
         baseline = None
-        if args.baseline and args.baseline.exists():
+        if args.baseline and not args.baseline.exists():
+            # A first run on a machine, but only where its baseline belongs: a mistyped path
+            # would otherwise skip the comparison with the baseline unnoticed.
+            expected = (result["machine"], f"{result['scene']}-{result['tier']}.json")
+            _require(args.baseline.parts[-2:] == expected,
+                     f"{args.baseline}: no such file, and not where this run's baseline "
+                     f"belongs (<baselines>/{'/'.join(expected)})")
+        elif args.baseline:
             baseline = check_result(load_json(args.baseline), args.baseline)
             for key in ("scene", "tier", "size", "machine"):
                 _require(baseline[key] == result[key],
@@ -259,10 +281,10 @@ def main(argv: list[str] | None = None) -> int:
     rows, failures = compare(result, budgets, baseline, args.milestone)
     width, height = result["size"]
     print(f"{result['scene']}, {result['tier']} tier, {width}x{height}, on {result['machine']} "
-          f"and {result['cpu']}, git {str(result.get('git_revision', '?'))[:40]}; "
+          f"and {result['cpu']}, git {result.get('git_revision', 'unknown')}; "
           f"milestone M{args.milestone}")
     if baseline:
-        print(f"baseline: {args.baseline}, git {str(baseline.get('git_revision', '?'))[:40]}")
+        print(f"baseline: {args.baseline}, git {baseline.get('git_revision', 'unknown')}")
     elif args.baseline:
         print(f"no baseline at {args.baseline}: a first run here, compared only with the budgets")
     else:

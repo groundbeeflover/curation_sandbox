@@ -108,7 +108,8 @@ class Verdicts(unittest.TestCase):
         # Every measured metric gets a row, with or without a budget.
         for metric in RESULT["metrics"]:
             self.assertEqual(len(row(out, metric)), 1, metric)
-        self.assertEqual(row(out, "gpu_memory_bytes")[0][1:4], ["1.50 GB", "400 MB", "400 MB"])
+        self.assertEqual(row(out, "gpu_memory_bytes")[0][1:4],
+                         ["1.50 GB", "400.0 MB", "400.0 MB"])
 
     def test_an_enforced_budget_exceeded_fails(self):
         code, out = self.run(with_metrics(RESULT, frame_time_p95_s=0.0081), baseline=RESULT,
@@ -164,7 +165,7 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(row(out, "load_time_s")[0][4], "-80.0%")
 
     def test_a_missing_baseline_file_compares_only_with_the_budgets(self):
-        missing = self.run.dir / "no-such-machine" / "empty-room-standard.json"
+        missing = self.run.dir / "radeon-780m" / "empty-room-standard.json"
         code, out = self.run(baseline_path=missing)
         self.assertEqual(code, 0, out)
         self.assertIn("no baseline", out)
@@ -172,6 +173,20 @@ class Verdicts(unittest.TestCase):
         # The budgets are still enforced.
         code, out = self.run(with_metrics(RESULT, frame_time_p95_s=0.009), baseline_path=missing)
         self.assertEqual(code, 1, out)
+
+    def test_a_missing_baseline_anywhere_else_is_a_mistake(self):
+        for wrong in (self.run.dir / "radeon-780m" / "empty-room-standrd.json",
+                      self.run.dir / "iris-xe" / "empty-room-standard.json"):
+            with self.subTest(path=wrong):
+                code, out = self.run(baseline_path=wrong)
+                self.assertEqual(code, 2, out)
+                self.assertIn("radeon-780m/empty-room-standard.json", out)
+
+    def test_a_baseline_of_zero_fails_on_any_growth_and_says_so(self):
+        code, out = self.run(baseline=with_metrics(RESULT, gpu_memory_bytes=0))
+        self.assertEqual(code, 1, out)
+        self.assertEqual(row(out, "gpu_memory_bytes")[0][2:5], ["0.0 MB", "400.0 MB", "-"])
+        self.assertIn("gpu_memory_bytes 400.0 MB against 0.0 MB in the baseline", out)
 
     def test_no_baseline_argument_compares_only_with_the_budgets(self):
         code, out = self.run()
@@ -184,6 +199,18 @@ class Verdicts(unittest.TestCase):
         code, out = self.run(with_metrics(RESULT, load_time_s=5.0), baseline=baseline)
         self.assertEqual(code, 0, out)
         self.assertEqual(row(out, "load_time_s")[0][2:5], ["-", "5.00 s", "-"])
+
+    def test_a_metric_the_run_did_not_measure_is_reported_without_failing(self):
+        # In the baseline but not in this run: a row says so.
+        dropped = copy.deepcopy(RESULT)
+        del dropped["metrics"]["gpu_time_p95_s"]
+        code, out = self.run(dropped, baseline=RESULT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(row(out, "gpu_time_p95_s")[0][1:6],
+                         ["-", "3.00 ms", "-", "-", "not measured"])
+        # An enforced budget that applies to this run, measured by a run of its own (--lux).
+        cells = row(out, "lux_refresh_time_s")[0]
+        self.assertEqual(cells[1:6], ["1.00 s", "-", "-", "-", "not measured"])
 
 
 class WhichBudgetsApply(unittest.TestCase):
@@ -250,9 +277,19 @@ class BadInput(unittest.TestCase):
         self.assert_rejected("NaN", result=nan)
 
     def test_another_schema_or_not_json_is_rejected(self):
-        self.assert_rejected("schema", result=dict(RESULT, schema=2))
+        for schema in (2, True, 1.0, "1"):
+            with self.subTest(schema=schema):
+                self.assert_rejected("schema", result=dict(RESULT, schema=schema))
         self.assert_rejected("result.json", result="{ not json")
         self.assert_rejected("scene", result={k: v for k, v in RESULT.items() if k != "scene"})
+
+    def test_json_nested_too_deep_is_rejected_not_a_crash(self):
+        self.assert_rejected("result.json", result="[" * 200000)
+
+    def test_an_unknown_tier_or_a_git_revision_that_is_not_a_slug_is_rejected(self):
+        self.assert_rejected("tier", result=dict(RESULT, tier="std"))
+        self.assert_rejected("git_revision", result=dict(RESULT, git_revision="x\n# FAIL\n|a|"))
+        self.assert_rejected("git_revision", baseline=dict(RESULT, git_revision="a" * 65))
 
     def test_a_baseline_for_other_conditions_is_rejected(self):
         for key, value in (("scene", "gallery-50"), ("tier", "raytraced"),
