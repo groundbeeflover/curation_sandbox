@@ -191,35 +191,77 @@ class CheckTests(unittest.TestCase):
                 self.assertEqual(problems(doc=doc), [])
 
 
+def on_one_triplet(versions, triplet="x64-linux"):
+    """What read_installed returns when every port is installed for one triplet."""
+    return {name: {triplet: version} for name, version in versions.items()}
+
+
+# A target triplet other than the host's: vcpkg installs host tools (and what they need) for the
+# host triplet and libraries for the target, so one port can be installed once for each.
+HOST, TARGET = "x64-windows", "x64-windows-static"
+
+
 class InstalledTests(unittest.TestCase):
     def test_read_installed(self):
         found = deps.read_installed(make_installed_dir(self, [
             "glm_1.0.3_x64-linux.list", "vulkan-headers_1.4.363.0_x64-linux.list",
             "shader-slang_2026.21_x64-windows.list", "status"]))
-        self.assertEqual(found, {"glm": "1.0.3", "vulkan-headers": "1.4.363.0",
-                                 "shader-slang": "2026.21"})
+        self.assertEqual(found, {"glm": {"x64-linux": "1.0.3"},
+                                 "vulkan-headers": {"x64-linux": "1.4.363.0"},
+                                 "shader-slang": {"x64-windows": "2026.21"}})
+
+    def test_read_installed_keeps_one_copy_per_triplet(self):
+        found = deps.read_installed(make_installed_dir(self, [
+            f"zlib_1.3.1_{HOST}.list", f"zlib_1.3.1_{TARGET}.list"]))
+        self.assertEqual(found, {"zlib": {HOST: "1.3.1", TARGET: "1.3.1"}})
 
     def test_read_installed_needs_the_info_directory(self):
         with tempfile.TemporaryDirectory() as tmp, self.assertRaises(FileNotFoundError):
             deps.read_installed(Path(tmp))
 
     def test_matching_versions_pass(self):
-        installed = {"glm": "1.0.3", "embree": "4.4.1", "vulkan-headers": "1.4.363.0",
-                     "zlib": "1.3.1", "vcpkg-cmake": "2024-04-23"}
+        installed = on_one_triplet({"glm": "1.0.3", "embree": "4.4.1",
+                                    "vulkan-headers": "1.4.363.0", "zlib": "1.3.1",
+                                    "vcpkg-cmake": "2024-04-23"})
         self.assertEqual(problems(installed=installed), [])
 
     def test_version_differs(self):
-        installed = {"glm": "1.0.4", "embree": "4.4.1", "vulkan-headers": "1.4.363.0", "zlib": "1.3.1"}
+        installed = on_one_triplet({"glm": "1.0.4", "embree": "4.4.1",
+                                    "vulkan-headers": "1.4.363.0", "zlib": "1.3.1"})
         found = problems(installed=installed)
         self.assertEqual(len(found), 1)
         self.assertIn("glm", found[0])
         self.assertIn("1.0.4", found[0])
 
+    def test_every_copy_of_a_port_is_compared(self):
+        # The wrong copy is found whichever triplet holds it, so the answer does not depend on
+        # which list file is read last.
+        others = [f"{p}_{TARGET}.list" for p in ["glm_1.0.3", "embree_4.4.1",
+                                                 "vulkan-headers_1.4.363.0"]]
+        for wrong, right in [(HOST, TARGET), (TARGET, HOST)]:
+            with self.subTest(wrong=wrong):
+                installed = deps.read_installed(make_installed_dir(self, others + [
+                    f"zlib_1.3.0_{wrong}.list", f"zlib_1.3.1_{right}.list"]))
+                found = problems(installed=installed)
+                self.assertEqual(len(found), 1, found)
+                self.assertIn("zlib", found[0])
+                self.assertIn("1.3.0", found[0])
+                self.assertIn(wrong, found[0])
+
     def test_installed_port_not_documented(self):
-        installed = {"glm": "1.0.3", "embree": "4.4.1", "vulkan-headers": "1.4.363.0",
-                     "zlib": "1.3.1", "tbb": "2022.2.0"}
+        installed = on_one_triplet({"glm": "1.0.3", "embree": "4.4.1",
+                                    "vulkan-headers": "1.4.363.0", "zlib": "1.3.1",
+                                    "tbb": "2022.2.0"})
         found = problems(installed=installed)
         self.assertEqual(len(found), 1)
+        self.assertIn("tbb", found[0])
+
+    def test_undocumented_port_installed_twice_is_reported_once(self):
+        installed = on_one_triplet({"glm": "1.0.3", "embree": "4.4.1",
+                                    "vulkan-headers": "1.4.363.0", "zlib": "1.3.1"})
+        installed["tbb"] = {HOST: "2022.2.0", TARGET: "2022.2.0"}
+        found = problems(installed=installed)
+        self.assertEqual(len(found), 1, found)
         self.assertIn("tbb", found[0])
 
     def test_documented_port_not_installed(self):
@@ -227,7 +269,7 @@ class InstalledTests(unittest.TestCase):
                       "zlib": "1.3.1"}
         for missing in ["zlib", "embree"]:  # pulled in, and direct
             with self.subTest(missing=missing):
-                installed = {n: v for n, v in everything.items() if n != missing}
+                installed = on_one_triplet({n: v for n, v in everything.items() if n != missing})
                 found = problems(installed=installed)
                 self.assertEqual(len(found), 1)
                 self.assertIn(missing, found[0])
@@ -271,6 +313,14 @@ class CommandLineTests(unittest.TestCase):
         result = self.run_script(*self.write(MANIFEST, DOC), "--installed", str(installed))
         self.assertEqual(result.returncode, 1)
         self.assertIn("embree", result.stdout + result.stderr)
+
+    def test_exit_1_when_one_triplets_copy_differs(self):
+        installed = make_installed_dir(self, [f"{name}_{TARGET}.list" for name in [
+            "glm_1.0.3", "embree_4.4.1", "vulkan-headers_1.4.363.0", "zlib_1.3.1"]] + [
+            f"zlib_1.3.0_{HOST}.list"])
+        result = self.run_script(*self.write(MANIFEST, DOC), "--installed", str(installed))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"zlib: 1.3.0 is installed for {HOST}", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

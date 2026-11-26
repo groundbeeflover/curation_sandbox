@@ -9,10 +9,10 @@ Exits 1 and names each problem when:
   a port that vcpkg.json does not declare;
 - a library in that table, in "Pulled in by other ports" or in "Vendored" has a licence (an
   SPDX expression) that the "Allowed licences" table does not allow;
-- with --installed (the vcpkg_installed directory of a configured build): an installed port's
-  version differs from the documented one, or a port is installed but not documented, or a
-  documented port is not installed. Ports named vcpkg-* only build other ports and are not
-  listed.
+- with --installed (the vcpkg_installed directory of a configured build): the version of an
+  installed port differs from the documented one (every copy is compared, one per triplet it
+  is installed for), or a port is installed but not documented, or a documented port is not
+  installed. Ports named vcpkg-* only build other ports and are not listed.
 
 The test suite runs it on the repository, so CI checks it with the other script tests.
 Standard library only.
@@ -136,21 +136,24 @@ def manifest_dependencies(manifest: dict) -> list[str]:
     return [d if isinstance(d, str) else d["name"] for d in manifest.get("dependencies", [])]
 
 
-def read_installed(installed_dir: Path) -> dict[str, str]:
-    """Port name to version, from vcpkg's <port>_<version>_<triplet>.list files."""
+def read_installed(installed_dir: Path) -> dict[str, dict[str, str]]:
+    """Port name to {triplet: version}, from vcpkg's <port>_<version>_<triplet>.list files. A
+    port is installed once for each triplet that needs it: for the host when a host tool needs
+    it, for the target when the project does."""
     info = installed_dir / "vcpkg" / "info"
     if not info.is_dir():
         raise FileNotFoundError(f"{info} not found: is this a vcpkg_installed directory?")
-    ports = {}
+    ports: dict[str, dict[str, str]] = {}
     for path in info.glob("*.list"):
         name, _, rest = path.stem.partition("_")
-        version = rest.rpartition("_")[0]
-        if name and version:
-            ports[name] = version
+        version, _, triplet = rest.rpartition("_")
+        if name and version and triplet:
+            ports.setdefault(name, {})[triplet] = version
     return ports
 
 
-def check(manifest: dict, doc: str, installed: dict[str, str] | None = None) -> list[str]:
+def check(manifest: dict, doc: str,
+          installed: dict[str, dict[str, str]] | None = None) -> list[str]:
     tables = section_tables(doc)
     for heading in (ALLOWED, VCPKG):
         if not tables.get(heading):
@@ -182,13 +185,17 @@ def check(manifest: dict, doc: str, installed: dict[str, str] | None = None) -> 
         problems.append(f'{name} has a row in "{VCPKG}" but is not in vcpkg.json')
 
     if installed is not None:
-        ports = {n: v for n, v in installed.items() if not n.startswith("vcpkg-")}
-        for name, version in sorted(ports.items()):
+        ports = {n: c for n, c in installed.items() if not n.startswith("vcpkg-")}
+        for name, copies in sorted(ports.items()):
             if name not in versions:
-                problems.append(f'{name} {version} is installed but has no row in "{VCPKG}" '
+                found = ", ".join(f"{v} for {t}" for t, v in sorted(copies.items()))
+                problems.append(f'{name} {found} is installed but has no row in "{VCPKG}" '
                                 f'or "{PULLED_IN}"')
-            elif versions[name] != version:
-                problems.append(f"{name}: {version} is installed, the table says {versions[name]}")
+                continue
+            for triplet, version in sorted(copies.items()):
+                if version != versions[name]:
+                    problems.append(f"{name}: {version} is installed for {triplet}, the table "
+                                    f"says {versions[name]}")
         for name in sorted(versions.keys() - ports.keys()):
             problems.append(f"{name} is documented but not installed")
     return problems
