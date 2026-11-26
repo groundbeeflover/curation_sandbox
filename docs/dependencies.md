@@ -11,9 +11,12 @@ has a row in [Libraries from vcpkg](#libraries-from-vcpkg) and none without one,
 licence in the vcpkg, pulled-in and vendored tables is allowed by
 [Allowed licences](#allowed-licences). Given a configured build
 (`--installed build/debug/vcpkg_installed`), it also compares the versions with what vcpkg
-installed and finds installed ports missing here. The script tests run it on the repository, so
-CI fails when the names or licences here and `vcpkg.json` disagree; versions are compared only
-when the script is given `--installed`, which CI does not do yet.
+installed, and finds ports installed but missing here or listed here but not installed. CI runs
+it both ways. The checks job and the script tests run it on the repository, so CI fails when the
+names or licences here and `vcpkg.json` disagree. Every build-and-test job in `ci.yml` (GCC,
+Clang and MSVC) runs it with `--installed` on its own build once vcpkg's packages are saved, so
+CI also fails when a version here is not the one vcpkg installed, on Linux or on Windows. The
+check runs after the save so that a mismatch does not throw away freshly built packages.
 
 ## Adding or changing a dependency
 
@@ -25,8 +28,8 @@ when the script is given `--installed`, which CI does not do yet.
 3. A port it pulls in goes under [Pulled in by other ports](#pulled-in-by-other-ports).
 4. Run `python3 scripts/check-dependencies.py --installed build/debug/vcpkg_installed`.
 
-Moving the baseline changes versions: update the rows in the same pull request. Versions are
-upstream versions; vcpkg's port revisions (`#1`) are left out.
+Moving the baseline changes versions: update the rows in the same pull request, or its build
+jobs fail. Versions are upstream versions; vcpkg's port revisions (`#1`) are left out.
 
 When a port is missing or broken, a later task may fetch a pinned prebuilt archive from CMake
 with a SHA-256 instead, and documents it here. None does today: every library in the vcpkg
