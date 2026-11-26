@@ -1,0 +1,26 @@
+{
+  "id": "vermeer-girl-with-the-red-hat",
+  "title": "Girl with the Red Hat",
+  "artist": {
+    "name": "Johannes Vermeer",
+    "birth_year": 1632,
+    "death_year": 1675
+  },
+  "date": "c. 1669",
+  "institution": "National Gallery of Art, Washington",
+  "accession_number": "1937.1.53",
+  "credit_line": "Andrew W. Mellon Collection",
+  "object_url": "https://www.nga.gov/collection/art-object-page.60.html",
+  "image_url": "https://api.nga.gov/iiif/b705a403-3496-42e8-abf5-a37e34c32198/full/!4096,4096/0/default.jpg",
+  "image_sha256": "97c6a0e9b6585b651ac95f7c73dd1eab5daa21e4303d0a6953dc335cab46f034",
+  "image_width_px": 3240,
+  "image_height_px": 4096,
+  "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "rights": "openaccess: 1",
+  "retrieved": "2026-11-26",
+  "width_mm": 180,
+  "height_mm": 228,
+  "surface": "painted surface",
+  "dimensions": "painted surface: 22.8 x 18 cm (9 x 7 1/16 in.)\nsupport: 23.2 x 18.1 cm (9 1/8 x 7 1/8 in.)\nframed: 40.3 x 35.6 x 4.4 cm (15 7/8 x 14 x 1 3/4 in.)",
+  "medium": "oil on panel"
+}

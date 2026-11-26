@@ -1,0 +1,20 @@
+{
+  "id": "missing-sample",
+  "title": "Missing Sample",
+  "artist": {"name": "Curation Sandbox", "birth_year": 1900, "death_year": 1940},
+  "date": "1930",
+  "institution": "Curation Sandbox test data",
+  "accession_number": "TEST.2",
+  "credit_line": "Made by the project for its tests; its image is never committed",
+  "object_url": "https://example.org/samples/missing-sample",
+  "image_url": "https://example.org/samples/missing-sample.png",
+  "image_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "image_width_px": 3,
+  "image_height_px": 5,
+  "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "rights": "Made by the Curation Sandbox project (Apache-2.0)",
+  "width_mm": 300,
+  "height_mm": 500,
+  "dimensions": "30 x 50 cm",
+  "medium": "Pixels that were never fetched"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "test-sample",
+  "title": "Test Sample",
+  "artist": {"name": "Curation Sandbox", "birth_year": 1900, "death_year": 1940},
+  "date": "1925",
+  "institution": "Curation Sandbox test data",
+  "accession_number": "TEST.1",
+  "credit_line": "Made by the project for its tests",
+  "object_url": "https://example.org/samples/test-sample",
+  "image_url": "https://example.org/samples/test-sample.png",
+  "image_sha256": "b5abea55388b570c16ba8e5bc6a97283e2202518e1ba58add19bdc91eb8fad16",
+  "image_width_px": 4,
+  "image_height_px": 3,
+  "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "rights": "Made by the Curation Sandbox project (Apache-2.0)",
+  "width_mm": 400,
+  "height_mm": 300,
+  "dimensions": "40 x 30 cm",
+  "medium": "Pixels on a test chart"
+}

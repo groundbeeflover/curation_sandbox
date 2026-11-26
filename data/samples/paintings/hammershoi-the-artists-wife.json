@@ -1,0 +1,26 @@
+{
+  "id": "hammershoi-the-artists-wife",
+  "title": "The Artist's Wife, Ida Hammershøi, née Ilsted",
+  "artist": {
+    "name": "Vilhelm Hammershøi",
+    "birth_year": 1864,
+    "death_year": 1916
+  },
+  "date": "1894",
+  "institution": "SMK – National Gallery of Denmark",
+  "accession_number": "KMS6691",
+  "credit_line": "",
+  "object_url": "https://open.smk.dk/artwork/image/KMS6691",
+  "image_url": "https://iip.smk.dk/iiif/jp2/2n49t480x_kms6691.tif.reconstructed.tif.jp2/full/full/0/default.jpg",
+  "image_sha256": "2c3f996045981f26bfa897bd5026506be77bab0cbbb5b62188fbed6856f2cd7e",
+  "image_width_px": 2420,
+  "image_height_px": 2581,
+  "licence": "https://creativecommons.org/publicdomain/mark/1.0/",
+  "rights": "public_domain: true; rights: https://creativecommons.org/publicdomain/mark/1.0/",
+  "retrieved": "2026-11-26",
+  "width_mm": 339,
+  "height_mm": 359,
+  "surface": "netto (unframed)",
+  "dimensions": "Netto: 359 x 339 mm; Brutto: 480 x 468 x 47 mm",
+  "medium": "Oil on canvas"
+}

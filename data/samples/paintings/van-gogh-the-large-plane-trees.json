@@ -1,0 +1,26 @@
+{
+  "id": "van-gogh-the-large-plane-trees",
+  "title": "The Large Plane Trees (Road Menders at Saint-Rémy)",
+  "artist": {
+    "name": "Vincent van Gogh",
+    "birth_year": 1853,
+    "death_year": 1890
+  },
+  "date": "1889",
+  "institution": "Cleveland Museum of Art",
+  "accession_number": "1947.209",
+  "credit_line": "Gift of the Hanna Fund",
+  "object_url": "https://clevelandart.org/art/1947.209",
+  "image_url": "https://openaccess-cdn.clevelandart.org/1947.209/1947.209_print.jpg",
+  "image_sha256": "349d3b4d6b373d957710b57eedd77b81d45c7a652c91df6d173377568bcc981a",
+  "image_width_px": 3400,
+  "image_height_px": 2713,
+  "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "rights": "share_license_status: CC0",
+  "retrieved": "2026-11-26",
+  "width_mm": 918,
+  "height_mm": 734,
+  "surface": "unframed",
+  "dimensions": "Framed: 104.5 x 124.5 x 7.6 cm (41 1/8 x 49 x 3 in.); Unframed: 73.4 x 91.8 cm (28 7/8 x 36 1/8 in.)",
+  "medium": "oil on fabric"
+}

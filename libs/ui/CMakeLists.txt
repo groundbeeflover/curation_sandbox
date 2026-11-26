@@ -20,6 +20,12 @@ file(GLOB_RECURSE ui_public_headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DI
 target_sources(cs_ui PRIVATE ${ui_public_headers})
 # Every src/features/*.cpp registers itself: register_features(MainWindow&) calls them all.
 cs_generate_registry(ui features PARAMETERS "MainWindow&" INCLUDES "features/feature.hpp")
+# Works > Add sample painting (src/features/sample_paintings.cpp) lists the manifests of
+# data/samples/paintings/ and looks for their images in build/samples/paintings/, where
+# scripts/fetch-samples.py puts them. Packaging them with the app is M4's.
+target_compile_definitions(cs_ui PRIVATE
+    CS_SAMPLE_MANIFESTS_DIR="${CMAKE_SOURCE_DIR}/data/samples/paintings"
+    CS_SAMPLE_IMAGES_DIR="${CMAKE_SOURCE_DIR}/build/samples/paintings")
 
 if(TARGET cs_ui_tests)
     # The tests also reach the module's own headers in src/ (the viewport, the features).

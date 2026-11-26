@@ -1,0 +1,26 @@
+{
+  "id": "david-napoleon-in-his-study",
+  "title": "The Emperor Napoleon in His Study at the Tuileries",
+  "artist": {
+    "name": "Jacques-Louis David",
+    "birth_year": 1748,
+    "death_year": 1825
+  },
+  "date": "1812",
+  "institution": "National Gallery of Art, Washington",
+  "accession_number": "1961.9.15",
+  "credit_line": "Samuel H. Kress Collection",
+  "object_url": "https://www.nga.gov/collection/art-object-page.46114.html",
+  "image_url": "https://api.nga.gov/iiif/9d8f80cf-7d2c-455a-9fb9-73e5ce2012b2/full/!4096,4096/0/default.jpg",
+  "image_sha256": "f90a6611563a72fcc8933a8f63be9eec2a8cd5dfc8968c10de9ec8ad68909207",
+  "image_width_px": 2498,
+  "image_height_px": 4096,
+  "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "rights": "openaccess: 1",
+  "retrieved": "2026-11-26",
+  "width_mm": 1251,
+  "height_mm": 2039,
+  "surface": "overall",
+  "dimensions": "overall: 203.9 × 125.1 cm (80 1/4 × 49 1/4 in.)\nframed: 243.9 x 165.1 x 15.2 cm (96 x 65 x 6 in.)\nframed weight: 63.957 kg (141 lb.)",
+  "medium": "oil on canvas"
+}

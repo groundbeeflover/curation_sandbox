@@ -1,0 +1,26 @@
+{
+  "id": "church-twilight-in-the-wilderness",
+  "title": "Twilight in the Wilderness",
+  "artist": {
+    "name": "Frederic Edwin Church",
+    "birth_year": 1826,
+    "death_year": 1900
+  },
+  "date": "1860",
+  "institution": "Cleveland Museum of Art",
+  "accession_number": "1965.233",
+  "credit_line": "Mr. and Mrs. William H. Marlatt Fund",
+  "object_url": "https://clevelandart.org/art/1965.233",
+  "image_url": "https://openaccess-cdn.clevelandart.org/1965.233/1965.233_print.jpg",
+  "image_sha256": "6f8de26b3dbe8823fb70dc4d01d680607b11cf5ca628d951448429d0f5a78dbc",
+  "image_width_px": 3400,
+  "image_height_px": 2123,
+  "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "rights": "share_license_status: CC0",
+  "retrieved": "2026-11-26",
+  "width_mm": 1626,
+  "height_mm": 1016,
+  "surface": "unframed",
+  "dimensions": "Unframed: 101.6 x 162.6 cm (40 x 64 in.); Framed: 124 x 185 x 13 cm (48 13/16 x 72 13/16 x 5 1/8 in.)",
+  "medium": "oil on canvas"
+}

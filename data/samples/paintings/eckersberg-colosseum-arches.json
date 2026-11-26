@@ -1,0 +1,26 @@
+{
+  "id": "eckersberg-colosseum-arches",
+  "title": "A View through Three Arches of the Third Storey of the Colosseum",
+  "artist": {
+    "name": "C.W. Eckersberg",
+    "birth_year": 1783,
+    "death_year": 1853
+  },
+  "date": "1815",
+  "institution": "SMK – National Gallery of Denmark",
+  "accession_number": "KMS3123",
+  "credit_line": "",
+  "object_url": "https://open.smk.dk/artwork/image/KMS3123",
+  "image_url": "https://iip.smk.dk/iiif/jp2/hm50tw13v_KMS3123_-_lille.tif.reconstructed.tif.jp2/full/full/0/default.jpg",
+  "image_sha256": "959fda98145991ddc44ab833985e9ccad28f5f117883edfd4e2a77071a23b8ec",
+  "image_width_px": 4049,
+  "image_height_px": 2575,
+  "licence": "https://creativecommons.org/publicdomain/mark/1.0/",
+  "rights": "public_domain: true; rights: https://creativecommons.org/publicdomain/mark/1.0/",
+  "retrieved": "2026-11-26",
+  "width_mm": 495,
+  "height_mm": 320,
+  "surface": "netto (unframed)",
+  "dimensions": "Netto: 320 x 495 mm; Brutto: 438 x 611 x 70 mm",
+  "medium": "Oil on canvas"
+}
